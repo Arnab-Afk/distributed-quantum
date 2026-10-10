@@ -1,6 +1,6 @@
 # DevCon: research agent → Toju storage
 
-Verified October 11, 2026 IST. The full official Toju server runs on Render Free, from [our fork](https://github.com/Winter-Soren/afara/tree/codex/devcon-testnet). QuantumNodes runs locally. Neon and QStash use Free plans. No paid upgrade was selected.
+Verified October 11, 2026 IST. The full official Toju server runs on Render Free, from [our fork](https://github.com/Winter-Soren/afara/tree/devcon/testnet). QuantumNodes runs locally. Neon and QStash use Free plans. No paid upgrade was selected.
 
 ## Record this flow
 

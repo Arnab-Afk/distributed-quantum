@@ -5,7 +5,7 @@ Updated October 11, 2026 (IST). The full Toju server is deployed and the agent p
 ## Deployed installation
 
 - API: https://toju-devcon-testnet.onrender.com (`/health` returns database/server up).
-- Source: https://github.com/Winter-Soren/afara/tree/codex/devcon-testnet, commit `e0a18f3a7c62ccac65e55a6168689b1b17085504` (adds settlement diagnostics to the verified deployment), a fork of the official Toju repository.
+- Source: https://github.com/Winter-Soren/afara/tree/devcon/testnet, commit `e0a18f3a7c62ccac65e55a6168689b1b17085504` (adds settlement diagnostics to the verified deployment), a fork of the official Toju repository.
 - Render: Free Node service in Singapore; full upstream route families and lifecycle jobs retained. QuantumNodes runs locally and is not deployed on Render.
 - Neon: Free project `toju-devcon-testnet`; ten migrations applied and pricing configured.
 - QStash: Free EU region, five schedules active; signed `/jobs/usage/snapshot` delivery verified as DELIVERED.
@@ -51,7 +51,7 @@ In Render, choose **New → Web Service**, connect the Toju repository or your r
 | --- | --- |
 | Name | `toju-devcon-testnet` |
 | Runtime / Language | Node |
-| Branch | `codex/devcon-testnet` in `Winter-Soren/afara` |
+| Branch | `devcon/testnet` in `Winter-Soren/afara` |
 | Root Directory | **Leave blank** (repository root) |
 | Build Command | See below |
 | Start Command | See below |

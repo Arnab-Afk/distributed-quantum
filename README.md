@@ -34,9 +34,9 @@ navigation bar to try the flow.
 | Integration branch | `feat/toju-agent-storage` in both [QMeshPy](https://github.com/QMeshPy/distributed-quantum/tree/feat/toju-agent-storage) and [Winter-Soren](https://github.com/Winter-Soren/distributed-quantum-services/tree/feat/toju-agent-storage) |
 | Toju API readiness | [Render health](https://toju-devcon-testnet.onrender.com/health) |
 | Toju API liveness | [Render liveness](https://toju-devcon-testnet.onrender.com/health/live) |
-| Full Toju server source | [Winter-Soren/afara, codex/devcon-testnet](https://github.com/Winter-Soren/afara/tree/codex/devcon-testnet), forked from the official Toju server |
+| Full Toju server source | [Winter-Soren/afara, devcon/testnet](https://github.com/Winter-Soren/afara/tree/devcon/testnet), forked from the official Toju server |
 | Hosting instructions | [Full Render / Neon / QStash guide](docs/toju-render-testnet-guide.md) |
-| Recording instructions | [Phone-friendly speaking script](docs/devcon-mobile-speaking-script.md) and [technical demo guide](docs/toju-devcon-demo.md) |
+| Video demo | [Watch the Toju agent storage demo on Google Drive](https://drive.google.com/file/d/1PZ6MHxBd5_XOqMTGnrS6OEB_tGlL6uGX/view?usp=drive_link) |
 
 **QuantumNodes runs locally for this demo. Render hosts the separate full Toju
 Node/Express server**, including its storage, payment, database and lifecycle-job
@@ -164,7 +164,7 @@ includes every environment variable, pricing initialization, migrations and
 signed QStash schedule. The reproduced installation uses Render Free, Neon Free
 and QStash Free; check your account's quotas before inviting additional users.
 
-- Deploy the **afara server fork**, branch `codex/devcon-testnet`, with Render's
+- Deploy the **afara server fork**, branch `devcon/testnet`, with Render's
   root directory blank. Do not deploy this entire QuantumNodes repository as Toju.
 - Use Node 22, `NODE_ENV=staging`, `X402_NETWORK=sepolia`,
   `FILECOIN_NETWORK=calibration`, and a Solana testnet RPC/IDL.
