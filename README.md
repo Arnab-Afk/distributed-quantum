@@ -31,7 +31,7 @@ navigation bar to try the flow.
 
 | Resource | Location |
 | --- | --- |
-| Integration branch | `feat/toju-agent-storage` in both [QMeshPy](https://github.com/QMeshPy/distributed-quantum/tree/feat/toju-agent-storage) and [Winter-Soren](https://github.com/Winter-Soren/pylibp2p-nodes-as-quantum-gates/tree/feat/toju-agent-storage) |
+| Integration branch | `feat/toju-agent-storage` in both [QMeshPy](https://github.com/QMeshPy/distributed-quantum/tree/feat/toju-agent-storage) and [Winter-Soren](https://github.com/Winter-Soren/distributed-quantum-services/tree/feat/toju-agent-storage) |
 | Toju API readiness | [Render health](https://toju-devcon-testnet.onrender.com/health) |
 | Toju API liveness | [Render liveness](https://toju-devcon-testnet.onrender.com/health/live) |
 | Full Toju server source | [Winter-Soren/afara, codex/devcon-testnet](https://github.com/Winter-Soren/afara/tree/codex/devcon-testnet), forked from the official Toju server |
