@@ -1,9 +1,10 @@
+import { agentBackendFetch } from "@/features/agentkit/server/backend-fetch";
 import { NextResponse } from "next/server";
 import { BACKEND_AGENTKIT } from "@/constants/backend";
 
 export async function GET() {
   try {
-    const res = await fetch(BACKEND_AGENTKIT.AGENTS, { cache: "no-store" });
+    const res = await agentBackendFetch(BACKEND_AGENTKIT.AGENTS, { cache: "no-store" });
     const data = await res.json();
     const agents = Array.isArray(data) ? data : (data.agents ?? []);
     return NextResponse.json(agents, { status: res.status });
@@ -15,7 +16,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const res = await fetch(BACKEND_AGENTKIT.AGENTS, {
+    const res = await agentBackendFetch(BACKEND_AGENTKIT.AGENTS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

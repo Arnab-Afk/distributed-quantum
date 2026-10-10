@@ -1,3 +1,4 @@
+import { agentBackendFetch } from "@/features/agentkit/server/backend-fetch";
 import { NextResponse } from "next/server";
 import { BACKEND_AGENTKIT } from "@/constants/backend";
 
@@ -7,7 +8,7 @@ export async function POST(request: Request, { params }: Params) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const res = await fetch(BACKEND_AGENTKIT.CHAT_SESSION_MSG(id), {
+    const res = await agentBackendFetch(BACKEND_AGENTKIT.CHAT_SESSION_MSG(id), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

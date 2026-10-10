@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 import uvicorn
+from dotenv import load_dotenv
 
 from quantum_backend_v2.config import load_settings
 
@@ -21,6 +22,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    load_dotenv()
     settings = load_settings()
     host = args.host or settings.api_host
     port = args.port or settings.api_port

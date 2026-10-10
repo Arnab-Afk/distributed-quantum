@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
-from db.agentkit_collections import ChatSessionDocument
+from db.agentkit_collections import ChatSessionDocument, AIAgentDocument
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +56,8 @@ async def create_chat_session(
 ) -> SessionResponse:
     """Create a persisted chat session in MongoDB."""
     from datetime import datetime, timezone
+    if not await AIAgentDocument.find_one({"agent_id": body.agent_id, "owner_id": current_user.user_id}):
+        raise PlatformException(status_code=404, error=ErrorCode.NOT_FOUND, message="Agent not found.")
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     doc = ChatSessionDocument(

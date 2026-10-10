@@ -2,6 +2,7 @@ import {
   Home,
   Globe,
   FlaskConical,
+  Bot,
   HardDrive,
   Settings,
 } from "lucide-react";
@@ -132,6 +133,26 @@ export const NAV_CONFIG: RailItem[] = [
       ],
     },
     matchPrefixes: ["/runs", "/options", "/risk", "/finance", "/pharma"],
+  },
+  {
+    id: "agents",
+    label: "Agents",
+    icon: Bot,
+    href: "/agents",
+    hasSidebar: true,
+    sidebar: {
+      type: "static",
+      groups: [
+        {
+          heading: "Agents",
+          links: [
+            { label: "Agents", href: "/agents" },
+            { label: "Agent Chat", href: "/agents/chat" },
+          ],
+        },
+      ],
+    },
+    matchPrefixes: ["/agents"],
   },
   {
     id: "vault",

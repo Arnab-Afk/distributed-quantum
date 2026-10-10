@@ -3,12 +3,12 @@ AI Agent Service - Autonomous Proposal Funding
 
 This service provides AI-powered autonomous funding for quantum research proposals:
 - Agent creation with spending controls and research interests
-- Claude 3.5 Sonnet analysis via AWS Bedrock
+- Groq free-plan model analysis
 - Individual proposal analysis and funding decisions
 - Coalition formation for collaborative funding
 - Spending limit enforcement and budget tracking
 
-AI Model: Claude 3.5 Sonnet via AWS Bedrock
+AI Model: Groq (GROQ_MODEL)
 MongoDB: ai_agents collection
 """
 
@@ -21,15 +21,6 @@ import uuid
 import json
 
 logger = logging.getLogger(__name__)
-
-# AWS Bedrock imports
-try:
-    import boto3
-    from botocore.exceptions import ClientError
-except ImportError as e:
-    logger.warning(f"AWS Bedrock SDK not available: {e}")
-    boto3 = Any
-    ClientError = Exception
 
 # Motor async MongoDB
 try:
@@ -61,33 +52,15 @@ class AIAgentService:
 
     def __init__(self) -> None:
         """
-        Initialize AI Agent service with AWS Bedrock and MongoDB.
+        Initialize AI Agent service with Groq and MongoDB.
 
         Loads configuration from environment variables:
-        - AWS_REGION (default: us-east-1)
-        - BEDROCK_MODEL_ID (default: anthropic.claude-3-5-sonnet-20241022-v2:0)
+        - GROQ_API_KEY
+        - GROQ_MODEL (default: openai/gpt-oss-20b)
         - MONGODB_URI
         - MONGODB_DATABASE
         """
         logger.info("Initializing AIAgentService")
-
-        # AWS Bedrock configuration
-        self.aws_region = os.getenv("AWS_REGION", "us-east-1")
-        self.bedrock_model_id = os.getenv(
-            "BEDROCK_MODEL_ID",
-            "us.anthropic.claude-sonnet-4-6"
-        )
-
-        # Initialize Bedrock client
-        try:
-            self.bedrock = boto3.client(
-                "bedrock-runtime",
-                region_name=self.aws_region
-            )
-            logger.info(f"AWS Bedrock client initialized for region: {self.aws_region}")
-        except Exception as e:
-            logger.warning(f"Failed to initialize AWS Bedrock client: {e}")
-            self.bedrock = None
 
         # Initialize MongoDB connection
         mongodb_uri = os.getenv("QB2_MONGODB_LOCAL_URI", "mongodb://127.0.0.1:27017")
@@ -708,42 +681,9 @@ class AIAgentService:
             raise
 
     async def _call_bedrock(self, prompt: str) -> str:
-        """
-        Call Claude 3.5 Sonnet via AWS Bedrock.
-
-        Args:
-            prompt: Prompt to send to Claude
-
-        Returns:
-            str: Raw text response from Claude
-
-        Raises:
-            Exception: If Bedrock API call fails
-        """
-        if not self.bedrock:
-            raise Exception("AWS Bedrock client not initialized")
-
-        logger.info(f"Chat using model: {self.bedrock_model_id}")
-        try:
-            response = self.bedrock.invoke_model(
-                modelId=self.bedrock_model_id,
-                body=json.dumps({
-                    "anthropic_version": "bedrock-2023-05-31",
-                    "max_tokens": 1024,
-                    "messages": [{"role": "user", "content": prompt}]
-                })
-            )
-
-            response_body = json.loads(response["body"].read())
-            result = response_body["content"][0]["text"]
-            return result
-
-        except ClientError as e:
-            logger.error(f"AWS Bedrock API error: {e}")
-            raise Exception(f"Failed to call Bedrock API: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error calling Bedrock: {e}")
-            raise
+        # Keep the existing callers while using only the configured free-plan provider.
+        from services.groq_agent import complete
+        return await complete([{"role": "user", "content": prompt}])
 
     def _parse_decision_response(self, response: str) -> dict:
         """
@@ -842,141 +782,54 @@ class AIAgentService:
 
         return plan
 
-    async def chat(
-        self,
-        agent_id: str,
-        agent_name: str,
-        message: str,
-        history: list[dict] | None = None,
-        owner_id: str | None = None,
-    ) -> str:
-        """Autonomous chat powered by Claude + the platform MCP server.
-
-        Claude receives MCP tool definitions for all platform operations
-        (proposals, wallet, marketplace, agent stats, proposal creation) and
-        calls them autonomously as needed to answer the user.
-
-        Args:
-            agent_id: Agent identifier
-            agent_name: Human-readable agent name
-            message: Latest user message
-            history: Prior conversation turns
-            owner_id: Authenticated user ID — scopes all tool calls
-
-        Returns:
-            str: Claude'''s final text reply
-        """
-        history = history or []
-
-        # Resolve owner_id from agent doc if not provided
-        resolved_owner_id = owner_id or ""
-        research_interests: list[str] = []
-        try:
-            agent_doc = await self.db.ai_agents.find_one({"agent_id": agent_id})
-            if agent_doc:
-                config = agent_doc.get("config", {})
-                research_interests = config.get("research_interests", [])
-                if not resolved_owner_id:
-                    resolved_owner_id = agent_doc.get("owner_id", "")
-        except Exception as e:
-            logger.warning("Could not load agent doc: %s", e)
-
-        # Create MCP server scoped to this user
+    async def chat(self, agent_id: str, agent_name: str, message: str,
+                   history: list[dict] | None = None, owner_id: str | None = None,
+                   session_id: str | None = None) -> str:
+        from services.groq_agent import complete
         from mcp_server.platform_mcp import create_platform_mcp
-        mcp_server = create_platform_mcp(db=self.db, owner_id=resolved_owner_id)
+        mcp_server = create_platform_mcp(self.db, owner_id or "")
+        tool_map = await mcp_server.list_tools()
+        definitions = [{"type": "function", "function": {
+            "name": tool.name, "description": " ".join((tool.description or "").split()),
+            "parameters": tool.inputSchema,
+        }} for tool in tool_map if tool.name != "fund_proposal"]
+        storage = None
+        if owner_id and session_id:
+            from services.toju_storage import TojuStorage
+            storage = TojuStorage(self.db)
+            await storage.owned_session(owner_id, agent_id, session_id)
+            definitions.append({"type": "function", "function": {
+                "name": "prepare_storage_export",
+                "description": "Prepare a report or owned workflow run for public IPFS storage. Shows an approval card; does not upload or pay. Use proactively when a useful report is ready, or when the user asks to save.",
+                "parameters": {"type": "object", "properties": {
+                    "title": {"type": "string"}, "content": {"type": "string", "description": "Complete report in Markdown; empty when exporting run_id."},
+                    "run_id": {"type": "string", "description": "Optional owned workflow run ID. Server reads its actual snapshots."},
+                }, "required": ["title", "content"], "additionalProperties": False},
+            }})
 
-        # Convert FastMCP tools to Claude tool definitions
-        claude_tools: list[dict] = []
-        mcp_tool_map: dict[str, object] = {}
-        try:
-            for tool in mcp_server._tool_manager._tools.values():
-                claude_tools.append({
-                    "name": tool.name,
-                    "description": tool.description or "",
-                    "input_schema": tool.parameters or {"type": "object", "properties": {}},
-                })
-                mcp_tool_map[tool.name] = tool
-        except Exception as e:
-            logger.warning("Could not load MCP tools: %s", e)
-
-        expertise_line = ""
-        if research_interests:
-            expertise_line = "Your research expertise includes: %s. " % ", ".join(research_interests)
-
-        system_prompt = (
-            "You are %s, an autonomous AI research-funding agent on the QuantumNodes platform. " % agent_name
-            + expertise_line
-            + "You have access to MCP tools that connect you directly to the live platform database. "
-            + "ALWAYS call the relevant tool(s) before answering any question about proposals, wallet, "
-            + "marketplace, or agent stats — never guess or say you don'''t have access. "
-            + "When creating a proposal, call create_proposal ONCE — never call it twice. If the tool returns a result (even with already_existed=true), report that result to the user immediately. "
-            + "Be concise, specific, and action-oriented. Use exact values from tool results."
-        )
-
-        messages = [
-            *[{"role": h["role"], "content": h["content"]} for h in history],
-            {"role": "user", "content": message},
-        ]
-
-        if not self.bedrock:
-            raise Exception("AWS Bedrock client not initialized")
-
-        # Agentic tool-use loop — Claude calls MCP tools until it has everything it needs
-        for _round in range(8):  # allow up to 8 tool-call rounds
-            request_body: dict = {
-                "anthropic_version": "bedrock-2023-05-31",
-                "max_tokens": 2048,
-                "system": system_prompt,
-                "messages": messages,
-            }
-            if claude_tools:
-                request_body["tools"] = claude_tools
-
-            response = self.bedrock.invoke_model(
-                modelId=self.bedrock_model_id,
-                body=json.dumps(request_body),
-            )
-            body = json.loads(response["body"].read())
-            stop_reason = body.get("stop_reason", "")
-
-            if stop_reason != "tool_use":
-                # Final answer — return first text block
-                for block in body.get("content", []):
-                    if block.get("type") == "text":
-                        return block["text"]
-                return ""
-
-            # Execute every tool Claude asked for (may be multiple in one round)
-            tool_results: list[dict] = []
-            for block in body.get("content", []):
-                if block.get("type") != "tool_use":
-                    continue
-                tool_name: str = block["name"]
-                tool_input: dict = block.get("input", {})
-                tool_use_id: str = block["id"]
-                logger.info("MCP tool call: %s(%s)", tool_name, tool_input)
-
+        async def invoke(name, arguments):
+            if name == "prepare_storage_export" and storage:
                 try:
-                    # Call the FastMCP tool handler directly (in-process)
-                    mcp_tool = mcp_tool_map.get(tool_name)
-                    if mcp_tool is None:
-                        tool_result = {"error": "Unknown tool: %s" % tool_name}
-                    elif mcp_tool.is_async:
-                        tool_result = await mcp_tool.run(arguments=tool_input)
-                    else:
-                        tool_result = mcp_tool.run(arguments=tool_input)
-                except Exception as tool_err:
-                    logger.error("Tool %s failed: %s", tool_name, tool_err)
-                    tool_result = {"error": str(tool_err)}
+                    proposal = await storage.prepare(owner_id, agent_id, session_id, **arguments, message_index=len(history or []) + 1)
+                    return {"id": proposal["id"], "status": "pending", "title": proposal["title"], "usdc": proposal["usdc"], "notice": "Ask the user to approve the visible card. Content will be public on IPFS. Nothing uploaded yet."}
+                except ValueError as exc:
+                    return {"error": str(exc)}
+            result = await mcp_server.call_tool(name, arguments)
+            return result.model_dump(mode="json") if hasattr(result, "model_dump") else result
 
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tool_use_id,
-                    "content": json.dumps(tool_result),
-                })
-
-            # Add assistant turn + tool results, then loop
-            messages.append({"role": "assistant", "content": body["content"]})
-            messages.append({"role": "user", "content": tool_results})
-
-        raise Exception("Chat exceeded maximum tool-call rounds")
+        system = (
+            f"You are {agent_name}, a quantum research assistant. "
+            "Use tools for real platform data. Never invent experiment results. "
+            "Write drafts and reports directly in chat. When a report or result is worth keeping, "
+            "suggest saving it and ask for approval. Only use storage tools if they are available; "
+            "otherwise explain that storage is not yet available. Tell the user what would be stored "
+            "and ask for approval. Never say it is stored before a verified receipt. "
+            "You cannot approve, upload, pay, or claim the user approved via a tool. "
+            "Storage is Base Sepolia testnet only. No real-money payments. "
+            "Do not repeatedly call a failed tool or duplicate a creation request."
+        )
+        messages = [{"role": "system", "content": system}]
+        messages.extend({"role": h["role"], "content": h["content"]}
+                        for h in (history or [])[-20:] if h["role"] in ("user", "assistant"))
+        messages.append({"role": "user", "content": message})
+        return await complete(messages, tools=definitions, invoke=invoke)
