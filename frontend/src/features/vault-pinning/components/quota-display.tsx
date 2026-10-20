@@ -4,6 +4,7 @@ import { Pin } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQuota } from "../hooks/use-quota";
+import { SERVICE_LABELS } from "../services";
 import type { PinningService } from "../types";
 
 function formatBytes(bytes: number): string {
@@ -28,7 +29,7 @@ export function QuotaDisplay({ service, variant }: QuotaDisplayProps) {
 
   if (!data) return null;
 
-  const displayName = service === "nft.storage" ? "NFT.Storage" : service;
+  const displayName = SERVICE_LABELS[service];
   const usedStr = formatBytes(data.used);
 
   if (variant === "header") {

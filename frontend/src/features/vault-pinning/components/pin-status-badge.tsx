@@ -9,6 +9,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { usePinMetadata } from "../hooks/use-pin-metadata";
+import { SERVICE_LABELS } from "../services";
 
 interface PinStatusBadgeProps {
   cid: string;
@@ -20,8 +21,7 @@ export function PinStatusBadge({ cid, variant = "default" }: PinStatusBadgeProps
 
   if (!pinMeta) return null;
 
-  const displayName =
-    pinMeta.service === "nft.storage" ? "NFT.Storage" : pinMeta.service;
+  const displayName = SERVICE_LABELS[pinMeta.service];
 
   const badge = (
     <Badge
