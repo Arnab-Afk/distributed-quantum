@@ -13,7 +13,7 @@ const providers = new Map<PinningService, PinningProvider>([
 export const DEFAULT_SERVICE: PinningService = "pinata";
 
 export const SERVICE_LABELS: Record<PinningService, string> = {
-  lighthouse: "Lighthouse",
+  lighthouse: "Filecoin (via Lighthouse)",
   pinata: "Pinata",
   "nft.storage": "NFT.Storage",
 };

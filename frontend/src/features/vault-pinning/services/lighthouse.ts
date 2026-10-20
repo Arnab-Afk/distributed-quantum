@@ -2,6 +2,9 @@
 // Unlike Pinata's pinByHash, Lighthouse uploads the content itself;
 // no separate pin step is needed.
 //
+// Shown to users as "Filecoin (via Lighthouse)"; the id stays "lighthouse"
+// so existing pin records keep working.
+//
 // Get an API key at: https://files.lighthouse.storage → API Keys
 // Set NEXT_PUBLIC_LIGHTHOUSE_KEY in .env
 
@@ -21,7 +24,7 @@ function getKey(): string {
 
 class LighthouseProvider implements PinningProvider {
   name = "lighthouse" as const;
-  displayName = "Lighthouse";
+  displayName = "Filecoin (via Lighthouse)";
 
   async pin(cid: string, content?: Record<string, unknown>): Promise<PinResult> {
     const blob = new Blob(
