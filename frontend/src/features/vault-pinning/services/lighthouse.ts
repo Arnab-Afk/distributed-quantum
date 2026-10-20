@@ -7,7 +7,7 @@
 
 import type { PinningProvider, PinResult, QuotaInfo } from "../types";
 
-const UPLOAD_URL = "https://node.lighthouse.storage/api/v0/add";
+const UPLOAD_URL = "https://upload.lighthouse.storage/api/v0/add";
 const API_URL = "https://api.lighthouse.storage";
 
 function getKey(): string {
