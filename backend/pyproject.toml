@@ -23,7 +23,7 @@ dependencies = [
   "python-dotenv>=1.0.1",
   "tomli>=2.0.1; python_version < '3.11'",
   "py-multicodec>=1.0.0",
-  "libp2p @ https://github.com/libp2p/py-libp2p/archive/refs/heads/main.tar.gz",
+  "libp2p==0.6.0",
   "python-multipart>=0.0.26",
   "qiskit>=1.2.0",
   "qiskit-aer>=0.15.0",
@@ -53,6 +53,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "mypy>=1.10.0",
+  "tomli>=2.0.1",
   "pytest>=8.3.0",
   "pytest-cov>=5.0.0",
   "ruff>=0.6.0",
@@ -62,6 +63,7 @@ dev = [
 [dependency-groups]
 dev = [
   "mypy>=1.10.0",
+  "tomli>=2.0.1",
   "pytest>=8.3.0",
   "pytest-cov>=5.0.0",
   "ruff>=0.6.0",
@@ -96,9 +98,6 @@ exclude = ["tests"]
 
 [tool.hatch.metadata]
 allow-direct-references = true
-
-[tool.uv]
-upgrade-package = ["libp2p"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/quantum_backend_v2"]
