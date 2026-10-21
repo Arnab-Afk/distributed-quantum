@@ -22,6 +22,7 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     """Build a configured FastAPI application."""
     settings = load_settings(env=env)
     chain_registry = load_chain_registry(settings.chain_registry_path)
+    chain_registry.resolve(settings.wallet_network)
     configure_logging(settings.logging)
     persistence_runtime = create_persistence_runtime(settings.persistence)
     libp2p_plan = create_libp2p_plan(settings.libp2p)

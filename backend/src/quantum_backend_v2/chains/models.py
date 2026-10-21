@@ -1,4 +1,4 @@
-"""Immutable, EVM-only registry schema for the first slice of issue #2."""
+"""Immutable EVM metadata and capability requirements for wallet operations."""
 
 from __future__ import annotations
 
@@ -10,7 +10,15 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ChainId = Annotated[str, Field(pattern=r"^eip155:[1-9][0-9]{0,31}$")]
 NetworkAlias = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")]
 EvmAddress = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
-Capability = Literal["explorer_url"]
+Capability = Literal[
+    "explorer_url",
+    "create_wallet",
+    "get_balance",
+    "transfer_stablecoin",
+    "aave_supply",
+    "aave_withdraw",
+    "faucet_instructions",
+]
 
 
 class _RegistryModel(BaseModel):
@@ -66,6 +74,7 @@ class ChainSpec(_RegistryModel):
     explorers: ExplorerTemplates
     native_token: NativeToken
     stablecoin: Stablecoin | None = None
+    aave_pool_address: EvmAddress | None = None
     capabilities: tuple[Capability, ...] = ()
 
     @model_validator(mode="after")
@@ -76,6 +85,27 @@ class ChainSpec(_RegistryModel):
             raise ValueError("duplicate network alias")
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("duplicate operation capability")
+        wallet_operations = set(self.capabilities) - {"explorer_url"}
+        if wallet_operations:
+            # Only the existing Base Sepolia wallet path is enabled in this migration.
+            if (
+                self.chain_id != "eip155:84532"
+                or self.provider_aliases.agentkit != "base-sepolia"
+                or self.provider_aliases.cdp != "base-sepolia"
+            ):
+                raise ValueError("wallet provider does not support this network")
+            if self.stablecoin is None or self.stablecoin.symbol != "USDC":
+                raise ValueError("wallet operations require USDC metadata")
+            if self.native_token.symbol != "ETH":
+                raise ValueError("wallet operations require ETH metadata")
+        if {"transfer_stablecoin", "aave_supply", "aave_withdraw"} & wallet_operations:
+            if "explorer_url" not in self.capabilities:
+                raise ValueError("transaction operations require explorer links")
+        if {"transfer_stablecoin", "aave_supply"} & wallet_operations:
+            if "get_balance" not in self.capabilities:
+                raise ValueError("transaction operations require balance queries")
+        if {"aave_supply", "aave_withdraw"} & wallet_operations and not self.aave_pool_address:
+            raise ValueError("Aave operations require a pool address")
         return self
 
     @property

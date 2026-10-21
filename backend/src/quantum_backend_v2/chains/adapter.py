@@ -1,4 +1,4 @@
-"""Local explorer links only. Wallet/payment adapters belong to later slices."""
+"""Offline explorer links; wallet execution remains in AgentKitService."""
 
 from __future__ import annotations
 

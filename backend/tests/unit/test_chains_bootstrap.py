@@ -109,3 +109,23 @@ def test_invalid_registry_stops_bootstrap_before_runtime_creation(
         create_application(env={"QB2_CHAIN_REGISTRY_PATH": str(path)})
     persistence.assert_not_called()
     peers.assert_not_called()
+
+
+@pytest.mark.parametrize("network", ["", "typo", "base-mainnet"])
+def test_invalid_wallet_network_stops_bootstrap(application_factory, network):
+    create_application, persistence, peers = application_factory
+    with pytest.raises(ValueError, match="unknown network"):
+        create_application(env={"NETWORK": network})
+    persistence.assert_not_called()
+    peers.assert_not_called()
+
+
+def test_application_selects_canonical_wallet_network_and_closes_client(application_factory):
+    create_application, _, _ = application_factory
+    app = create_application(env={"NETWORK": "eip155:84532"})
+    mongo_client = Mock()
+    app.state.wallet_service = SimpleNamespace(mongo_client=mongo_client)
+    with TestClient(app):
+        assert app.state.wallet_chain_id == "eip155:84532"
+        assert app.state.chain_registry.resolve().chain_id == "eip155:84532"
+    mongo_client.close.assert_called_once()

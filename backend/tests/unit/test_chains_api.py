@@ -39,8 +39,25 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
         }
         assert set(chain["native_token"]) == {"symbol", "decimals"}
         assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
-        assert chain["capabilities"] == ["explorer_url"]
-    for private in ("TOP_SECRET", "rpc_env_var", "QB2_BASE_SEPOLIA_RPC_URL", "provider_aliases"):
+        if chain["chain_id"] == "eip155:84532":
+            assert set(chain["capabilities"]) == {
+                "explorer_url",
+                "create_wallet",
+                "get_balance",
+                "transfer_stablecoin",
+                "aave_supply",
+                "aave_withdraw",
+                "faucet_instructions",
+            }
+        else:
+            assert chain["capabilities"] == ["explorer_url"]
+    for private in (
+        "TOP_SECRET",
+        "rpc_env_var",
+        "QB2_BASE_SEPOLIA_RPC_URL",
+        "provider_aliases",
+        "aave_pool_address",
+    ):
         assert private not in response.text
         assert private not in str(schema)
     assert not schema["paths"]["/api/v1/chains"]["get"].get("security")

@@ -22,6 +22,11 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 
+from quantum_backend_v2.chains.adapter import EvmExplorerAdapter, UnsupportedOperationError
+from quantum_backend_v2.chains.loader import load_chain_registry
+from quantum_backend_v2.chains.models import Capability, ChainRegistry, ChainSpec
+from quantum_backend_v2.config import load_settings
+
 logger = logging.getLogger(__name__)
 
 # AgentKit imports (coinbase-agentkit)
@@ -49,7 +54,7 @@ from db.agentkit_collections import (
     _decimal_to_decimal128,
     _decimal128_to_decimal,
 )
-from utils.basescan import get_transaction_url, validate_address
+from utils.basescan import validate_address
 
 
 class AgentKitService:
@@ -60,7 +65,9 @@ class AgentKitService:
     for the quantum computing node marketplace.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self, *, registry: ChainRegistry | None = None, network: str | None = None
+    ) -> None:
         """
         Initialize AgentKit service with CDP credentials.
 
@@ -71,6 +78,14 @@ class AgentKitService:
         - MONGODB_URI
         - MONGODB_DATABASE
         """
+        if registry is None:
+            settings = load_settings()
+            registry = load_chain_registry(settings.chain_registry_path)
+            if network is None:
+                network = settings.wallet_network
+        self.registry = registry
+        self._chain = registry.resolve(network)
+        self.explorer = EvmExplorerAdapter(self.chain)
         logger.info("Initializing AgentKitService")
 
         # Load CDP credentials from environment
@@ -80,7 +95,6 @@ class AgentKitService:
         self.api_key_secret = os.getenv("CDP_API_KEY_SECRET") or os.getenv("CDP_API_KEY_PRIVATE_KEY")
         # CDP_WALLET_SECRET is a separate secret created in the CDP portal for wallet encryption
         self.wallet_secret = os.getenv("CDP_WALLET_SECRET")
-        self.network_id = os.getenv("NETWORK", "base-sepolia")
 
         if not self.api_key_id or not self.api_key_secret or not self.wallet_secret:
             logger.warning("CDP credentials not configured - wallet operations will fail")
@@ -94,20 +108,54 @@ class AgentKitService:
         self.mongo_client = AsyncIOMotorClient(mongodb_uri)
         self.db = self.mongo_client[mongodb_database]
 
-        # ERC-20 USDC token address (Base Sepolia testnet)
-        # Source: https://docs.base.org/tokens/
-        self.usdc_address = {
-            "base-sepolia": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-            "base-mainnet": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-        }.get(self.network_id, "0x036CbD53842c5426634e7929541eC2318f3dCF7e")
+        logger.info("AgentKitService configured for %s", self.chain.chain_id)
 
-        # Aave V3 pool address (Base Sepolia testnet)
-        self.aave_pool_address = {
-            "base-sepolia": "0x07eA79F68B2B3df564D0A34F8e19D9B1e339814b",
-            "base-mainnet": "0xA238Dd80C259a72e81d7e4664a9801593F98d1c5",
-        }.get(self.network_id, "0x07eA79F68B2B3df564D0A34F8e19D9B1e339814b")
+    @property
+    def chain(self) -> ChainSpec:
+        return self._chain
 
-        logger.info(f"AgentKitService initialized for network: {self.network_id}")
+    @property
+    def network_id(self) -> str:
+        alias = self.chain.provider_aliases.agentkit
+        if alias is None:
+            raise UnsupportedOperationError("AgentKit network mapping is unavailable")
+        return alias
+
+    @property
+    def usdc_address(self) -> str:
+        if self.chain.stablecoin is None:
+            raise UnsupportedOperationError("USDC metadata is unavailable")
+        return self.chain.stablecoin.address
+
+    @property
+    def token_scale(self) -> Decimal:
+        if self.chain.stablecoin is None:
+            raise UnsupportedOperationError("USDC metadata is unavailable")
+        return Decimal(10 ** self.chain.stablecoin.decimals)
+
+    @property
+    def aave_pool_address(self) -> str:
+        if self.chain.aave_pool_address is None:
+            raise UnsupportedOperationError("Aave pool is unavailable")
+        return self.chain.aave_pool_address
+
+    def require_operation(self, operation: Capability) -> None:
+        if operation not in self.chain.capabilities:
+            raise UnsupportedOperationError("wallet operation is unavailable on this network")
+
+    def validate_wallet_network(self, network: str | None) -> ChainSpec:
+        if network is None:
+            raise ValueError("stored wallet network is missing")
+        chain = self.registry.resolve(network)
+        if chain.chain_id != self.chain.chain_id:
+            raise ValueError("stored wallet network does not match the configured wallet network")
+        return chain
+
+    async def _validate_stored_wallet(self, wallet_address: str) -> None:
+        wallet = await self.db.wallets.find_one({"default_address": wallet_address})
+        if not wallet:
+            raise ValueError("Wallet not found")
+        self.validate_wallet_network(wallet.get("network"))
 
     def _init_encryption_key(self) -> None:
         """Initialize Fernet encryption key for wallet seed encryption."""
@@ -139,6 +187,7 @@ class AgentKitService:
         """
         logger.info(f"Creating wallet for {entity_type}:{entity_id}")
         try:
+            self.require_operation("create_wallet")
             # Validate entity_type
             valid_types = ["user", "agent", "worker"]
             if entity_type not in valid_types:
@@ -147,6 +196,7 @@ class AgentKitService:
             # Check if wallet already exists
             existing = await self.db.wallets.find_one({"entity_id": entity_id})
             if existing:
+                self.validate_wallet_network(existing.get("network"))
                 logger.warning(f"Wallet already exists for {entity_type}:{entity_id}")
                 return {
                     "wallet_address": existing["default_address"],
@@ -177,10 +227,9 @@ class AgentKitService:
             # Record current block number so we can scan from here in transaction history
             try:
                 from coinbase_agentkit.network import NETWORK_ID_TO_CHAIN
-                from web3 import Web3 as _Web3
                 _chain = NETWORK_ID_TO_CHAIN[self.network_id]
                 _rpc = _chain.rpc_urls["default"].http[0]
-                creation_block: int | None = _Web3(_Web3.HTTPProvider(_rpc)).eth.block_number
+                creation_block: int | None = Web3(Web3.HTTPProvider(_rpc)).eth.block_number
             except Exception:
                 creation_block = None
 
@@ -203,7 +252,7 @@ class AgentKitService:
             logger.info(f"Wallet {wallet_address} saved to database for {entity_type}:{entity_id}")
 
             # Request testnet funds if in development mode
-            if self.network_id == "base-sepolia":
+            if "faucet_instructions" in self.chain.capabilities:
                 try:
                     await self.request_testnet_funds(wallet_address)
                 except Exception as faucet_error:
@@ -242,8 +291,9 @@ class AgentKitService:
         """
         logger.info(f"Fetching balance for wallet {wallet_address}")
         try:
-            # Validate address format
+            self.require_operation("get_balance")
             validate_address(wallet_address)
+            await self._validate_stored_wallet(wallet_address)
 
             # Use plain web3 — no CDP credentials needed for read-only balance queries
             from coinbase_agentkit.network import NETWORK_ID_TO_CHAIN
@@ -253,7 +303,9 @@ class AgentKitService:
 
             # Query ETH balance (native token)
             eth_balance_wei = web3.eth.get_balance(Web3.to_checksum_address(wallet_address))
-            eth_balance = Decimal(eth_balance_wei) / Decimal(10 ** 18)
+            eth_balance = Decimal(eth_balance_wei) / Decimal(
+                10 ** self.chain.native_token.decimals
+            )
 
             # Query USDC balance (ERC-20 token)
             erc20_abi = [
@@ -273,8 +325,7 @@ class AgentKitService:
             usdc_balance_raw = usdc_contract.functions.balanceOf(
                 Web3.to_checksum_address(wallet_address)
             ).call()
-            # USDC has 6 decimals
-            usdc_balance = Decimal(usdc_balance_raw) / Decimal(10 ** 6)
+            usdc_balance = Decimal(usdc_balance_raw) / self.token_scale
 
             timestamp = datetime.utcnow()
 
@@ -339,6 +390,7 @@ class AgentKitService:
         """
         logger.info(f"Transferring {amount} USDC from {from_address} to {to_address}")
         try:
+            self.require_operation("transfer_stablecoin")
             # Validate addresses and amount
             validate_address(from_address)
             validate_address(to_address)
@@ -386,8 +438,7 @@ class AgentKitService:
                 abi=erc20_transfer_abi
             )
 
-            # USDC has 6 decimals
-            amount_raw = int(amount * Decimal(10 ** 6))
+            amount_raw = int(amount * self.token_scale)
 
             # Build transaction
             function_call = usdc_contract.functions.transfer(
@@ -405,7 +456,7 @@ class AgentKitService:
             logger.info(f"USDC transfer transaction sent: {tx_hash}")
 
             # Generate Basescan URL
-            basescan_url = get_transaction_url(tx_hash, network=self.network_id)
+            basescan_url = self.explorer.explorer_url("transaction", tx_hash)
 
             timestamp = datetime.utcnow()
 
@@ -480,6 +531,7 @@ class AgentKitService:
         """
         logger.info(f"Supplying {amount} USDC to Aave from {wallet_address}")
         try:
+            self.require_operation("aave_supply")
             # Validate addresses
             validate_address(wallet_address)
             validate_address(on_behalf_of)
@@ -497,7 +549,7 @@ class AgentKitService:
                     f"Insufficient USDC balance. Required: {amount}, Available: {balance_info['usdc_balance']}"
                 )
 
-            amount_raw = int(amount * Decimal(10 ** 6))  # USDC has 6 decimals
+            amount_raw = int(amount * self.token_scale)
 
             # Step 1: Approve USDC spending by Aave pool
             erc20_approve_abi = [
@@ -565,7 +617,7 @@ class AgentKitService:
 
             logger.info(f"Aave supply transaction sent: {tx_hash}")
 
-            basescan_url = get_transaction_url(tx_hash, network=self.network_id)
+            basescan_url = self.explorer.explorer_url("transaction", tx_hash)
             timestamp = datetime.utcnow()
 
             # Record escrow deposit in database
@@ -631,6 +683,7 @@ class AgentKitService:
         """
         logger.info(f"Withdrawing {amount} USDC from Aave to {to}")
         try:
+            self.require_operation("aave_withdraw")
             # Validate addresses
             validate_address(wallet_address)
             validate_address(to)
@@ -641,7 +694,7 @@ class AgentKitService:
             wallet_provider = await self._load_wallet(wallet_address)
             web3 = wallet_provider._web3
 
-            amount_raw = int(amount * Decimal(10 ** 6))  # USDC has 6 decimals
+            amount_raw = int(amount * self.token_scale)
 
             # Execute Aave withdraw
             # Aave V3 Pool withdraw function ABI
@@ -677,7 +730,7 @@ class AgentKitService:
 
             logger.info(f"Aave withdraw transaction sent: {tx_hash}")
 
-            basescan_url = get_transaction_url(tx_hash, network=self.network_id)
+            basescan_url = self.explorer.explorer_url("transaction", tx_hash)
             timestamp = datetime.utcnow()
 
             # Record escrow release in database
@@ -731,14 +784,9 @@ class AgentKitService:
         """
         logger.info(f"Requesting testnet funds for {wallet_address}")
         try:
-            # Verify network is testnet
-            if self.network_id not in ["base-sepolia"]:
-                raise ValueError(
-                    f"Faucet only available on testnet networks, current: {self.network_id}"
-                )
-
-            # Validate address
+            self.require_operation("faucet_instructions")
             validate_address(wallet_address)
+            await self._validate_stored_wallet(wallet_address)
 
             # Note: CDP SDK does not provide a built-in faucet method
             # Users must manually request funds from public faucets:
@@ -780,10 +828,7 @@ class AgentKitService:
         """
         logger.debug(f"Loading wallet {wallet_address}")
         try:
-            # Query MongoDB wallets collection
-            wallet_doc = await self.db.wallets.find_one({"default_address": wallet_address})
-            if not wallet_doc:
-                raise ValueError(f"Wallet not found: {wallet_address}")
+            await self._validate_stored_wallet(wallet_address)
 
             # Reconstruct CDP wallet provider using env wallet_secret
             config = CdpEvmWalletProviderConfig(

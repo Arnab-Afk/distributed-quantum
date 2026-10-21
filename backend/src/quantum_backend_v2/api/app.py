@@ -88,6 +88,9 @@ def create_app(
         try:
             yield
         finally:
+            wallet_service = getattr(app.state, "wallet_service", None)
+            if wallet_service is not None:
+                wallet_service.mongo_client.close()
             await discovery_service.stop()
             await persistence_runtime.shutdown()
 
@@ -98,6 +101,9 @@ def create_app(
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+
+    app.state.chain_registry = chain_registry
+    app.state.wallet_chain_id = chain_registry.resolve(settings.wallet_network).chain_id
 
     cors_origins_env = os.getenv("CORS_ORIGINS", "")
     if cors_origins_env:

@@ -40,7 +40,18 @@ def test_packaged_registry_and_provider_mappings():
         assert chain.stablecoin.decimals == 6
         assert chain.stablecoin.address == address
         assert chain.testnet and chain.enabled
-        assert chain.capabilities == ("explorer_url",)
+        if alias == "base-sepolia":
+            assert set(chain.capabilities) == {
+                "explorer_url",
+                "create_wallet",
+                "get_balance",
+                "transfer_stablecoin",
+                "aave_supply",
+                "aave_withdraw",
+                "faucet_instructions",
+            }
+        else:
+            assert chain.capabilities == ("explorer_url",)
 
 
 @pytest.mark.parametrize("network", ["", "BASE-SEPOLIA", "84532", "eip155:084532", "typo"])
@@ -227,3 +238,20 @@ def test_no_rpc_credentials_are_read(monkeypatch, caplog):
     assert "TOP_SECRET" not in registry.model_dump_json()
     assert "TOP_SECRET" not in repr(registry)
     assert "TOP_SECRET" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("stablecoin", None),
+        ("aave_pool_address", None),
+        ("aave_pool_address", "not-an-address"),
+        ("provider_aliases", {"agentkit": "ethereum-sepolia", "cdp": "ethereum-sepolia"}),
+        ("capabilities", ["transfer_stablecoin", "explorer_url"]),
+        ("capabilities", ["aave_withdraw"]),
+    ],
+)
+def test_wallet_capabilities_require_complete_metadata(data, field, value):
+    data["chains"][0][field] = value
+    with pytest.raises(ValidationError):
+        ChainRegistry.model_validate(data)
