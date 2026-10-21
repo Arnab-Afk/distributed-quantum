@@ -16,5 +16,6 @@ export function useRunProvenance(bundleId: string | null) {
     },
     staleTime: CONFIG.STALE_TIME_MS,
     retry: false,
+    refetchOnWindowFocus: false,
   });
 }

@@ -114,7 +114,7 @@ const topStateCols: DataTableColumn<TopStateRow>[] = [
 ];
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
-function RunDetailPanel({ run }: { run: RunDetail }) {
+export function RunDetailPanel({ run }: { run: RunDetail }) {
   const progress = run.progress;
   const qr = run.result?.quantumResult;
   const fragments = run.result?.fragmentResults ?? [];
@@ -184,7 +184,9 @@ function RunDetailPanel({ run }: { run: RunDetail }) {
         rightContent={<QuantumDetailsButton href={ROUTES.runFragmentFlow(run.jobId)} accent="violet" />}
       />
 
-      <RunProvenance bundleId={run.provenanceBundleId} />
+      {run.status.toLowerCase() === "completed" ? (
+        <RunProvenance bundleId={run.provenanceBundleId} />
+      ) : null}
 
       {/* Execution overview */}
       <GlassCard>

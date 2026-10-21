@@ -164,7 +164,10 @@ and links to recorded HTTP(S) evidence URLs. Set a storage reference's `url` to 
 public gateway URL and an anchor's `url` to its public explorer URL when attaching
 evidence. No explorer URL is guessed when none was recorded. Unsafe schemes and
 credential-bearing links are suppressed. Failed refreshes do not retain a verified
-badge; a manual recheck is available.
+badge; a manual recheck is available. The card appears only for completed runs,
+including historical completed runs with no bundle. Window focus does not trigger
+external verification lookups. Checks have human-readable labels, and verified
+and partially verified states use distinct badge treatments.
 
 The BFF forwards explicit Authorization headers only. It does not turn Better Auth
 cookies into backend tokens or manufacture dev bearer tokens. The current browser

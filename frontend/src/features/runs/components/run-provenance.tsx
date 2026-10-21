@@ -7,6 +7,8 @@ import { UI } from "@/constants";
 import { useRunProvenance } from "../hooks/use-run-provenance";
 import { safeEvidenceUrl, type VerificationReport } from "../lib/provenance";
 
+const checkNames = new Map<string, string>(Object.entries(UI.PROVENANCE.CHECK_NAMES));
+
 type Props = {
   report?: VerificationReport;
   recorded: boolean;
@@ -31,7 +33,7 @@ export function ProvenanceDetails({ report, recorded, loading, error, onRefresh 
     <Card>
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3">
         <CardTitle className="text-base font-medium">{UI.PROVENANCE.TITLE}</CardTitle>
-        <Badge variant={status === "unverified" ? "outline" : "secondary"} role="status">
+        <Badge variant={status === "verified" ? "default" : status === "partially_verified" ? "secondary" : "outline"} role="status">
           {label}
         </Badge>
       </CardHeader>
@@ -50,7 +52,7 @@ export function ProvenanceDetails({ report, recorded, loading, error, onRefresh 
                 return (
                   <li key={`${check.kind}-${check.name}-${index}`} className="space-y-1 py-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-medium">{kinds[check.kind]} · {check.name}</span>
+                      <span className="font-medium">{kinds[check.kind]} · {checkNames.get(check.name) ?? UI.PROVENANCE.OTHER_CHECK}</span>
                       <Badge variant={check.status === "failed" ? "destructive" : "outline"}>
                         {statuses[check.status]}
                       </Badge>
