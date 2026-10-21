@@ -110,6 +110,8 @@ class AppSettings(BaseModel):
     service_name: str = Field(default="quantum-backend", min_length=1)
     api_host: str = Field(default="0.0.0.0", min_length=1)
     api_port: int = Field(default=8081, ge=1, le=65535)
+    chain_registry_path: Path | None = None
+    wallet_network: str | None = None
     auth_required: bool = Field(
         default=True,
         description=(
@@ -131,11 +133,14 @@ class AppSettings(BaseModel):
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> "AppSettings":
         """Construct settings from a flat environment mapping."""
+        registry_path = _optional(env.get("QB2_CHAIN_REGISTRY_PATH"))
         return cls(
             environment=env.get("QB2_ENVIRONMENT", "development"),
             service_name=env.get("QB2_SERVICE_NAME", "quantum-backend"),
             api_host=env.get("QB2_API_HOST", "0.0.0.0"),
             api_port=int(env.get("QB2_API_PORT", "8081")),
+            chain_registry_path=Path(registry_path) if registry_path is not None else None,
+            wallet_network=env.get("NETWORK"),
             auth_required=_parse_bool(env.get("QB2_AUTH_REQUIRED", "true")),
             allow_dev_bearer_tokens=_parse_bool(
                 env.get("QB2_ALLOW_DEV_BEARER_TOKENS", "false")

@@ -16,6 +16,7 @@ from quantum_backend_v2.application.parity import CircuitJobService, FinancialJo
 from quantum_backend_v2.api.deps.auth import configure_auth
 from quantum_backend_v2.api.errors import register_exception_handlers
 from quantum_backend_v2.api.routers import discovery_router, system_router
+from quantum_backend_v2.api.routers.chains import build_chains_router
 from quantum_backend_v2.api.routers.circuits import build_circuits_router
 from quantum_backend_v2.api.routers.enrollment import build_enrollment_router
 from quantum_backend_v2.api.routers.financial import build_financial_router
@@ -36,6 +37,7 @@ from api.v1.proposals import router as proposals_router
 from api.v1.notifications import router as notifications_router
 from api.v1.marketplace import router as marketplace_router
 from api.v1.chat_sessions import router as chat_sessions_router
+from quantum_backend_v2.chains.models import ChainRegistry
 from quantum_backend_v2.config import AppSettings
 from quantum_backend_v2.discovery.service import DiscoveryService
 from quantum_backend_v2.libp2p import Libp2pBootstrapPlan, Libp2pRuntime
@@ -47,6 +49,7 @@ from quantum_backend_v2.runtime.recovery import RuntimeRecoveryService
 def create_app(
     settings: AppSettings,
     *,
+    chain_registry: ChainRegistry,
     persistence_runtime: PersistenceRuntime,
     libp2p_plan: Libp2pBootstrapPlan,
     libp2p_runtime: Libp2pRuntime,
@@ -85,6 +88,9 @@ def create_app(
         try:
             yield
         finally:
+            wallet_service = getattr(app.state, "wallet_service", None)
+            if wallet_service is not None:
+                wallet_service.mongo_client.close()
             await discovery_service.stop()
             await persistence_runtime.shutdown()
 
@@ -95,6 +101,9 @@ def create_app(
         redoc_url="/redoc",
         lifespan=lifespan,
     )
+
+    app.state.chain_registry = chain_registry
+    app.state.wallet_chain_id = chain_registry.resolve(settings.wallet_network).chain_id
 
     cors_origins_env = os.getenv("CORS_ORIGINS", "")
     if cors_origins_env:
@@ -123,6 +132,7 @@ def create_app(
         return Response(status_code=204)
 
     register_exception_handlers(app)
+    app.include_router(build_chains_router(registry=chain_registry))
 
     app.include_router(
         system_router(
