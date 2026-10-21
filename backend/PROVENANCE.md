@@ -1,9 +1,10 @@
 # Provenance commitments (v1)
 
-This is the first slice of issue #4: backward-compatible evidence models,
-deterministic commitments and Merkle inclusion proofs. Job persistence, the
-verification service/API and run-detail badge are follow-up slices. No storage
-upload, chain transaction or automatically generated job evidence is added here.
+This contains the first two slices of issue #4: backward-compatible evidence
+models, deterministic commitments, Merkle proofs and a reusable verification
+engine. Durable job persistence, authorized HTTP routing and the run-detail badge
+are follow-up slices. No storage upload, transaction or automatic job evidence
+persistence is added here.
 
 Provenance establishes integrity of recorded evidence, **not** scientific
 correctness, honest execution or execution on quantum hardware.
@@ -86,6 +87,37 @@ Duplicate-last trees do not independently commit to cardinality: some batches
 with repeated trailing leaves share roots. Membership does not establish exact
 batch size or uniqueness; preserve authoritative batch metadata separately.
 
+## Verification engine
+
+`provenance.verification` provides `RunEvidence`, `build_result_bundle` and
+`verify_bundle`. A result snapshot commits to the input, plan ID, ordered fragments
+and final result without duplicating the full statevector in the bundle. Creating
+a new commitment requires a valid result object.
+
+Callers supply an already authorized run snapshot and any separately stored
+commitment. This pure engine does not authorize users, access MongoDB, register a
+production endpoint or fetch arbitrary URLs. Those boundaries are a later slice.
+
+Checks independently report hash, storage and anchor outcomes as `passed`, `failed`,
+`unavailable` or `not_applicable`. Hashes compare the bundle/input/fragments/result;
+plan and run identity are checked too. Missing result sources are unavailable;
+malformed data fails. Old commitments are never invented during verification.
+
+A valid Merkle proof is separate from a confirmed on-chain anchor. Storage adapters
+must retrieve and validate CID-addressed bundles using trusted configuration;
+anchor adapters must check chain, destination, success, root and confirmations
+behind #2's chain boundary. No concrete provider/chain adapters are supplied or
+enabled. Missing adapters report unavailable, not success.
+
+External checks share a ten-second budget, not ten seconds per reference. Timeouts
+are caught on Python 3.10 and newer; caller cancellation propagates and cleans up
+in-flight work. Evidence links are limited to credential-free HTTP(S) URLs.
+
+The overall report is unverified if a check failed or none passed, partially
+verified if evidence is incomplete or only local, and verified only if every
+applicable check passed with at least one external storage/transaction check.
+Even then it does not prove scientific correctness or quantum-hardware execution.
+
 ## Ethereum handoff (#21)
 
 Ethereum can record a SHA-256 root as `bytes32`. This tree is **not OpenZeppelin
@@ -102,11 +134,15 @@ A valid local proof alone does not establish that any transaction exists.
 From `backend/`, without MongoDB, wallets or external services:
 
 ```bash
-uv run pytest tests/unit/test_provenance.py tests/unit/test_provenance_flow.py -q
+uv run pytest tests/unit/test_provenance.py tests/unit/test_provenance_flow.py \
+  tests/unit/test_provenance_verification.py -q
 ```
 
 Coverage includes golden JSON bytes/hashes, independent Node-crypto bundle/tree
 vectors, old-bundle round trips, unsupported values, frozen v1 fields, every leaf
 at sizes 1–33 and randomized batches through 513 leaves, and tampered proofs.
 A real Qiskit/BSON round trip checks serialization with multiple anchor fixtures;
-those fixtures are not actual transactions or storage uploads.
+those fixtures are not actual transactions or storage uploads. Verifier tests
+cover independent outcomes, changed/absent/malformed sources, adapter outages and
+timeouts, the real ten-second budget and cancellation. Test adapters are fixtures,
+not production providers. No API/job/MongoDB integration is claimed in this slice.
