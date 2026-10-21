@@ -8,6 +8,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from quantum_backend_v2.provenance.merkle import proof_length
+
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
@@ -88,8 +90,8 @@ class ChainAnchor(BaseModel):
         """Reject impossible positions/paths before attempting anchor verification."""
         if self.leaf_index >= self.leaf_count:
             raise ValueError("Leaf index must be smaller than batch size")
-        if len(self.proof) != (self.leaf_count - 1).bit_length():
-            raise ValueError("Proof length must match batch size")
+        if len(self.proof) != proof_length(self.leaf_index, self.leaf_count):
+            raise ValueError("Proof length must match leaf position and batch size")
         return self
 
 

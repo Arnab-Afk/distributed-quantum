@@ -20,6 +20,19 @@ def _parent(left: bytes, right: bytes) -> bytes:
     return hashlib.sha256(b"\x01" + left + right).digest()
 
 
+def proof_length(leaf_index: int, leaf_count: int) -> int:
+    """Count real siblings on a positional path, excluding odd-node promotions."""
+    if leaf_count < 1 or not 0 <= leaf_index < leaf_count:
+        raise ValueError("Leaf position is outside this batch")
+    length = 0
+    while leaf_count > 1:
+        if (leaf_index ^ 1) < leaf_count:
+            length += 1
+        leaf_index //= 2
+        leaf_count = (leaf_count + 1) // 2
+    return length
+
+
 @dataclass(frozen=True)
 class MerkleProof:
     """Bottom-up sibling hashes, leaf position and original batch size."""
@@ -30,7 +43,7 @@ class MerkleProof:
 
 
 class MerkleTree:
-    """Build an ordered tree; an odd final node is paired with itself."""
+    """Build an ordered tree; promote an odd final node unchanged (RFC 6962 shape)."""
 
     def __init__(self, bundle_hashes: Sequence[str]) -> None:
         if not bundle_hashes:
@@ -40,7 +53,7 @@ class MerkleTree:
         self._levels = [level]
         while len(level) > 1:
             level = [
-                _parent(level[i], level[i + 1] if i + 1 < len(level) else level[i])
+                _parent(level[i], level[i + 1]) if i + 1 < len(level) else level[i]
                 for i in range(0, len(level), 2)
             ]
             self._levels.append(level)
@@ -59,7 +72,8 @@ class MerkleTree:
         siblings = []
         for level in self._levels[:-1]:
             sibling = index ^ 1
-            siblings.append(level[sibling if sibling < len(level) else index].hex())
+            if sibling < len(level):
+                siblings.append(level[sibling].hex())
             index //= 2
         return MerkleProof(leaf_index, count, tuple(siblings))
 
@@ -69,17 +83,18 @@ def verify_proof(bundle_digest: str, proof: MerkleProof, root: str) -> bool:
     if proof.leaf_count < 1 or not 0 <= proof.leaf_index < proof.leaf_count:
         return False
     # Check path length before hashing untrusted siblings.
-    if len(proof.siblings) != (proof.leaf_count - 1).bit_length():
+    if len(proof.siblings) != proof_length(proof.leaf_index, proof.leaf_count):
         return False
     try:
         expected = _decode(root)
         node = hashlib.sha256(b"\x00" + _decode(bundle_digest)).digest()
         index, width = proof.leaf_index, proof.leaf_count
-        for sibling_hex in proof.siblings:
-            sibling = _decode(sibling_hex)
-            if index == width - 1 and width % 2 and sibling != node:
-                return False
-            node = _parent(sibling, node) if index % 2 else _parent(node, sibling)
+        siblings = iter(proof.siblings)
+        while width > 1:
+            # Promoted nodes consume neither a sibling nor a hash operation.
+            if (index ^ 1) < width:
+                sibling = _decode(next(siblings))
+                node = _parent(sibling, node) if index % 2 else _parent(node, sibling)
             index //= 2
             width = (width + 1) // 2
         return node == expected
