@@ -75,17 +75,30 @@ order and batch size; do not sort or deduplicate.
 
 - Leaf: `SHA256(0x00 || raw_32_byte_bundle_digest)`.
 - Parent: `SHA256(0x01 || raw_left_hash || raw_right_hash)`.
-- An odd final node at each level is paired with itself.
+- An odd final node at each level is promoted unchanged, without hashing it again.
 - A singleton root is its framed leaf, not the input bundle digest.
 - Empty batches are rejected.
 
 Prefixes prevent ambiguity between leaves and internal nodes. `tree.proof(index)`
-returns the index, original leaf count and bottom-up siblings. Index bits determine
-left/right order. `verify_proof` checks the path length and odd duplicated siblings.
+returns the index, original leaf count and bottom-up real siblings. Promoted levels
+add no synthetic sibling. Index and level width determine left/right order and
+when to consume a sibling. `verify_proof` checks the position-dependent path length
+before hashing any untrusted siblings; extra or missing siblings are rejected.
 
-Duplicate-last trees do not independently commit to cardinality: some batches
-with repeated trailing leaves share roots. Membership does not establish exact
-batch size or uniqueness; preserve authoritative batch metadata separately.
+This uses the non-empty tree shape and audit paths from
+[RFC 6962 sections 2.1–2.1.1](https://www.rfc-editor.org/rfc/rfc6962#section-2.1),
+not the full Certificate Transparency protocol (and empty batches remain invalid).
+Promotion was chosen during pre-merge v1 review, replacing duplicate-last before
+the profile is frozen for #21. It removes the duplicate-padding ambiguity where
+`[A,B,C]` and `[A,B,C,C]` have the same root. It does not deduplicate batches or
+prove that recorded results are honest. Preserve ordered batch metadata and size.
+An individual inclusion proof cannot authenticate the supplied size independently:
+opaque siblings conceal their subtree sizes. #21 must authenticate batch metadata
+alongside the root if exact cardinality is claimed.
+
+Roots/proofs from the earlier, unmerged duplicate-last draft are not interchangeable
+with this construction. Regenerate draft fixtures/batches; do not reinterpret old
+anchored roots. Any change after this profile is released requires a new profile.
 
 ## Verification engine
 
