@@ -1,154 +1,51 @@
-"""
-Basescan URL Utility Module
+"""Compatibility helpers backed by the chain registry's explorer templates."""
 
-Provides functions to generate Basescan block explorer URLs for transactions,
-addresses, and blocks on the Base network (Ethereum L2 by Coinbase).
-
-Supports:
-- Base Sepolia (testnet): https://sepolia.basescan.org
-- Base Mainnet: https://basescan.org
-"""
+from __future__ import annotations
 
 import re
-from typing import Literal
 
-# Type alias for supported networks
-NetworkType = Literal["base-sepolia", "base-mainnet"]
-
-# Network to base URL mapping
-NETWORK_URLS = {
-    "base-sepolia": "https://sepolia.basescan.org",
-    "base-mainnet": "https://basescan.org",
-}
-
-# Regex patterns for validation
-TX_HASH_PATTERN = re.compile(r"^0x[a-fA-F0-9]{64}$")
-ADDRESS_PATTERN = re.compile(r"^0x[a-fA-F0-9]{40}$")
+from quantum_backend_v2.chains.adapter import EvmExplorerAdapter
+from quantum_backend_v2.chains.loader import load_chain_registry
+from quantum_backend_v2.chains.models import ChainRegistry
+from quantum_backend_v2.config import load_settings
 
 
-def validate_network(network: str) -> None:
-    """
-    Validate that the network is supported.
+def _explorer(network: str | None, registry: ChainRegistry | None) -> EvmExplorerAdapter:
+    if registry is None:
+        settings = load_settings()
+        registry = load_chain_registry(settings.chain_registry_path)
+        if network is None:
+            network = settings.wallet_network
+    return EvmExplorerAdapter(registry.resolve(network))
 
-    Args:
-        network: Network identifier
 
-    Raises:
-        ValueError: If network is not supported
-    """
-    if network not in NETWORK_URLS:
-        raise ValueError(
-            f"Unsupported network: {network}. "
-            f"Supported networks: {', '.join(NETWORK_URLS.keys())}"
-        )
+def validate_network(network: str, *, registry: ChainRegistry | None = None) -> None:
+    _explorer(network, registry)
 
 
 def validate_tx_hash(tx_hash: str) -> None:
-    """
-    Validate transaction hash format.
-
-    Args:
-        tx_hash: Transaction hash to validate
-
-    Raises:
-        ValueError: If tx_hash format is invalid
-    """
-    if not TX_HASH_PATTERN.match(tx_hash):
-        raise ValueError(
-            f"Invalid transaction hash format: {tx_hash}. "
-            "Expected format: 0x followed by 64 hexadecimal characters"
-        )
+    if re.fullmatch(r"0x[0-9a-fA-F]{64}", tx_hash) is None:
+        raise ValueError("Invalid transaction hash format")
 
 
 def validate_address(address: str) -> None:
-    """
-    Validate Ethereum address format.
-
-    Args:
-        address: Ethereum address to validate
-
-    Raises:
-        ValueError: If address format is invalid
-    """
-    if not ADDRESS_PATTERN.match(address):
-        raise ValueError(
-            f"Invalid address format: {address}. "
-            "Expected format: 0x followed by 40 hexadecimal characters"
-        )
+    if re.fullmatch(r"0x[0-9a-fA-F]{40}", address) is None:
+        raise ValueError("Invalid address format")
 
 
-def get_transaction_url(tx_hash: str, network: str = "base-sepolia") -> str:
-    """
-    Generate Basescan URL for a transaction.
-
-    Args:
-        tx_hash: Transaction hash (0x prefixed, 64 hex characters)
-        network: Network identifier (default: "base-sepolia")
-
-    Returns:
-        Full Basescan URL for the transaction
-
-    Raises:
-        ValueError: If tx_hash or network is invalid
-
-    Example:
-        >>> get_transaction_url("0x1234...abcd", "base-sepolia")
-        'https://sepolia.basescan.org/tx/0x1234...abcd'
-    """
-    validate_network(network)
-    validate_tx_hash(tx_hash)
-
-    base_url = NETWORK_URLS[network]
-    return f"{base_url}/tx/{tx_hash}"
+def get_transaction_url(
+    tx_hash: str, network: str | None = None, *, registry: ChainRegistry | None = None
+) -> str:
+    return _explorer(network, registry).explorer_url("transaction", tx_hash)
 
 
-def get_address_url(address: str, network: str = "base-sepolia") -> str:
-    """
-    Generate Basescan URL for an address.
-
-    Args:
-        address: Ethereum address (0x prefixed, 40 hex characters)
-        network: Network identifier (default: "base-sepolia")
-
-    Returns:
-        Full Basescan URL for the address
-
-    Raises:
-        ValueError: If address or network is invalid
-
-    Example:
-        >>> get_address_url("0xABCD...1234", "base-sepolia")
-        'https://sepolia.basescan.org/address/0xABCD...1234'
-    """
-    validate_network(network)
-    validate_address(address)
-
-    base_url = NETWORK_URLS[network]
-    return f"{base_url}/address/{address}"
+def get_address_url(
+    address: str, network: str | None = None, *, registry: ChainRegistry | None = None
+) -> str:
+    return _explorer(network, registry).explorer_url("address", address)
 
 
-def get_block_url(block_number: int, network: str = "base-sepolia") -> str:
-    """
-    Generate Basescan URL for a block.
-
-    Args:
-        block_number: Block number (must be non-negative)
-        network: Network identifier (default: "base-sepolia")
-
-    Returns:
-        Full Basescan URL for the block
-
-    Raises:
-        ValueError: If block_number is negative or network is invalid
-
-    Example:
-        >>> get_block_url(12345, "base-sepolia")
-        'https://sepolia.basescan.org/block/12345'
-    """
-    validate_network(network)
-
-    if block_number < 0:
-        raise ValueError(f"Block number must be non-negative, got: {block_number}")
-
-    base_url = NETWORK_URLS[network]
-    return f"{base_url}/block/{block_number}"
+def get_block_url(
+    block_number: int, network: str | None = None, *, registry: ChainRegistry | None = None
+) -> str:
+    return _explorer(network, registry).explorer_url("block", str(block_number))

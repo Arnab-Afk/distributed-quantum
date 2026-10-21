@@ -15,16 +15,37 @@ The current scaffold establishes:
 - a first health endpoint
 - room for protocol, package, and swarm layers to grow independently
 
+The public `GET /api/v1/chains` endpoint lists configured testnets and the
+operations supported by the new chain layer. See [Chain registry](CHAIN_REGISTRY.md)
+for its configuration, public fields, tests, and the remaining wallet migration.
+
 ## Local Development
 
 Use [uv](https://docs.astral.sh/uv/) from this directory so the virtualenv includes runtime and dev tools. Running plain `pytest` from your shell can pick a global interpreter (for example a pyenv shim) that does not have project dependencies installed, which often surfaces as `ModuleNotFoundError: No module named 'beanie'`.
 
 ```bash
 cd backend
-uv sync
+uv sync --locked
 uv run pytest
 make run
 ```
+
+libp2p is pinned to the published `0.6.0` release. Its previous dependency URL
+tracked GitHub's moving `main` branch, so the downloaded source could disagree
+with `uv.lock`. Keep the release pin and use `uv sync --locked` for reproducible
+installs; update the version and lockfile together when deliberately upgrading.
+
+The dev dependencies include `tomli` because mypy checks Python 3.10 compatibility,
+including the TOML fallback, even when development uses a newer Python version.
+
+To verify real libp2p message exchange and discovery locally:
+
+```bash
+uv run --locked pytest tests/network/test_libp2p_transport.py -q
+```
+
+This test starts two peers on loopback with temporary SQLite files and ephemeral
+ports, then verifies shutdown. It needs no MongoDB, wallet credentials, or remote peers.
 
 `make run` is the normal local startup path. `make run-clean` removes the local
 libp2p peerstore and peer-log files first, then starts the backend with a clean

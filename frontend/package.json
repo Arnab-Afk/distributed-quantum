@@ -10,6 +10,7 @@
     "lint": "eslint",
     "test:proxy": "bun test tests/proxy-public-root.test.mjs",
     "test:billing": "bun test tests/billing-webhook.test.mjs",
+    "test:vault": "bun test tests/vault-pinning.test.mjs",
     "analyze": "ANALYZE=true bun run build"
   },
   "dependencies": {
