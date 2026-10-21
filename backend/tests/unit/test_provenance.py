@@ -194,15 +194,13 @@ def test_every_merkle_leaf_and_tamper(size: int) -> None:
 
 
 def reference_merkle_root(digests: list[str]) -> str:
-    nodes = [hashlib.sha256(b"\x00" + bytes.fromhex(digest)).digest() for digest in digests]
-    while len(nodes) > 1:
-        if len(nodes) % 2:
-            nodes.append(nodes[-1])
-        nodes = [
-            hashlib.sha256(b"\x01" + left + right).digest()
-            for left, right in zip(nodes[::2], nodes[1::2], strict=True)
-        ]
-    return nodes[0].hex()
+    # RFC 6962 section 2.1's recursive split, independent of level-wise promotion.
+    if len(digests) == 1:
+        return hashlib.sha256(b"\x00" + bytes.fromhex(digests[0])).hexdigest()
+    split = 1 << ((len(digests) - 1).bit_length() - 1)
+    left = bytes.fromhex(reference_merkle_root(digests[:split]))
+    right = bytes.fromhex(reference_merkle_root(digests[split:]))
+    return hashlib.sha256(b"\x01" + left + right).hexdigest()
 
 
 @pytest.mark.parametrize("size", [34, 63, 64, 65, 127, 128, 129, 257, 513])
@@ -234,8 +232,56 @@ def test_merkle_cross_language_golden() -> None:
         "c100f95c1913f9c72fc1f4ef0847e1e723ffe0bde0b36e5f36c13f81fe8c26ed",
         "879923da020d1533f4d8e921ea7bac61e8ba41d3c89d17a4d14e3a89c6780d5d",
     ]
-    root = "e54996d2325ce001b72a840528197951e1c9aa3d68c447d1db1529e4d266da43"
-    assert MerkleTree(digests).root == root
+    root = "e02d91683d90844e76246bb56a8bca1f3bda6139a70e7d4302918a0c9afed136"
+    tree = MerkleTree(digests)
+    assert tree.root == root
+    assert tree.proof(2).siblings == (
+        "ad9bbbd7d5560ceafd9174d44e78799a0cb5ad3cd7795d095b4656df27dd715a",
+    )
+
+
+@pytest.mark.parametrize("size", [3, 5, 7, 9, 17, 33])
+def test_repeated_trailing_leaf_changes_root(size: int) -> None:
+    digests = [hash_json(i) for i in range(size)]
+    assert MerkleTree(digests).root != MerkleTree([*digests, digests[-1]]).root
+
+
+@pytest.mark.parametrize(
+    ("size", "lengths"),
+    [(3, [2, 2, 1]), (5, [3, 3, 3, 3, 1]), (6, [3, 3, 3, 3, 2, 2])],
+)
+def test_promoted_nodes_have_no_synthetic_siblings(size: int, lengths: list[int]) -> None:
+    digests = [hash_json(i) for i in range(size)]
+    tree = MerkleTree(digests)
+    for index, length in enumerate(lengths):
+        proof = tree.proof(index)
+        assert len(proof.siblings) == length
+        assert verify_proof(digests[index], proof, tree.root)
+        assert not verify_proof(
+            digests[index], MerkleProof(index, size, proof.siblings[:-1]), tree.root
+        )
+        assert not verify_proof(
+            digests[index], MerkleProof(index, size, (*proof.siblings, "0" * 64)), tree.root
+        )
+
+
+def test_malformed_path_rejected_before_hashing(monkeypatch: pytest.MonkeyPatch) -> None:
+    def unexpected_hash(*args: object, **kwargs: object) -> None:
+        pytest.fail("Malformed path must be rejected before hashing")
+
+    monkeypatch.setattr(hashlib, "sha256", unexpected_hash)
+    # The third leaf in a three-leaf tree needs one sibling, not two.
+    assert not verify_proof("0" * 64, MerkleProof(2, 3, ("0" * 64, "0" * 64)), "0" * 64)
+
+
+def test_membership_proof_does_not_authenticate_supplied_batch_size() -> None:
+    digests = [hash_json(i) for i in range(3)]
+    tree = MerkleTree(digests)
+    proof = tree.proof(0)
+    # Opaque siblings do not expose their subtree sizes. Trust the anchor's batch
+    # metadata, not an inclusion proof alone, for an exact cardinality claim.
+    assert verify_proof(digests[0], proof, tree.root)
+    assert verify_proof(digests[0], MerkleProof(0, 4, proof.siblings), tree.root)
 
 
 def test_proof_anchor_round_trip() -> None:
