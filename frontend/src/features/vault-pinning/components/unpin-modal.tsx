@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
+import { SERVICE_LABELS } from "../services";
 import type { PinningService } from "../types";
 
 interface UnpinModalProps {
@@ -31,7 +32,7 @@ export function UnpinModal({
   const [choice, setChoice] = useState<"soft" | "hard">("soft");
   const [confirming, setConfirming] = useState(false);
 
-  const displayName = service === "nft.storage" ? "NFT.Storage" : service;
+  const displayName = SERVICE_LABELS[service];
 
   const handleConfirm = async () => {
     setConfirming(true);
