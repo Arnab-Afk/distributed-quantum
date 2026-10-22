@@ -8,9 +8,8 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
 [![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=next.js&logoColor=white)](https://nextjs.org/)
 [![Qiskit](https://img.shields.io/badge/Qiskit-1.x-6929C4?logo=ibm&logoColor=white)](https://qiskit.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/Winter-Soren/distributed-quantum-services?color=brightgreen)](https://github.com/Winter-Soren/distributed-quantum-services/commits/main)
-[![Hits](https://hits.sh/github.com/Winter-Soren/distributed-quantum-services.svg?label=visitors&color=6929C4)](https://hits.sh/github.com/Winter-Soren/distributed-quantum-services/)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](./LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/QMeshPy/distributed-quantum?color=brightgreen)](https://github.com/QMeshPy/distributed-quantum/commits/main)
 
 </div>
 
@@ -214,12 +213,13 @@ and external settlement failures remain demo limitations.
 ---
 
 ## What This Is
+## What this is
 
-A research platform with two connected tracks:
+A research platform that treats quantum operations as network services. A FastAPI coordinator discovers worker peers over py-libp2p (GossipSub), compiles OpenQASM circuits into distributed execution plans, routes fragments to workers over libp2p streams, and assembles results with Qiskit statevector simulation. A Next.js operator console shows the peer network, job lifecycle, and quantum analysis live.
 
-**Track 1 - Distributed Quantum Orchestration.** A coordinator node (FastAPI + py-libp2p) discovers worker nodes via GossipSub pubsub, compiles OpenQASM circuits into distributed execution plans, routes fragments to workers over libp2p streams, and assembles full quantum results using Qiskit statevector simulation. A Next.js operator console gives real-time visibility into the peer network, job lifecycle, and quantum analysis output.
+The same infrastructure powers a QAOA portfolio optimizer that benchmarks quantum against classical baselines.
 
-**Track 2 - QAOA Portfolio Optimization.** The same infrastructure drives a QAOA-based portfolio optimizer that runs rigorous empirical comparisons against classical baselines (Simulated Annealing) to characterize exactly where, and why, quantum computing gains a scaling advantage.
+[Watch the demo video](https://www.loom.com/share/8c5a546cb99a4a98996e738bf23c3e7a)
 
 ---
 
@@ -665,50 +665,53 @@ Algorand x402 is intentionally positioned at the service boundary. The payment l
 
 Persistence:  Postgres (event-sourced)  ·  MongoDB (projections)  ·  JSONL (peer log)
 ```
+> **Scope:** this is a proof-of-concept on simulators, not a quantum hardware stack. Auth is dev-mode only.
+
+### Applications
+
+| Application | What it does | Status |
+|---|---|---|
+| Circuit orchestration | Normalize OpenQASM, plan, and execute distributed fragments across worker peers | Available |
+| Financial modelling | QAOA portfolio benchmarks against classical optimization | Available |
+| Risk and options | Simulated VaR, CVaR, credit-risk, and option-pricing experiments | Available |
+| Molecular workflows | Drug-discovery research pipeline with simulated quantum stages | Experimental |
+
+### Architecture
+
+```
+  Next.js operator console  ──(BFF proxy, REST)──▶  FastAPI coordinator
+                                                          │
+                                           py-libp2p runtime (Trio)
+                                      Ed25519 host · GossipSub · stream RPC
+                                                          │
+                                       ┌──────────────────┼──────────────────┐
+                                  Worker peer        Worker peer        Worker peer
+
+  Persistence: Postgres (event-sourced) · MongoDB (projections) · JSONL (peer log)
+```
+
+### Headline result
+
+97% of QAOA runtime is classical COBYLA parameter search, not the quantum circuit, so adding quantum nodes yields at most 1.03x speedup (Amdahl's Law). The advantage shows up in scaling: classical wins at 10 to 20 assets, and QAOA wins from about 40 assets (3.2x faster at 40, 9.5x at 60). The full analysis is in the [research paper draft](https://github.com/QMeshPy/documentations/blob/main/research/RESEARCH_PAPER_DRAFT.md).
 
 ---
 
-## Key Research Finding
-
-**97% of quantum runtime is classical COBYLA parameter search** — not the quantum circuit.
-
-```
-Quantum runtime breakdown:
-  Parameter search (COBYLA):  ████████████████████████████████████  97%
-  Circuit execution:          █                                       2%
-  Overhead:                   ▌                                       1%
-```
-
-**Implication (Amdahl's Law):** adding more quantum nodes yields at most **1.03× speedup**. Quantum advantage comes from *scaling behavior*, not raw speed:
-
-| Portfolio Size | Classical (SA) | Quantum (QAOA) | Winner |
-|---|---|---|---|
-| 10 assets | **20 ms** | 1,500 ms | Classical 75× faster |
-| 20 assets | **600 ms** | 1,700 ms | Classical 2.8× faster |
-| 40 assets | 6,000 ms | **1,900 ms** | **Quantum 3.2× faster** |
-| 60 assets | 20,000 ms | **2,100 ms** | **Quantum 9.5× faster** |
-
----
-
-## Quick Start
-
-### Prerequisites
+## Quick start
 
 - Python 3.11+ with [uv](https://github.com/astral-sh/uv)
 - Node.js 22, Bun for the frontend, and npm for the isolated Toju payment worker
 - Docker (for full-stack deployment)
+**Prerequisites:** Python 3.11+ with [uv](https://github.com/astral-sh/uv), Node.js 20+, and Docker (full stack only).
 
-### Run the Backend
+**Backend** (http://localhost:8081, Swagger at `/docs`):
 
 ```bash
 cd backend
-make install     # uv sync --extra dev
-make run         # FastAPI on http://localhost:8081
+make install
+make run          # or `make run-clean` to reset runtime state
 ```
 
-Swagger docs at `http://localhost:8081/docs`. To restart with a clean runtime state: `make run-clean`.
-
-### Run the Frontend
+**Frontend** (http://localhost:3000):
 
 ```bash
 cd frontend
@@ -717,6 +720,11 @@ bun run dev      # Next.js on http://localhost:3000
 ```
 
 Create `frontend/.env`:
+npm install
+npm run dev
+```
+
+Create `frontend/.env.local` first:
 
 ```dotenv
 NEXT_PUBLIC_BACKEND_URL=http://localhost:8081
@@ -772,139 +780,92 @@ bun run start
 ```
 
 ### Full Stack with Docker
+**Full stack with Docker:**
 
 ```bash
-cp .env.example .env   # fill in Neon Postgres + Atlas MongoDB credentials
+cp .env.example .env     # add your Neon Postgres and Atlas MongoDB credentials
 docker compose up --build
 ```
 
-Frontend → `localhost:3000` · Backend API → `localhost:8081` · Swagger → `localhost:8081/docs`
-
 ---
+
+## Platform content node (Kubo)
+
+The Compose stack includes **Kubo v0.43.1**, pinned by release tag and multi-platform
+image digest. With current Docker Engine/Compose, start only the content node:
+
+```bash
+docker compose up -d --wait kubo
+docker compose exec kubo ipfs --api=/ip4/127.0.0.1/tcp/5001 diag healthy
+docker compose stop kubo
+```
+
+No provider credentials or backend startup are required. Compose may warn about
+unset variables for the existing backend, even when starting only Kubo. If port
+8080 is in use, run `KUBO_GATEWAY_PORT=18080 docker compose up -d --wait kubo`
+(or set that variable in `.env`). The gateway remains loopback-only.
+
+| Interface | Exposure |
+|---|---|
+| Swarm `4001/tcp` and `4001/udp` | Published for IPFS peers, separate from quantum-worker libp2p |
+| Gateway `8080/tcp` | `127.0.0.1:8080` only; read content at `/ipfs/<CID>` |
+| Admin RPC `5001/tcp` | **Not published** or proxied by Caddy; trusted Compose containers use `http://kubo:5001` |
+
+The named `kubo_data` volume persists `/data/ipfs` across container recreation.
+Stopping/removing a container does not remove it. Volume deletion permanently
+removes this node's data and identity; do not use `docker compose down --volumes`
+on a deployment unless you intend to delete **all** that project's named volumes.
+The backend has no Kubo health dependency: content failures must not block compute.
+
+`IPFS_PROFILE=server` applies **only when a new repository is initialized**. It
+turns off mDNS and NAT port mapping and filters private swarm addresses. The
+image sets `Addresses.API=/ip4/0.0.0.0/tcp/5001` and
+`Addresses.Gateway=/ip4/0.0.0.0/tcp/8080` **inside the container**. Host exposure is
+controlled by the mappings above. Existing repositories are not reconfigured;
+back up the volume and review migrations/configuration before changing versions.
+See the pinned [release](https://github.com/ipfs/kubo/releases/tag/v0.43.1),
+[profile/configuration reference](https://github.com/ipfs/kubo/blob/v0.43.1/docs/config.md#server-profile),
+[image entrypoint](https://github.com/ipfs/kubo/blob/v0.43.1/bin/container_daemon),
+and [healthcheck](https://github.com/ipfs/kubo/blob/v0.43.1/Dockerfile).
+
+Checks require Python 3.10+ (via uv) and Docker Compose with `up --wait` support:
+
+```bash
+uv run --no-project python -m unittest discover -s scripts -p test_kubo_compose.py -v
+uv run --no-project python scripts/smoke_kubo.py
+```
+
+The first command checks deployment configuration without starting containers.
+The optional live smoke test extracts only Kubo into a uniquely named temporary
+project, ignores project `.env` values, uses random host ports and runs **offline**.
+It checks health/profile, RPC host-binding absence, loopback gateway, matching
+add/cat bytes and CIDs, and retained content/pin after container recreation. It
+attempts to remove only its own container/network/volume, including on failure.
+If cleanup also fails, it reports the disposable project label without replacing
+the original error. Command failures identify the operation without dumping
+possibly sensitive output. It needs no backend dependencies or private data;
+its fixture is harmless public text.
+
+The normal service is **online**: IPFS is public content-addressed networking,
+not confidential storage. Never add private data expecting the CID to be secret.
+Unpublished RPC is not authentication: containers on `backend_network` and Docker
+administrators remain trusted. RPC authorization/hardening (#60), the Python
+client (#61), automatic uploads and production hosting are separate work.
 
 ## Documentation
 
-> **Apple-style navigation** — pick your goal, go directly there. No guessing needed.
+Long-form documentation lives in the **[QMeshPy/documentations](https://github.com/QMeshPy/documentations)** repository. Start with its [START_HERE](https://github.com/QMeshPy/documentations/blob/main/START_HERE.md) page.
 
-### 🎓 I'm a researcher or academic
-
-**→ Start here: [docs/research/RESEARCH_PAPER_DRAFT.md](docs/research/RESEARCH_PAPER_DRAFT.md)**
-
-~15,000 words · 9 sections · publication-ready draft. All experiments, benchmarks, and findings from bottleneck analysis through scaling characterization.
-
-Then read:
-- **[docs/research/MATHEMATICAL_APPENDIX.md](docs/research/MATHEMATICAL_APPENDIX.md)** — rigorous proofs: QUBO→Ising conversion, parameter-shift rule, Amdahl's Law, complexity comparisons
-- **[docs/research/QUANTUM_SCALING_STRATEGY.md](docs/research/QUANTUM_SCALING_STRATEGY.md)** — why we pivoted from speed to scaling, crossover predictions, success criteria
-- **[docs/research/ALTERNATIVE_QUANTUM_FINANCE_PROBLEMS.md](docs/research/ALTERNATIVE_QUANTUM_FINANCE_PROBLEMS.md)** — option pricing QAE (proven 100× speedup) as backup
-
----
-
-### 🔧 I'm a developer contributing to the platform
-
-**→ Start here: [CONTEXT.md](CONTEXT.md)**
-
-Deep contributor context — package layout, critical caveats (Trio/asyncio bridge, auth model, embedded dev swarm), and entry points for every type of change.
-
-Then read:
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — full system architecture: control/execution/data planes, every component, state machines, Mermaid diagrams
-- **[docs/design.md](docs/design.md)** — design rationale, cost model, failure model, protocol contracts
-- **[docs/requirements.md](docs/requirements.md)** — FR-001–FR-014 with implementation status
-
----
-
-### 🖥️ I want to understand the operator console (frontend)
-
-**→ Start here: [frontend/DESIGN.md](frontend/DESIGN.md)**
-
-The Clay design system — oklch colors, component patterns, shadcn/ui conventions used throughout the UI.
-
-Then read:
-- **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** §Frontend — BFF proxy pattern, Zustand stores, polling hooks
-- `/runs/new` — visual circuit builder with drag-and-drop gate palette + OpenQASM editor
-- `/runs/[id]` — full quantum analysis: Bloch spheres, fragment DAG, entanglement entropy, density matrices
-
----
-
-### 📊 I want to replicate or extend the benchmarks
-
-**→ Start here: [docs/technical/IMPLEMENTATION_NOTES.md](docs/technical/IMPLEMENTATION_NOTES.md)**
-
-Complete technical timeline from initial 600× slowdown through three optimization phases to the final scaling result.
-
-Then read:
-- **[docs/technical/BENCHMARK.md](docs/technical/BENCHMARK.md)** — original bottleneck discovery (77% → 97% parameter search)
-- **[docs/technical/GRADIENT_OPTIMIZATION_POSTMORTEM.md](docs/technical/GRADIENT_OPTIMIZATION_POSTMORTEM.md)** — honest analysis of why parameter-shift gradients made it 2–3× *slower*
-- **[docs/technical/QAOA_OPTIMIZATION_RESEARCH.md](docs/technical/QAOA_OPTIMIZATION_RESEARCH.md)** — literature survey of 10+ QAOA optimization papers (2024–2025)
-- `backend/scripts/` — benchmark scripts used to produce all results
-
----
-
-### 🚀 I want to deploy the platform
-
-**→ Start here: [DEPLOYMENT-MANUAL.md](DEPLOYMENT-MANUAL.md)**
-
-Full production runbook: frontend on Vercel, backend on AWS Lightsail, Neon Postgres, MongoDB Atlas, Caddy HTTPS. ~$40/month all-in.
-
-Then read:
-- **[docs/LIGHTSAIL-DEPLOYMENT.md](docs/LIGHTSAIL-DEPLOYMENT.md)** — Lightsail-specific setup with cost breakdown
-- **[.env.example](.env.example)** — all environment variables with descriptions
-
----
-
-### 💰 I want to understand the finance/quantum use case
-
-**→ Start here: [docs/FINANCIAL_MODELING_FOUNDATIONS.md](docs/FINANCIAL_MODELING_FOUNDATIONS.md)**
-
-What "financial modeling" actually means, Track A (corporate finance) vs Track B (quantum-finance optimization), and why portfolio optimization maps naturally to QAOA.
-
-Then read:
-- **[docs/research/RESEARCH_PAPER_DRAFT.md](docs/research/RESEARCH_PAPER_DRAFT.md)** §1 — the computational crisis in modern financial modeling
-- **[docs/research/ALTERNATIVE_QUANTUM_FINANCE_PROBLEMS.md](docs/research/ALTERNATIVE_QUANTUM_FINANCE_PROBLEMS.md)** — option pricing, credit risk, yield curves
-
----
-
-### 🗺️ I want the long-term product vision
-
-**→ Start here: [docs/FUTURE_ROADMAP.md](docs/FUTURE_ROADMAP.md)**
-
-Five-milestone evolution: SDK platform → open node network → autonomous research engine → torrent-native service swarm → self-healing distributed organism.
-
-Then read:
-- **[docs/future-roadmap/](docs/future-roadmap/)** — per-milestone detail docs (M1–M5)
-- **[docs/IPFS_INTEGRATION_STRATEGIC_VISION.md](docs/IPFS_INTEGRATION_STRATEGIC_VISION.md)** — VAULT: browser-native Helia nodes for peer-to-peer circuit sharing (Phase 1 planned)
-
----
-
-### ⚡ I'm new and want the fastest possible orientation
-
-**→ [docs/START_HERE.md](docs/START_HERE.md)** — the full documentation navigator in one page
-
----
-
-## Research: Optimization Phases
-
-| Phase | Approach | Result |
-|---|---|---|
-| **Baseline** | Default COBYLA (150 iters × 12 starts) | 10,000 ms · 77% parameter search |
-| **Phase 1** ✅ | Reduced iterations + parameter caching | 1,400 ms · 97% parameter search — Amdahl limit hit |
-| **Phase 2** ❌ | Parameter-shift gradients + L-BFGS-B | **2–3× slower** — 8× evaluation overhead dominated |
-| **Phase 3** ✅ | Focus on scaling N, not speed | Quantum wins at N ≥ 40 assets |
-
-Full paper: [docs/research/RESEARCH_PAPER_DRAFT.md](docs/research/RESEARCH_PAPER_DRAFT.md) · Failure analysis: [docs/technical/GRADIENT_OPTIMIZATION_POSTMORTEM.md](docs/technical/GRADIENT_OPTIMIZATION_POSTMORTEM.md)
-
----
-
-## Future Roadmap
-
-| Milestone | Theme |
+| I want to... | Read |
 |---|---|
-| **M1** | Production SDK & Platform |
-| **M2** | Bring Your Own Node Network |
-| **M3** | Autonomous Research & Drug Discovery Platform |
-| **M4** | Torrent-Native Service Network |
-| **M5** | Hydra Self-Healing Network |
-
-Details: [docs/FUTURE_ROADMAP.md](docs/FUTURE_ROADMAP.md)
+| Contribute code | [CONTEXT.md](CONTEXT.md) (in this repo), then [ARCHITECTURE](https://github.com/QMeshPy/documentations/blob/main/ARCHITECTURE.md) |
+| Understand the system design | [ARCHITECTURE](https://github.com/QMeshPy/documentations/blob/main/ARCHITECTURE.md), [design](https://github.com/QMeshPy/documentations/blob/main/design.md), [requirements](https://github.com/QMeshPy/documentations/blob/main/requirements.md) |
+| Work on the frontend | [frontend/DESIGN.md](frontend/DESIGN.md) (in this repo) |
+| Deploy it | [DEPLOYMENT-MANUAL.md](DEPLOYMENT-MANUAL.md) (in this repo), [Lightsail guide](https://github.com/QMeshPy/documentations/blob/main/LIGHTSAIL-DEPLOYMENT.md) |
+| Read the research | [Paper draft](https://github.com/QMeshPy/documentations/blob/main/research/RESEARCH_PAPER_DRAFT.md), [math appendix](https://github.com/QMeshPy/documentations/blob/main/research/MATHEMATICAL_APPENDIX.md), [scaling strategy](https://github.com/QMeshPy/documentations/blob/main/research/QUANTUM_SCALING_STRATEGY.md) |
+| Reproduce the benchmarks | [Implementation notes](https://github.com/QMeshPy/documentations/blob/main/technical/IMPLEMENTATION_NOTES.md), [benchmark results](https://github.com/QMeshPy/documentations/blob/main/technical/BENCHMARK.md), and the scripts in `backend/scripts/` |
+| Understand the finance use case | [Financial modeling foundations](https://github.com/QMeshPy/documentations/blob/main/FINANCIAL_MODELING_FOUNDATIONS.md) |
+| See where the project is going | [Future roadmap](https://github.com/QMeshPy/documentations/blob/main/FUTURE_ROADMAP.md) |
 
 ---
 
@@ -952,3 +913,7 @@ Details: [docs/FUTURE_ROADMAP.md](docs/FUTURE_ROADMAP.md)
 *Built with quantum circuits, debugged with patience, documented with care.*
 
 </div>
+1. Fork the repo and create a feature branch.
+2. Read [CONTEXT.md](CONTEXT.md). The Trio/asyncio bridge and event-sourced persistence have constraints that aren't obvious.
+3. Run `make lint && make test` in `backend/` and `npm run build` in `frontend/` before opening a PR.
+4. Keep changes surgical: match the existing style and don't refactor adjacent code.

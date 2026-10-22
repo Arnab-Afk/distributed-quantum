@@ -14,6 +14,10 @@ from quantum_backend_v2.application.financial_portfolio import (
     PortfolioOptimizationConfig,
     build_portfolio_optimization_artifacts,
 )
+from quantum_backend_v2.application.financial_comparison import (
+    build_financial_comparison_report,
+)
+from quantum_backend_v2.application.provenance import record_run_provenance
 from quantum_backend_v2.application.quantum_bridge import QuantumExecutionBridge
 from quantum_backend_v2.identity.models import UserTokenClaims
 from quantum_backend_v2.persistence.mongodb import (
@@ -184,6 +188,7 @@ class CircuitJobService:
                     "quantum_result": quantum_result,
                 },
             }
+            doc.output_snapshot["provenance_bundle_id"] = await record_run_provenance(doc)
             doc.updated_at = _utc_now()
             await doc.save()
 

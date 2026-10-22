@@ -174,6 +174,15 @@ def _to_job_status_response(
             job_id=run.id,
             fragment_results=list(result_payload.get("fragment_results", [])),
             quantum_result=quantum_result if isinstance(quantum_result, dict) else None,
+            status=run.status,
+            plan_id=run.artifact_bundle_id,
+            error=job_service.get_error(run),
+            result=result,
+            progress=_to_progress(job_service.build_progress(run)),
+            circuit_text=str(run.input_snapshot.get("circuit", "")),
+            provenance_bundle_id=run.output_snapshot.get("provenance_bundle_id"),
+            created_at=run.created_at,
+            updated_at=run.updated_at,
         )
 
     return JobStatusResponse(

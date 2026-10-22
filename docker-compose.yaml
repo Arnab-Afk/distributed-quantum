@@ -1,6 +1,30 @@
 # Production deployment configuration for AWS Lightsail
 # Frontend is hosted separately on Vercel
 services:
+  kubo:
+    image: ipfs/kubo:v0.43.1@sha256:b293923d66e490e70ced64df42ea7a6cf7eac2740e3fb29101df18070fa7be48
+    environment:
+      IPFS_PROFILE: server
+    volumes:
+      - kubo_data:/data/ipfs
+    ports:
+      - "4001:4001/tcp"
+      - "4001:4001/udp"
+      - target: 8080
+        published: "${KUBO_GATEWAY_PORT:-8080}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    # The image binds RPC on port 5001 inside the container; never publish it.
+    healthcheck:
+      test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "diag", "healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - backend_network
+
   backend:
     build:
       context: .
@@ -93,6 +117,8 @@ services:
       - backend_network
 
 volumes:
+  kubo_data:
+    driver: local
   backend_runtime:
     driver: local
   caddy_data:

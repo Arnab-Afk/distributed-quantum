@@ -51,6 +51,15 @@ from db.agentkit_collections import (
     _decimal_to_decimal128,
     _decimal128_to_decimal,
 )
+from quantum_backend_v2.payments.ledger import LedgerService
+from quantum_backend_v2.payments.models import PaymentPurpose, PaymentRail
+from services.payment_events import (
+    begin_payout,
+    chain_id_of,
+    confirm_quietly,
+    record_settled_quietly,
+    settle_failed_send,
+)
 
 
 def _utc_now() -> datetime:
@@ -106,6 +115,7 @@ class ProposalService:
         mongodb_database = os.getenv("QB2_MONGODB_DATABASE", "qds")
         self.mongo_client = AsyncIOMotorClient(mongodb_uri)
         self.db = self.mongo_client[mongodb_database]
+        self.ledger = LedgerService(self.db)
 
         # Load prompts directory path
         self.prompts_dir = os.path.join(
@@ -386,6 +396,19 @@ class ProposalService:
             )
 
             await self.db.payments.insert_one(payment_doc.model_dump())
+            await record_settled_quietly(
+                self.ledger,
+                idempotency_key=f"proposal_funding:{proposal_id}:{aave_result['transaction_hash']}",
+                rail=PaymentRail.ONCHAIN,
+                purpose=PaymentPurpose.PROPOSAL_FUNDING,
+                amount=amount,
+                chain_id=chain_id_of(agentkit_service),
+                payer_ref=funder_wallet,
+                payee_ref=aave_result.get("aave_pool_address"),
+                proposal_id=proposal_id,
+                external_ref=aave_result["transaction_hash"],
+                metadata={"funder_id": funder_id, "funder_type": funder_type},
+            )
 
             # Check if funding threshold reached
             fully_funded = new_budget_raised >= funding_threshold
@@ -876,16 +899,35 @@ class ProposalService:
             from services.agentkit_service import AgentKitService
             agentkit_service = self._agentkit_service or AgentKitService()
 
+            # One payout per fragment: refuses to pay again while an earlier
+            # attempt is pending, paid or uncertain
+            payout_key = await begin_payout(
+                self.ledger,
+                f"fragment_payout:{proposal_id}:{fragment_id}",
+                purpose=PaymentPurpose.WORKER_PAYOUT,
+                amount=fragment_budget,
+                chain_id=chain_id_of(agentkit_service),
+                payer_ref=proposal_doc["researcher_wallet"],
+                payee_ref=researcher_wallet,
+                proposal_id=proposal_id,
+                metadata={"fragment_id": fragment_id, "researcher_id": researcher_id},
+            )
+
             # Withdraw from Aave escrow
             logger.info(f"Withdrawing {fragment_budget} USDC from Aave escrow")
 
-            withdraw_result = await agentkit_service.aave_withdraw(
-                wallet_address=proposal_doc["researcher_wallet"],
-                amount=fragment_budget,
-                to=researcher_wallet
-            )
+            try:
+                withdraw_result = await agentkit_service.aave_withdraw(
+                    wallet_address=proposal_doc["researcher_wallet"],
+                    amount=fragment_budget,
+                    to=researcher_wallet
+                )
+            except Exception as withdraw_error:
+                await settle_failed_send(self.ledger, payout_key, withdraw_error)
+                raise
 
             logger.info(f"Payment released: {withdraw_result['transaction_hash']}")
+            await confirm_quietly(self.ledger, payout_key, withdraw_result["transaction_hash"])
 
             # Record payment
             payment_id = str(uuid.uuid4())
@@ -945,16 +987,33 @@ class ProposalService:
             from services.agentkit_service import AgentKitService
             agentkit_service = self._agentkit_service or AgentKitService()
 
+            # One full release per proposal
+            release_key = await begin_payout(
+                self.ledger,
+                f"escrow_release:{proposal_id}",
+                purpose=PaymentPurpose.ESCROW_RELEASE,
+                amount=total_raised,
+                chain_id=chain_id_of(agentkit_service),
+                payer_ref=proposal_doc["researcher_wallet"],
+                payee_ref=proposal_doc["researcher_wallet"],
+                proposal_id=proposal_id,
+            )
+
             # Withdraw all from Aave escrow
             logger.info(f"Withdrawing {total_raised} USDC from Aave escrow")
 
-            withdraw_result = await agentkit_service.aave_withdraw(
-                wallet_address=proposal_doc["researcher_wallet"],
-                amount=total_raised,
-                to=proposal_doc["researcher_wallet"]
-            )
+            try:
+                withdraw_result = await agentkit_service.aave_withdraw(
+                    wallet_address=proposal_doc["researcher_wallet"],
+                    amount=total_raised,
+                    to=proposal_doc["researcher_wallet"]
+                )
+            except Exception as withdraw_error:
+                await settle_failed_send(self.ledger, release_key, withdraw_error)
+                raise
 
             logger.info(f"Full escrow released: {withdraw_result['transaction_hash']}")
+            await confirm_quietly(self.ledger, release_key, withdraw_result["transaction_hash"])
 
             # Record payment
             payment_id = str(uuid.uuid4())

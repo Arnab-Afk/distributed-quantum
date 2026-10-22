@@ -2,6 +2,7 @@ export const API = {
   AUTH: {
     ALL: "/api/auth/*",
     CHECK_EMAIL: "/api/auth/check-email",
+    STRIPE_WEBHOOK: "/api/auth/stripe/webhook",
   },
   DASHBOARD: {
     ROOT: "/api/dashboard",
@@ -22,6 +23,8 @@ export const API = {
     OPTIONS_RUNS: "/api/x402/options/runs",
     OPTIONS_RUN: (jobId: string) =>
       `/api/x402/options/runs/${jobId}` as const,
+  PROVENANCE: {
+    VERIFY: (bundleId: string) => `/api/provenance/${encodeURIComponent(bundleId)}/verify` as const,
   },
   OPTIONS: {
     LIST: "/api/options",
