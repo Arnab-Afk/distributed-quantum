@@ -1,4 +1,5 @@
 import type { Helia } from "helia";
+import { getTrustlessGateways } from "./gateways";
 
 let heliaInstance: Helia | null = null;
 let initPromise: Promise<Helia> | null = null;
@@ -22,6 +23,8 @@ export async function getHelia(): Promise<Helia> {
     const { createHelia } = await import("helia");
     const { IDBBlockstore } = await import("blockstore-idb");
     const { IDBDatastore } = await import("datastore-idb");
+    const { trustlessGateway } = await import("@helia/block-brokers");
+    const { httpGatewayRouting } = await import("@helia/routers");
 
     console.log("[helia-init] modules loaded, opening IDB stores…");
 
@@ -45,12 +48,19 @@ export async function getHelia(): Promise<Helia> {
     });
     console.log("[helia-init] datastore open ✓");
 
-    console.log("[helia-init] creating Helia…");
-    // No explicit libp2p instance — Helia 6.x creates its own minimal internal
-    // node. This avoids the 'libp2p' package dependency and is sufficient for
-    // local CID generation and IDB storage without dialing external peers.
+    const gateways = getTrustlessGateways();
+    console.log("[helia-init] creating Helia with trustless gateways:", gateways);
+
+    // Trustless-gateway broker + HTTP gateway routing so CIDs pinned elsewhere
+    // resolve on a fresh browser without the sender's peers. Local IDB still
+    // caches verified blocks. (Gateways see the CID — see gateways.ts.)
     const helia = await withTimeout(
-      createHelia({ blockstore, datastore }),
+      createHelia({
+        blockstore,
+        datastore,
+        blockBrokers: [trustlessGateway()],
+        routers: [httpGatewayRouting({ gateways, shuffle: false })],
+      }),
       10_000,
       "createHelia()",
     );
