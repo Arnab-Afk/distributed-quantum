@@ -17,7 +17,7 @@ export function usePin() {
     type: "circuit" | "run",
     metadata: Record<string, unknown>,
     service: PinningService = "nft.storage",
-  ): Promise<void> => {
+  ): Promise<{ gatewayCid: string }> => {
     setPinning(true);
     setError(null);
 
@@ -25,8 +25,12 @@ export function usePin() {
 
     try {
       // Upload first so a failed upload is never recorded as pinned.
+      // Pinata/Lighthouse re-encode JSON and return a gateway-reachable CID
+      // that may differ from the local Helia CID — that gateway CID is what
+      // another browser must open on /vault/cid/[cid].
       const { getProvider } = await import("../services");
       const result = await getProvider(service).pin(cid, metadata);
+      const gatewayCid = result.cid || cid;
 
       const res = await fetch(API.VAULT.PIN, {
         method: "POST",
@@ -50,6 +54,8 @@ export function usePin() {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.vault.quota(service) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.vault.pinMetadata(cid) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.vault.pins() });
+
+      return { gatewayCid };
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       setError(e);
