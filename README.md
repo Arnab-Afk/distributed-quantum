@@ -185,7 +185,7 @@ The QMeshPy TestNet flow uses the Algorand USDC ASA:
 
 A complete setup and verification procedure is available in:
 
-**[docs/algorand-x402-runbook.md](docs/algorand-x402-runbook.md)**
+**[algorand-x402-runbook.md](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/algorand-x402-runbook.md)**
 
 The runbook covers receiver setup, TestNet funding, USDC opt-in, payer setup, environment variables, unpaid 402 verification, paid requests, and the MainNet transition.
 
@@ -458,7 +458,7 @@ Algorand x402 is intentionally positioned at the service boundary. The payment l
   https://lora.algokit.io/testnet/account/YFBKZ4PSSKSOJNHUGXOK3GOBO5J7R2GXR57FPQLYKUJOTLIAWB7S7JY724
 
 - **Complete x402 TestNet runbook:**  
-  [docs/algorand-x402-runbook.md](docs/algorand-x402-runbook.md)
+  [algorand-x402/algorand-x402-runbook.md](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/algorand-x402-runbook.md)
 
 ---
 
@@ -481,7 +481,7 @@ navigation bar to try the flow.
 | Toju API readiness | [Render health](https://toju-devcon-testnet.onrender.com/health) |
 | Toju API liveness | [Render liveness](https://toju-devcon-testnet.onrender.com/health/live) |
 | Full Toju server source | [Winter-Soren/afara, devcon/testnet](https://github.com/Winter-Soren/afara/tree/devcon/testnet), forked from the official Toju server |
-| Hosting instructions | [Full Render / Neon / QStash guide](docs/toju-render-testnet-guide.md) |
+| Hosting instructions | [Full Render / Neon / QStash guide](https://github.com/QMeshPy/documentations/blob/main/toju/toju-render-testnet-guide.md) |
 | Video demo | [Watch the Toju agent storage demo on Google Drive](https://drive.google.com/file/d/1PZ6MHxBd5_XOqMTGnrS6OEB_tGlL6uGX/view?usp=drive_link) |
 
 **QuantumNodes runs locally for this demo. Render hosts the separate full Toju
@@ -605,7 +605,7 @@ the client's matching policy; mismatched quotes fail closed.
 
 ### Host your own full Toju server on Render
 
-Follow the [complete hosting guide](docs/toju-render-testnet-guide.md), which
+Follow the [complete hosting guide](https://github.com/QMeshPy/documentations/blob/main/toju/toju-render-testnet-guide.md), which
 includes every environment variable, pricing initialization, migrations and
 signed QStash schedule. The reproduced installation uses Render Free, Neon Free
 and QStash Free; check your account's quotas before inviting additional users.
@@ -722,7 +722,7 @@ X402_GATEWAY_SECRET=<same 64-character secret>
 The hosted facilitator and default AlgoNode endpoints require no API key.
 MetaMask is not compatible with Algorand AVM payments. AWS Bedrock and
 Coinbase CDP keys configure the existing agent features, not this x402 route.
-See [the complete TestNet runbook](docs/algorand-x402-runbook.md) for unpaid
+See [the complete TestNet runbook](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/algorand-x402-runbook.md) for unpaid
 and paid verification commands and the MainNet switch.
 
 If `next dev` reports `EMFILE` on macOS, use the production server for the
@@ -810,6 +810,8 @@ client (#61), automatic uploads and production hosting are separate work.
 ## Documentation
 
 Long-form documentation lives in the **[QMeshPy/documentations](https://github.com/QMeshPy/documentations)** repository. Start with its [START_HERE](https://github.com/QMeshPy/documentations/blob/main/START_HERE.md) page.
+
+The repository is also checked out as a git submodule at [`documentations/`](documentations). After cloning, run `git submodule update --init` to fetch it; the submodule is a pointer to a specific commit, not a copy of the docs.
 
 | I want to... | Read |
 |---|---|
