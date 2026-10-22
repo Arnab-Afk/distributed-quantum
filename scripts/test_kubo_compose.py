@@ -69,7 +69,9 @@ class KuboComposeTests(unittest.TestCase):
     def test_rpc_is_not_published_or_host_networked(self) -> None:
         self.assertTrue(self.kubo)
         self.assertNotIn("network_mode", self.kubo)
-        self.assertIn("backend_network", self.kubo.get("networks", {}))
+        self.assertIn("content_network", self.kubo.get("networks", {}))
+        self.assertIn("content_network", self.model["services"]["backend"]["networks"])
+        self.assertNotIn("content_network", self.model["services"]["caddy"]["networks"])
         self.assertFalse(any(p["target"] == 5001 for p in self.kubo.get("ports", [])))
         self.assertNotIn("kubo:5001", (ROOT / "deploy/Caddyfile").read_text())
 
@@ -86,14 +88,22 @@ class KuboComposeTests(unittest.TestCase):
     def test_healthcheck_contacts_daemon_not_just_local_repo(self) -> None:
         self.assertEqual(
             self.kubo.get("healthcheck", {}).get("test"),
-            [
-                "CMD",
-                "ipfs",
-                "--api=/ip4/127.0.0.1/tcp/5001",
-                "diag",
-                "healthy",
-            ],
+            ["CMD-SHELL", "sh /opt/qmesh/kubo-rpc.sh diag healthy >/dev/null 2>&1"],
         )
+
+    def test_rpc_secret_is_available_only_to_trusted_services(self) -> None:
+        for name in ("backend", "kubo"):
+            self.assertEqual(
+                self.model["services"][name]["environment"]["KUBO_RPC_SECRET"],
+                "${KUBO_RPC_SECRET:-}",
+            )
+        self.assertNotIn("KUBO_RPC_SECRET", self.model["services"]["caddy"]["environment"])
+
+    def test_security_hooks_are_read_only_and_cannot_be_silently_missing(self) -> None:
+        binds = {m["target"]: m for m in self.kubo["volumes"] if m["type"] == "bind"}
+        for target in ("/container-init.d/010-security.sh", "/opt/qmesh/kubo-rpc.sh"):
+            self.assertTrue(binds[target]["read_only"])
+            self.assertFalse(binds[target]["bind"]["create_host_path"])
 
     def test_compute_does_not_depend_on_content_health(self) -> None:
         for service in ("backend", "caddy"):
@@ -131,7 +141,7 @@ class SmokeIsolationTests(unittest.TestCase):
                 "kubo": {"ports": [{"target": 8080, "published": "8080"}]},
             },
             "volumes": {"kubo_data": {"name": "existing-data"}},
-            "networks": {"backend_network": {"name": "existing-network"}},
+            "networks": {"content_network": {"name": "existing-network"}},
         }
 
         def fake_run(command: list[str], data: bytes | None = None) -> bytes:
@@ -140,11 +150,13 @@ class SmokeIsolationTests(unittest.TestCase):
                 self.assertIn("--no-interpolate", command)
                 return json.dumps(model).encode()
             if "up" in command:
-                manifest = json.loads(Path(command[command.index("-f") + 1]).read_text())
+                path = Path(command[command.index("-f") + 1])
+                manifest = json.loads(path.read_text())
                 self.assertEqual(list(manifest["services"]), ["kubo"])
+                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
                 self.assertNotIn("must-not-copy", json.dumps(manifest))
                 self.assertNotIn("name", manifest["volumes"]["kubo_data"])
-                self.assertNotIn("name", manifest["networks"]["backend_network"])
+                self.assertNotIn("name", manifest["networks"]["content_network"])
                 self.assertIn("--offline", manifest["services"]["kubo"]["command"])
                 self.assertNotIn("published", manifest["services"]["kubo"]["ports"][0])
                 raise subprocess.CalledProcessError(1, command)
@@ -163,6 +175,19 @@ class SmokeIsolationTests(unittest.TestCase):
 
 
 class SmokeFailureTests(unittest.TestCase):
+    def test_rpc_denial_is_not_confused_with_a_broken_daemon_or_success(self) -> None:
+        for code, message in ((1, b"connection refused"), (0, b"Kubo RPC Access Denied")):
+            result = subprocess.CompletedProcess(["probe"], code, b"", message)
+            with (
+                self.subTest(code=code),
+                patch.object(subprocess, "run", return_value=result),
+                self.assertRaisesRegex(RuntimeError, "Expected native RPC authorization denial"),
+            ):
+                smoke_kubo.require_rpc_denied(["probe"])
+        denied = subprocess.CompletedProcess(["probe"], 1, b"", b"Kubo RPC Access Denied")
+        with patch.object(subprocess, "run", return_value=denied):
+            smoke_kubo.require_rpc_denied(["probe"])
+
     def test_waits_for_missing_gateway_metadata(self) -> None:
         ready = {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}
         with (

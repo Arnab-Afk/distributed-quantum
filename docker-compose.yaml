@@ -5,8 +5,21 @@ services:
     image: ipfs/kubo:v0.43.1@sha256:b293923d66e490e70ced64df42ea7a6cf7eac2740e3fb29101df18070fa7be48
     environment:
       IPFS_PROFILE: server
+      KUBO_RPC_SECRET: "${KUBO_RPC_SECRET:-}"
     volumes:
       - kubo_data:/data/ipfs
+      - type: bind
+        source: ./deploy/kubo-init.sh
+        target: /container-init.d/010-security.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/kubo-rpc.sh
+        target: /opt/qmesh/kubo-rpc.sh
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       - "4001:4001/tcp"
       - "4001:4001/udp"
@@ -16,14 +29,14 @@ services:
         protocol: tcp
     # The image binds RPC on port 5001 inside the container; never publish it.
     healthcheck:
-      test: ["CMD", "ipfs", "--api=/ip4/127.0.0.1/tcp/5001", "diag", "healthy"]
+      test: ["CMD-SHELL", "sh /opt/qmesh/kubo-rpc.sh diag healthy >/dev/null 2>&1"]
       interval: 15s
       timeout: 5s
       retries: 5
       start_period: 20s
     restart: unless-stopped
     networks:
-      - backend_network
+      - content_network
 
   backend:
     build:
@@ -38,6 +51,7 @@ services:
       QB2_LOG_LEVEL: "${QB2_LOG_LEVEL:-INFO}"
       QB2_AUTH_REQUIRED: "${QB2_AUTH_REQUIRED:-true}"
       QB2_X402_GATEWAY_SECRET: "${QB2_X402_GATEWAY_SECRET}"
+      KUBO_RPC_SECRET: "${KUBO_RPC_SECRET:-}"
       QB2_MONGODB_TARGET: "${QB2_MONGODB_TARGET:-remote}"
       QB2_MONGODB_REMOTE_URI: "${QB2_MONGODB_REMOTE_URI}"
       QB2_MONGODB_DATABASE: "${QB2_MONGODB_DATABASE:-qds}"
@@ -93,6 +107,7 @@ services:
     # Only expose to Caddy, not to host network
     networks:
       - backend_network
+      - content_network
 
   caddy:
     image: caddy:2.10-alpine
@@ -128,4 +143,6 @@ volumes:
 
 networks:
   backend_network:
+    driver: bridge
+  content_network:
     driver: bridge
