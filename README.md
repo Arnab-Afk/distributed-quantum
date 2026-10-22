@@ -324,15 +324,20 @@ docker compose up --build
 ## Platform content node (Kubo)
 
 The Compose stack includes **Kubo v0.43.1**, pinned by release tag and multi-platform
-image digest. With current Docker Engine/Compose, start only the content node:
+image digest. **Before starting or upgrading**, set `KUBO_RPC_SECRET` privately in
+`.env`: a random 32–128 character token containing only letters, digits, `_` or `-`
+(for example, generate one with `openssl rand -hex 32`). Use the raw token, without
+`bearer:`. Protect `.env` with mode `0600`; never commit or paste its contents.
+Missing/invalid secrets prevent the Kubo daemon from starting, not backend compute.
+With current Docker Engine/Compose, start only the content node:
 
 ```bash
 docker compose up -d --wait kubo
-docker compose exec kubo ipfs --api=/ip4/127.0.0.1/tcp/5001 diag healthy
+docker compose exec kubo sh /opt/qmesh/kubo-rpc.sh diag healthy
 docker compose stop kubo
 ```
 
-No provider credentials or backend startup are required. Compose may warn about
+No wallet/provider credentials or backend startup are required. Compose may warn about
 unset variables for the existing backend, even when starting only Kubo. If port
 8080 is in use, run `KUBO_GATEWAY_PORT=18080 docker compose up -d --wait kubo`
 (or set that variable in `.env`). The gateway remains loopback-only.
@@ -340,8 +345,8 @@ unset variables for the existing backend, even when starting only Kubo. If port
 | Interface | Exposure |
 |---|---|
 | Swarm `4001/tcp` and `4001/udp` | Published for IPFS peers, separate from quantum-worker libp2p |
-| Gateway `8080/tcp` | `127.0.0.1:8080` only; read content at `/ipfs/<CID>` |
-| Admin RPC `5001/tcp` | **Not published** or proxied by Caddy; trusted Compose containers use `http://kubo:5001` |
+| Gateway `8080/tcp` | `127.0.0.1:8080` only; read locally stored content at `/ipfs/<CID>`; no writes |
+| RPC `5001/tcp` | **Not published** or proxied by Caddy; authenticated backend access at `http://kubo:5001` on `content_network` |
 
 The named `kubo_data` volume persists `/data/ipfs` across container recreation.
 Stopping/removing a container does not remove it. Volume deletion permanently
@@ -353,26 +358,68 @@ The backend has no Kubo health dependency: content failures must not block compu
 turns off mDNS and NAT port mapping and filters private swarm addresses. The
 image sets `Addresses.API=/ip4/0.0.0.0/tcp/5001` and
 `Addresses.Gateway=/ip4/0.0.0.0/tcp/8080` **inside the container**. Host exposure is
-controlled by the mappings above. Existing repositories are not reconfigured;
-back up the volume and review migrations/configuration before changing versions.
+controlled by the mappings above. The server profile does not retrofit existing
+repositories; back up the volume and review migrations before changing versions.
+The security hook below, unlike the profile, runs on **every container start**.
 See the pinned [release](https://github.com/ipfs/kubo/releases/tag/v0.43.1),
 [profile/configuration reference](https://github.com/ipfs/kubo/blob/v0.43.1/docs/config.md#server-profile),
 [image entrypoint](https://github.com/ipfs/kubo/blob/v0.43.1/bin/container_daemon),
 and [healthcheck](https://github.com/ipfs/kubo/blob/v0.43.1/Dockerfile).
 
+### RPC authorization and managed controls
+
+Compose mounts `deploy/kubo-init.sh` read-only into the official image's init
+hooks. It reapplies native `API.Authorizations` before the daemon starts, including
+on existing volumes. Missing hook files fail the mount rather than silently
+starting an unprotected node. The backend and Kubo share `KUBO_RPC_SECRET`;
+Caddy does not receive it or join their dedicated `content_network`.
+
+Clients send `Authorization: Bearer <raw token>`. The backend scope permits only
+`id`, `diag/healthy`, `add`, `cat`, `pin/add`, `pin/rm`, `pin/ls`, `dag/import`, and
+`block/stat`. Configuration, shutdown and other admin commands are denied even
+with that token. Native `/version` also requires authentication, but is implicitly
+allowed for valid tokens regardless of `AllowedPaths`. The healthcheck reads its
+token inside the container and suppresses command output.
+
+The hook also manages:
+
+- Local-only gateway fetching (`Gateway.NoFetch=true`), no DNSLink and no exposed
+  routing API. Kubo removed `Gateway.Writable` in v0.20: do not set that obsolete
+  key; the supported gateway is read-only.
+- Basic swarm connection-manager watermarks **32/96** (trimming targets, not a
+  hard connection count), resource management enabled with a **1024** networking
+  file-descriptor budget, and unused relay/AutoNAT server duties disabled.
+- Repository config permissions `0600`. `Swarm.ResourceMgr.MaxMemory` is left at
+  its default: it is not a process-memory cap. Production memory/disk sizing and
+  quotas need workload-specific tuning, separately from these swarm controls.
+
+These managed keys, including the entire `API.Authorizations` map, are overwritten
+on restart; do not rely on manual edits to them. To rotate the token, update the
+private `.env` then run `docker compose up -d --force-recreate kubo backend`.
+This briefly interrupts clients but retains content/pins/identity; the old token
+is revoked. Do not delete the volume or rerun `ipfs init` to rotate credentials.
+Docker administrators and repo readers remain trusted: the token is present in
+container environments and native config, and expanded Docker/Compose config or
+process inspection can reveal it. Never expose it through browser variables,
+logs or public proxies. See the pinned [native authorization implementation](https://github.com/ipfs/kubo/blob/v0.43.1/core/corehttp/commands.go#L176)
+and [resource-management guidance](https://github.com/ipfs/kubo/blob/v0.43.1/docs/production/low-memory.md).
+
 Checks require Python 3.10+ (via uv) and Docker Compose with `up --wait` support:
 
 ```bash
-uv run --no-project python -m unittest discover -s scripts -p test_kubo_compose.py -v
+uv run --no-project python -m unittest discover -s scripts -p 'test_kubo*.py' -v
 uv run --no-project python scripts/smoke_kubo.py
 ```
 
 The first command checks deployment configuration without starting containers.
 The optional live smoke test extracts only Kubo into a uniquely named temporary
 project, ignores project `.env` values, uses random host ports and runs **offline**.
-It checks health/profile, RPC host-binding absence, loopback gateway, matching
-add/cat bytes and CIDs, and retained content/pin after container recreation. It
-attempts to remove only its own container/network/volume, including on failure.
+It generates temporary test-only RPC credentials and checks health/profile,
+protected RPC denial (anonymous, wrong token, forbidden admin commands), successful
+authorized add/cat, loopback read-only gateway, matching bytes/CIDs, persistence,
+real token rotation/revocation, secret-free node/health logs and fail-closed startup
+without a secret. It inspects only its disposable config in memory, never prints
+it, and attempts to remove only its own containers/network/volume, including on failure.
 If cleanup also fails, it reports the disposable project label without replacing
 the original error. Command failures identify the operation without dumping
 possibly sensitive output. It needs no backend dependencies or private data;
@@ -380,9 +427,9 @@ its fixture is harmless public text.
 
 The normal service is **online**: IPFS is public content-addressed networking,
 not confidential storage. Never add private data expecting the CID to be secret.
-Unpublished RPC is not authentication: containers on `backend_network` and Docker
-administrators remain trusted. RPC authorization/hardening (#60), the Python
-client (#61), automatic uploads and production hosting are separate work.
+Native authentication adds defense beyond unpublished RPC; it does not make
+Docker administration or public IPFS content confidential. The Python client
+(#61), automatic uploads and production hosting are separate work.
 
 ## Documentation
 
