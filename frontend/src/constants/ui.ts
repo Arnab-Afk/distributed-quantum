@@ -105,4 +105,36 @@ export const UI = {
     DOCS: "Docs",
     SETTINGS: "Settings",
   },
+  VAULT_CID: {
+    TITLE: "Open a CID",
+    DESCRIPTION:
+      "Paste or follow a link to open shared vault content. Blocks are fetched via trustless gateways when not in this browser, then verified against the CID.",
+    PASTE_LABEL: "Content ID (CID)",
+    PASTE_PLACEHOLDER: "bafy… or baga…",
+    PASTE_REQUIRED: "Enter a CID",
+    OPEN_CTA: "Open",
+    EMPTY_HINT: "Paste a CID above, or open a shared /vault/cid/… link.",
+    LOADING: "Resolving CID…",
+    VERIFIED: "Verified against CID",
+    SOURCE_GATEWAY: "fetched via gateway",
+    SOURCE_LOCAL: "from local cache",
+    NO_DESCRIPTION: "No description",
+    sharedBy: (author: string) => `Shared by ${author}` as const,
+    PRIVACY_NOTE:
+      "Privacy: trustless gateways see the CID you request. Prefer a trusted or self-hosted gateway list for sensitive shares.",
+    ERR_INVALID_TITLE: "Invalid CID",
+    ERR_INVALID_BODY:
+      "That string is not a valid Content Identifier. Check for typos or missing characters.",
+    ERR_GATEWAY_TITLE: "Gateways unreachable",
+    ERR_GATEWAY_BODY:
+      "None of the configured trustless gateways returned this block. Confirm it is pinned and that NEXT_PUBLIC_IPFS_TRUSTLESS_GATEWAYS is reachable.",
+    ERR_MISMATCH_TITLE: "CID verification failed",
+    ERR_MISMATCH_BODY:
+      "A gateway returned bytes that do not hash to this CID. The block was discarded.",
+    ERR_SCHEMA_TITLE: "Unrecognized vault record",
+    ERR_SCHEMA_BODY:
+      "The block verified against the CID but is not a vault circuit or run record.",
+    ERR_HELIA_TITLE: "Vault starting",
+    ERR_UNKNOWN_TITLE: "Could not open CID",
+  },
 } as const;

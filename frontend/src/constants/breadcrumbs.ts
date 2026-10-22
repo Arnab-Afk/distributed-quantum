@@ -31,6 +31,7 @@ export const BREADCRUMB_LABELS: Record<string, string> = {
   observability: "Observability",
   audit: "Audit Logs",
   vault: "Vault",
+  cid: "Open CID",
   my: "My Vault",
   pharma: "Pharma",
   jobs: "Jobs",

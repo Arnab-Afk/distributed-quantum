@@ -148,6 +148,7 @@ export const NAV_CONFIG: RailItem[] = [
           links: [
             { label: "Circuit Library", href: "/vault/circuits" },
             { label: "Shared Runs", href: "/vault/runs" },
+            { label: "Open CID", href: "/vault/cid" },
           ],
         },
         {
