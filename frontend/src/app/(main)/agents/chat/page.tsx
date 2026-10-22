@@ -23,6 +23,9 @@ import {
   type ChatMessage,
 } from "@/features/agentkit/hooks/use-chat-sessions";
 
+import { useStorageExports, type StorageExport } from "@/features/agentkit/hooks/use-storage-exports";
+import { StorageExports } from "@/features/agentkit/components/storage-exports";
+
 const STARTERS: {
   label: string; prompt: string; icon: LucideIcon; iconClass: string; hoverGradient: string;
 }[] = [
@@ -54,6 +57,14 @@ function AgentsChatInner() {
   const createAgent = useCreateAgent();
   const { createSession, appendMessage, loadSession } = useChatSessions();
 
+  const activateSession = (id: string) => {
+    setActiveSessionId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("new");
+    url.searchParams.set("sessionId", id);
+    window.history.replaceState(null, "", url);
+  };
+
   // Auto-create agent if user has none
   useEffect(() => {
     if (!agentsLoading && agents.length === 0 && !createAgent.isPending && !createAgent.isSuccess) {
@@ -72,7 +83,7 @@ function AgentsChatInner() {
 
   // Restore an existing session when navigating from history
   useEffect(() => {
-    if (!urlSessionId) return;
+    if (!urlSessionId || urlSessionId === activeSessionId) return;
     loadSession(urlSessionId).then((session) => {
       if (!session) return;
       setActiveSessionId(session.id);
@@ -89,7 +100,7 @@ function AgentsChatInner() {
       ? (agents.find((a) => a.agent_id === urlAgentId) ?? agents[0])
       : agents[0];
     createSession(`Chat with ${urlAgentName}`, activeAgent?.agent_id ?? "").then((session) => {
-      setActiveSessionId(session.id);
+      activateSession(session.id);
       const caps = urlCapabilities.length > 0
         ? `My expertise includes: **${urlCapabilities.join(", ")}**.`
         : "";
@@ -114,6 +125,8 @@ function AgentsChatInner() {
     ? (agents.find((a) => a.agent_id === urlAgentId) ?? agents[0])
     : agents[0];
 
+  const storage = useStorageExports(activeAgent?.agent_id, activeSessionId);
+
   const pushMessage = useCallback((msg: ChatMessage, sessionId: string) => {
     setMessages((prev) => [...prev, msg]);
     appendMessage(sessionId, msg);
@@ -124,15 +137,30 @@ function AgentsChatInner() {
       .filter((m) => m.content.trim())
       .map((m) => ({ role: m.role === "agent" ? "assistant" : "user", content: m.content }));
 
+  const decideStorage = async (proposal: StorageExport, action: "approve" | "cancel" | "reconcile") => {
+    try {
+      const result = await storage.decision.mutateAsync({ proposal, action });
+      if (activeSessionId) pushMessage({ role: "agent", content: result.status === "stored" ? "Your export is stored on Toju. The testnet payment and retrieved content hash are verified below." : result.status === "cancelled" ? "Export cancelled. Nothing was uploaded or paid." : result.error ?? `Export status: ${result.status}.` }, activeSessionId);
+    } catch { /* The approval card shows the mutation error. */ }
+  };
+
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
+    storage.decision.reset();
 
+    const pending = storage.data?.find(p => p.status === "pending");
+    if (pending && activeSessionId && /^(yes|yes please|approve|store it)[.!]?$/i.test(text.trim())) {
+      pushMessage({ role: "user", content: text }, activeSessionId);
+      setInput("");
+      await decideStorage(pending, "approve");
+      return;
+    }
     let sessionId = activeSessionId;
     if (!sessionId) {
       const agentId = activeAgent?.agent_id ?? "";
       const session = await createSession(text, agentId);
       sessionId = session.id;
-      setActiveSessionId(session.id);
+      activateSession(session.id);
     }
 
     pushMessage({ role: "user", content: text }, sessionId);
@@ -151,14 +179,16 @@ function AgentsChatInner() {
       const res = await fetch(`/api/agentkit/agents/${agentId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: historyMsgs }),
+        body: JSON.stringify({ message: text, history: historyMsgs, session_id: sessionId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? data.error ?? "AI request failed");
+      if (!res.ok) throw new Error(data.message ?? data.detail ?? data.error ?? "AI request failed");
       pushMessage({ role: "agent", content: data.reply as string }, sessionId);
+      await storage.refresh(sessionId);
     } catch (err) {
       pushMessage({ role: "agent", content: `Error: ${err instanceof Error ? err.message : "Unknown error"}` }, sessionId!);
     } finally {
+      await storage.refresh(sessionId);
       setLoading(false);
     }
   };
@@ -251,6 +281,7 @@ function AgentsChatInner() {
                       <div className="rounded-2xl px-4 py-3 ring-1 ring-white/6" style={{ background: "rgba(255,255,255,0.05)" }}>
                         <RichMessageRenderer content={msg.content} richContent={msg.richContent} />
                       </div>
+                      <StorageExports items={(storage.data ?? []).filter(item => item.message_index === i)} busy={storage.decision.isPending} decide={decideStorage} />
                     </motion.div>
                   )
                 )}
@@ -275,7 +306,8 @@ function AgentsChatInner() {
                     </div>
                   </motion.div>
                 )}
-                <div ref={bottomRef} />
+                <StorageExports items={(storage.data ?? []).filter(item => item.message_index == null || item.message_index >= messages.length)} busy={storage.decision.isPending} error={(storage.decision.error ?? storage.error)?.message} decide={decideStorage} />
+            <div ref={bottomRef} />
               </div>
             )}
           </AnimatePresence>

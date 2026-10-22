@@ -15,6 +15,12 @@ token.  This mode must **never** be enabled in production.
 from __future__ import annotations
 
 import logging
+import base64
+import hashlib
+import hmac
+import json
+import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
@@ -88,18 +94,42 @@ async def _resolve_user_claims(
 ) -> UserTokenClaims | None:
     """Extract and validate user claims from the Authorization header.
 
-    When ``QB2_AUTH_REQUIRED=false`` this always returns the dev bypass user
-    regardless of the Authorization header.
+    Signed frontend identities are validated even in local development.
+    Requests without a signed identity may use the configured dev bypass.
 
     Returns None when no token is present (unauthenticated request).
     Raises 401 for malformed or invalid tokens.
 
     Note: swap the body of this function for real JWT verification in production.
     """
+    token = _parse_bearer_token(authorization)
+    if token and token.startswith("qn1."):
+        try:
+            _, body, signature = token.split(".")
+            secret = os.getenv("AGENT_AUTH_BRIDGE_SECRET", "")
+            if len(secret) < 32 or len(body) > 4096:
+                raise ValueError("Bridge unavailable")
+            expected = hmac.new(secret.encode(), body.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(expected, signature):
+                raise ValueError("Invalid signature")
+            data = json.loads(base64.urlsafe_b64decode(body + "=" * (-len(body) % 4)))
+            now = time.time()
+            if (data["aud"] != "quantumnodes-agentkit"
+                    or not isinstance(data["iat"], int) or not isinstance(data["exp"], int)
+                    or not now - 120 <= data["iat"] <= now + 5
+                    or not now < data["exp"] <= data["iat"] + 120):
+                raise ValueError("Expired assertion")
+            return UserTokenClaims(
+                user_id=data["sub"], external_subject=f"betterauth|{data['sub']}",
+                email=data["email"], roles=frozenset({UserRole.DEVELOPER}), org_ids=frozenset(),
+                issued_at=datetime.fromtimestamp(data["iat"], timezone.utc),
+                expires_at=datetime.fromtimestamp(data["exp"], timezone.utc),
+            )
+        except (ValueError, KeyError, TypeError):
+            raise PlatformException(status_code=401, error=ErrorCode.UNAUTHORIZED,
+                                    message="Invalid or expired session assertion.") from None
     if not _auth_required:
         return _dev_bypass_user()
-
-    token = _parse_bearer_token(authorization)
     if token is None:
         return None
 
@@ -135,7 +165,7 @@ async def require_authenticated(
     When auth is disabled (``QB2_AUTH_REQUIRED=false``) this always succeeds
     and returns the dev bypass user.
     """
-    if not _auth_required:
+    if not _auth_required and claims is None:
         return _dev_bypass_user()
     if claims is None:
         raise PlatformException(

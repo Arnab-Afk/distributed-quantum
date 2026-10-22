@@ -15,6 +15,15 @@ export const API = {
     DETAIL: (id: string) => `/api/runs/${id}` as const,
     PLAN: (planId: string) => `/api/runs/plan/${planId}` as const,
   },
+  X402: {
+    ROOT: "/api/x402",
+    QUANTUM_RUNS: "/api/x402/quantum/runs",
+    QUANTUM_RUN: (jobId: string) =>
+      `/api/x402/quantum/runs/${jobId}` as const,
+    OPTIONS_RUNS: "/api/x402/options/runs",
+    OPTIONS_RUN: (jobId: string) =>
+      `/api/x402/options/runs/${jobId}` as const,
+  },
   PROVENANCE: {
     VERIFY: (bundleId: string) => `/api/provenance/${encodeURIComponent(bundleId)}/verify` as const,
   },

@@ -1,0 +1,16 @@
+{
+  "name": "quantumnodes-toju-client",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs"
+  },
+  "engines": {
+    "node": ">=22 <23"
+  },
+  "dependencies": {
+    "@x402/core": "2.23.0",
+    "@x402/evm": "2.23.0",
+    "viem": "2.57.4"
+  }
+}

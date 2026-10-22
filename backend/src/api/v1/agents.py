@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field, ConfigDict
@@ -702,6 +702,7 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(description="Latest user message")
     history: list[ChatMessageIn] = Field(default_factory=list, description="Prior turns (oldest first)")
+    session_id: str | None = None
 
 
 class ChatResponse(BaseModel):
@@ -714,7 +715,7 @@ class ChatResponse(BaseModel):
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
     summary="Chat with an AI agent",
-    description="Send a free-form message to an agent backed by Claude 3.5 Sonnet via AWS Bedrock.",
+    description="Send a free-form message to an agent backed by Groq.",
 )
 async def chat_with_agent(
     agent_id: str,
@@ -747,11 +748,14 @@ async def chat_with_agent(
             message=body.message,
             history=[{"role": m.role, "content": m.content} for m in body.history],
             owner_id=current_user.user_id,
+            session_id=body.session_id if current_user.external_subject.startswith("betterauth|") else None,
         )
         return ChatResponse(reply=reply)
 
     except PlatformException:
         raise
+    except ValueError as e:
+        raise PlatformException(status_code=503, error=ErrorCode.INTERNAL_ERROR, message=str(e))
     except Exception as e:
         logger.error(f"Chat failed for agent {agent_id}: {e}")
         raise PlatformException(
@@ -760,3 +764,34 @@ async def chat_with_agent(
             message="Chat request failed",
         )
 
+
+
+class ExportDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str
+    decision: Literal["approve", "cancel", "reconcile"]
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def export_service(current_user):
+    if not current_user.external_subject.startswith("betterauth|"):
+        raise PlatformException(status_code=401, error=ErrorCode.UNAUTHORIZED,
+                                message="Sign in to approve public storage exports.")
+    from services.toju_storage import TojuStorage
+    return TojuStorage(ai_agent_service.db)
+
+
+@router.get("/{agent_id}/exports")
+async def list_storage_exports(agent_id: str, session_id: str, current_user: CurrentUser):
+    try:
+        return await export_service(current_user).list(current_user.user_id, agent_id, session_id)
+    except ValueError as exc:
+        raise PlatformException(status_code=400, error=ErrorCode.VALIDATION_ERROR, message=str(exc)) from None
+
+
+@router.post("/{agent_id}/exports/{proposal_id}")
+async def decide_storage_export(agent_id: str, proposal_id: str, body: ExportDecision, current_user: CurrentUser):
+    try:
+        return await export_service(current_user).decide(current_user.user_id, agent_id, body.session_id, proposal_id, body.decision, body.sha256)
+    except ValueError as exc:
+        raise PlatformException(status_code=400, error=ErrorCode.VALIDATION_ERROR, message=str(exc)) from None

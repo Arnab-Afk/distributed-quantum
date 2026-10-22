@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # AgentKit imports (coinbase-agentkit)
 try:
     from cdp import CdpClient
-    from coinbase_agentkit import AgentKit, AgentKitConfig
+    # Wallet providers only; do not register AgentKit's automatic x402 actions.
     from coinbase_agentkit.wallet_providers import CdpEvmWalletProvider, CdpEvmWalletProviderConfig
     from web3 import Web3
     from motor.motor_asyncio import AsyncIOMotorClient
@@ -40,8 +40,6 @@ except ImportError as e:
     # Fallback for development without SDK installed
     logger.warning(f"AgentKit SDK not fully available: {e}")
     CdpClient = Any
-    AgentKit = Any
-    AgentKitConfig = Any
     CdpEvmWalletProvider = Any
     CdpEvmWalletProviderConfig = Any
     Web3 = Any
