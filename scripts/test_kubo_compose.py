@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import subprocess
+import sys
 import unittest
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest.mock import patch
+
+import smoke_kubo
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -92,6 +98,143 @@ class KuboComposeTests(unittest.TestCase):
     def test_compute_does_not_depend_on_content_health(self) -> None:
         for service in ("backend", "caddy"):
             self.assertNotIn("kubo", self.model["services"][service].get("depends_on", {}))
+
+
+class SmokeIsolationTests(unittest.TestCase):
+    def test_single_and_duplicate_loopback_bindings_are_safe(self) -> None:
+        binding = {"HostIp": "127.0.0.1", "HostPort": "18080"}
+        for bindings in ([binding], [binding, binding]):
+            with self.subTest(bindings=bindings):
+                self.assertEqual(smoke_kubo.gateway_port(bindings), "18080")
+
+    def test_missing_public_or_malformed_gateway_bindings_are_rejected(self) -> None:
+        safe = {"HostIp": "127.0.0.1", "HostPort": "18080"}
+        cases: tuple[object, ...] = (
+            None,
+            [],
+            [{}],
+            [{"HostIp": "0.0.0.0", "HostPort": "18080"}],
+            [safe, {"HostIp": "::", "HostPort": "18080"}],
+            [{"HostIp": "127.0.0.1", "HostPort": "0"}],
+            [{"HostIp": "127.0.0.1", "HostPort": "65536"}],
+            [{"HostIp": "127.0.0.1", "HostPort": "invalid"}],
+        )
+        for bindings in cases:
+            with self.subTest(bindings=bindings), self.assertRaisesRegex(RuntimeError, "observed"):
+                smoke_kubo.gateway_port(bindings)
+
+    def test_failed_start_cleans_only_disposable_resources(self) -> None:
+        commands: list[list[str]] = []
+        model = {
+            "services": {
+                "backend": {"environment": {"FIXTURE_SECRET": "must-not-copy"}},
+                "kubo": {"ports": [{"target": 8080, "published": "8080"}]},
+            },
+            "volumes": {"kubo_data": {"name": "existing-data"}},
+            "networks": {"backend_network": {"name": "existing-network"}},
+        }
+
+        def fake_run(command: list[str], data: bytes | None = None) -> bytes:
+            commands.append(command)
+            if "config" in command:
+                self.assertIn("--no-interpolate", command)
+                return json.dumps(model).encode()
+            if "up" in command:
+                manifest = json.loads(Path(command[command.index("-f") + 1]).read_text())
+                self.assertEqual(list(manifest["services"]), ["kubo"])
+                self.assertNotIn("must-not-copy", json.dumps(manifest))
+                self.assertNotIn("name", manifest["volumes"]["kubo_data"])
+                self.assertNotIn("name", manifest["networks"]["backend_network"])
+                self.assertIn("--offline", manifest["services"]["kubo"]["command"])
+                self.assertNotIn("published", manifest["services"]["kubo"]["ports"][0])
+                raise subprocess.CalledProcessError(1, command)
+            return b""
+
+        with (
+            patch.object(sys, "argv", ["smoke_kubo.py"]),
+            patch.object(smoke_kubo, "run", side_effect=fake_run),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaises(subprocess.CalledProcessError),
+        ):
+            smoke_kubo.main()
+        cleanup = commands[-1]
+        self.assertEqual(cleanup[-3:], ["down", "--volumes", "--remove-orphans"])
+        self.assertTrue(cleanup[cleanup.index("-p") + 1].startswith("qmesh-kubo-smoke-"))
+
+
+class SmokeFailureTests(unittest.TestCase):
+    def test_waits_for_missing_gateway_metadata(self) -> None:
+        ready = {"8080/tcp": [{"HostIp": "127.0.0.1", "HostPort": "18080"}]}
+        with (
+            patch.object(
+                smoke_kubo, "run", side_effect=[b'{"8080/tcp": []}', json.dumps(ready).encode()]
+            ),
+            patch("smoke_kubo.time.sleep") as sleep,
+        ):
+            self.assertEqual(smoke_kubo.published_gateway("fixture-container"), "18080")
+        sleep.assert_called_once_with(0.25)
+
+    def test_unsafe_gateway_binding_is_never_retried(self) -> None:
+        unsafe = {"8080/tcp": [{"HostIp": "0.0.0.0", "HostPort": "18080"}]}
+        with (
+            patch.object(smoke_kubo, "run", return_value=json.dumps(unsafe).encode()),
+            patch("smoke_kubo.time.sleep") as sleep,
+            self.assertRaisesRegex(RuntimeError, "observed"),
+        ):
+            smoke_kubo.published_gateway("fixture-container")
+        sleep.assert_not_called()
+
+    def test_missing_gateway_metadata_times_out(self) -> None:
+        with (
+            patch.object(smoke_kubo, "run", return_value=b'{"8080/tcp": []}'),
+            patch("smoke_kubo.time.monotonic", side_effect=[0, 11]),
+            self.assertRaisesRegex(RuntimeError, r"observed: \[\]"),
+        ):
+            smoke_kubo.published_gateway("fixture-container")
+
+    def test_published_rpc_is_rejected_before_waiting(self) -> None:
+        with (
+            patch.object(smoke_kubo, "run", return_value=b'{"5001/tcp": [{}]}'),
+            self.assertRaisesRegex(RuntimeError, "RPC port must not"),
+        ):
+            smoke_kubo.published_gateway("fixture-container")
+
+    def test_command_error_is_actionable_without_leaking_output(self) -> None:
+        command = ["docker", "compose", "-p", "fixture", "up", "-d", "kubo"]
+        error = subprocess.CalledProcessError(
+            7,
+            command,
+            output=b"fixture-secret",
+            stderr=b"fixture-secret",
+        )
+        with patch.object(subprocess, "run", side_effect=error):
+            with self.assertRaisesRegex(
+                RuntimeError, r"docker compose up failed \(exit 7\)"
+            ) as caught:
+                smoke_kubo.run(command)
+        self.assertNotIn("fixture-secret", str(caught.exception))
+        self.assertTrue(caught.exception.__suppress_context__)
+
+    def test_command_timeout_identifies_the_operation(self) -> None:
+        command = ["docker", "compose", "exec", "-T", "kubo", "ipfs", "cat", "fixture"]
+        with patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired(command, 120)):
+            with self.assertRaisesRegex(RuntimeError, "docker compose exec timed out after 120"):
+                smoke_kubo.run(command)
+
+    def test_cleanup_failure_does_not_replace_primary_error(self) -> None:
+        output = io.StringIO()
+        with patch.object(smoke_kubo, "run", side_effect=RuntimeError("cleanup failure")):
+            with contextlib.redirect_stderr(output), self.assertRaisesRegex(ValueError, "primary"):
+                try:
+                    raise ValueError("primary")
+                finally:
+                    smoke_kubo.cleanup(["docker", "compose"], "fixture-project", True)
+        self.assertIn("com.docker.compose.project=fixture-project", output.getvalue())
+
+    def test_cleanup_failure_alone_fails_the_smoke(self) -> None:
+        with patch.object(smoke_kubo, "run", side_effect=RuntimeError("cleanup failure")):
+            with self.assertRaisesRegex(RuntimeError, "cleanup failure"):
+                smoke_kubo.cleanup(["docker", "compose"], "fixture-project", False)
 
 
 if __name__ == "__main__":
