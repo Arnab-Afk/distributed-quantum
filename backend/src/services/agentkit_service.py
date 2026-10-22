@@ -55,6 +55,9 @@ from db.agentkit_collections import (
     _decimal128_to_decimal,
 )
 from utils.basescan import validate_address
+from quantum_backend_v2.payments.ledger import LedgerService
+from quantum_backend_v2.payments.models import PaymentPurpose, PaymentRail
+from services.payment_events import confirm_quietly, settle_failed_send
 
 
 class AgentKitService:
@@ -107,8 +110,16 @@ class AgentKitService:
         mongodb_database = os.getenv("QB2_MONGODB_DATABASE", "qds")
         self.mongo_client = AsyncIOMotorClient(mongodb_uri)
         self.db = self.mongo_client[mongodb_database]
+        self._ledger: Optional[LedgerService] = None
 
         logger.info("AgentKitService configured for %s", self.chain.chain_id)
+
+    @property
+    def ledger(self) -> LedgerService:
+        # Built on first use so constructing the service touches no collections
+        if self._ledger is None:
+            self._ledger = LedgerService(self.db)
+        return self._ledger
 
     @property
     def chain(self) -> ChainSpec:
@@ -450,10 +461,36 @@ class AgentKitService:
                 "nonce": web3.eth.get_transaction_count(Web3.to_checksum_address(from_address)),
             })
 
+            # Record the payment before sending so an interrupted send is
+            # reconciled instead of silently retried
+            payment_key = (metadata or {}).get("idempotency_key") or f"transfer:{uuid.uuid4()}"
+            recorded = await self.ledger.record_event(
+                idempotency_key=payment_key,
+                rail=PaymentRail.ONCHAIN,
+                purpose=PaymentPurpose.TRANSFER,
+                amount=amount,
+                chain_id=self.chain.chain_id,
+                payer_ref=from_address,
+                payee_ref=to_address,
+                job_id=metadata.get("job_id") if metadata else None,
+                proposal_id=metadata.get("proposal_id") if metadata else None,
+                metadata={"payment_type": metadata.get("type", "other") if metadata else "other"},
+            )
+            if not recorded.created:
+                raise ValueError(
+                    f"Payment {payment_key} was already attempted "
+                    f"(status: {recorded.event.status.value})"
+                )
+
             # Send transaction via CDP wallet provider
-            tx_hash = wallet_provider.send_transaction(tx_data)
+            try:
+                tx_hash = wallet_provider.send_transaction(tx_data)
+            except Exception as send_error:
+                await settle_failed_send(self.ledger, payment_key, send_error)
+                raise
 
             logger.info(f"USDC transfer transaction sent: {tx_hash}")
+            await confirm_quietly(self.ledger, payment_key, tx_hash)
 
             # Generate Basescan URL
             basescan_url = self.explorer.explorer_url("transaction", tx_hash)

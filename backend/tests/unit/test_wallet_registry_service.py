@@ -59,7 +59,24 @@ def wallet_boundary(monkeypatch):
 
     monkeypatch.setattr(module, "WalletDocument", document)
     monkeypatch.setattr(module, "PaymentDocument", document)
-    return SimpleNamespace(db=database, motor=motor, web3=web3, provider=provider)
+
+    ledger_calls: list[tuple] = []
+
+    class RecordingLedger:
+        def __init__(self, _database) -> None:
+            pass
+
+        async def record_event(self, **fields):
+            ledger_calls.append(("record", fields))
+            return SimpleNamespace(created=True, event=None)
+
+        async def confirm(self, key, *, external_ref=None):
+            ledger_calls.append(("confirm", key, external_ref))
+
+    monkeypatch.setattr(module, "LedgerService", RecordingLedger)
+    return SimpleNamespace(
+        db=database, motor=motor, web3=web3, provider=provider, ledger_calls=ledger_calls
+    )
 
 
 @pytest.mark.parametrize("network", [None, "base-sepolia", "eip155:84532"])
@@ -174,6 +191,11 @@ async def test_existing_base_transactions_use_registry_and_record_submission(
     record = wallet_boundary.db.payments.insert_one.call_args.args[0]
     assert record["transaction_hash"] == TX_HASH
     assert record["amount"].to_decimal() == Decimal("1.25")
+    if operation == "transfer_usdc":
+        (_, event), confirmation = wallet_boundary.ledger_calls
+        assert event["amount"] == Decimal("1.25")
+        assert event["chain_id"] == "eip155:84532"
+        assert confirmation == ("confirm", event["idempotency_key"], TX_HASH)
     contract_calls = wallet_boundary.web3.return_value.eth.contract.call_args_list
     allowed = {service.usdc_address, service.aave_pool_address}
     assert all(call.kwargs["address"] in allowed for call in contract_calls)

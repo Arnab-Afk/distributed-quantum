@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import os
 import time
 from contextlib import asynccontextmanager
@@ -22,6 +24,7 @@ from quantum_backend_v2.api.routers.circuits import build_circuits_router
 from quantum_backend_v2.api.routers.enrollment import build_enrollment_router
 from quantum_backend_v2.api.routers.financial import build_financial_router
 from quantum_backend_v2.api.routers.options import build_options_router
+from quantum_backend_v2.api.routers.payments_admin import build_payments_admin_router
 from quantum_backend_v2.api.routers.risk import build_risk_router
 from quantum_backend_v2.api.routers.plans import build_plans_router
 from quantum_backend_v2.api.routers.provenance import build_provenance_router
@@ -43,10 +46,13 @@ from quantum_backend_v2.chains.models import ChainRegistry
 from quantum_backend_v2.config import AppSettings
 from quantum_backend_v2.discovery.service import DiscoveryService
 from quantum_backend_v2.libp2p import Libp2pBootstrapPlan, Libp2pRuntime
+from quantum_backend_v2.payments.ledger import LedgerService
 from quantum_backend_v2.persistence import PersistenceRuntime
 from quantum_backend_v2.provenance.service import ProvenanceService
 from quantum_backend_v2.reservations.service import ReservationService
 from quantum_backend_v2.runtime.recovery import RuntimeRecoveryService
+
+logger = logging.getLogger(__name__)
 
 
 def create_app(
@@ -71,10 +77,20 @@ def create_app(
         allow_dev_bearer_tokens=settings.allow_dev_bearer_tokens,
     )
     started_monotonic = time.monotonic()
+    mongodb = persistence_runtime.mongodb
+    ledger_service = LedgerService(mongodb.database) if mongodb is not None else None
+    reconcile_interval = int(os.getenv("QB2_PAYMENT_RECONCILE_INTERVAL_SECONDS", "300"))
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
         await persistence_runtime.startup()
+        reconcile_task = None
+        if ledger_service is not None:
+            await ledger_service.ensure_indexes()
+            if reconcile_interval > 0:
+                reconcile_task = asyncio.create_task(
+                    _reconcile_periodically(ledger_service, reconcile_interval)
+                )
         if runtime_recovery_service is not None:
             open_reservations = await runtime_recovery_service.recover_open_reservations()
             in_flight_executions = await runtime_recovery_service.recover_in_flight_executions()
@@ -92,6 +108,8 @@ def create_app(
         try:
             yield
         finally:
+            if reconcile_task is not None:
+                reconcile_task.cancel()
             wallet_service = getattr(app.state, "wallet_service", None)
             if wallet_service is not None:
                 wallet_service.mongo_client.close()
@@ -175,6 +193,9 @@ def create_app(
             build_reservations_router(reservation_service=reservation_service)
         )
 
+    if ledger_service is not None:
+        app.include_router(build_payments_admin_router(ledger_service=ledger_service))
+
     app.include_router(benchmark_router)
     app.include_router(pharma_router)
     app.include_router(agent_router)
@@ -188,3 +209,14 @@ def create_app(
     app.include_router(chat_sessions_router)
 
     return app
+
+
+async def _reconcile_periodically(ledger_service: LedgerService, interval_seconds: int) -> None:
+    """Run the payment reconciliation sweep until the app shuts down."""
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await ledger_service.run_reconciliation()
+        except Exception:
+            # A failed sweep must not stop later ones; the next run retries it.
+            logger.exception("payment reconciliation sweep failed")
