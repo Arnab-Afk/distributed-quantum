@@ -23,6 +23,7 @@ export const API = {
     OPTIONS_RUNS: "/api/x402/options/runs",
     OPTIONS_RUN: (jobId: string) =>
       `/api/x402/options/runs/${jobId}` as const,
+  },
   PROVENANCE: {
     VERIFY: (bundleId: string) => `/api/provenance/${encodeURIComponent(bundleId)}/verify` as const,
   },

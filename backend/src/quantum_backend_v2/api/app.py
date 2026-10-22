@@ -27,19 +27,13 @@ from quantum_backend_v2.api.deps.auth import configure_auth
 from quantum_backend_v2.api.errors import register_exception_handlers
 from quantum_backend_v2.api.routers import discovery_router, system_router
 from quantum_backend_v2.api.routers.agent import router as agent_router
-from quantum_backend_v2.application.parity import CircuitJobService, FinancialJobService, RiskJobService
-from quantum_backend_v2.application.provenance import MongoProvenanceRepository
-from quantum_backend_v2.api.deps.auth import configure_auth
-from quantum_backend_v2.api.errors import register_exception_handlers
-from quantum_backend_v2.api.routers import discovery_router, system_router
 from quantum_backend_v2.api.routers.chains import build_chains_router
 from quantum_backend_v2.api.routers.circuits import build_circuits_router
 from quantum_backend_v2.api.routers.enrollment import build_enrollment_router
 from quantum_backend_v2.api.routers.financial import build_financial_router
 from quantum_backend_v2.api.routers.options import build_options_router
-from quantum_backend_v2.api.routers.pharma import router as pharma_router
 from quantum_backend_v2.api.routers.payments_admin import build_payments_admin_router
-from quantum_backend_v2.api.routers.risk import build_risk_router
+from quantum_backend_v2.api.routers.pharma import router as pharma_router
 from quantum_backend_v2.api.routers.plans import build_plans_router
 from quantum_backend_v2.api.routers.provenance import build_provenance_router
 from quantum_backend_v2.api.routers.reservations import build_reservations_router
@@ -51,17 +45,7 @@ from quantum_backend_v2.application.parity import (
     FinancialJobService,
     RiskJobService,
 )
-from quantum_backend_v2.api.benchmark import router as benchmark_router
-from quantum_backend_v2.api.routers.pharma import router as pharma_router
-from quantum_backend_v2.api.routers.agent import router as agent_router
-
-# AgentKit integration routers (new v1 API routers)
-from api.v1.wallet import router as wallet_router
-from api.v1.agents import router as agents_router
-from api.v1.proposals import router as proposals_router
-from api.v1.notifications import router as notifications_router
-from api.v1.marketplace import router as marketplace_router
-from api.v1.chat_sessions import router as chat_sessions_router
+from quantum_backend_v2.application.provenance import MongoProvenanceRepository
 from quantum_backend_v2.chains.models import ChainRegistry
 from quantum_backend_v2.config import AppSettings
 from quantum_backend_v2.discovery.service import DiscoveryService

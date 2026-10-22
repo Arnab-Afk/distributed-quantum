@@ -15,204 +15,6 @@
 
 ---
 
-## Toju agent storage — testnet integration
-
-Agents can draft a report in chat and propose storing it on public IPFS through
-the **full Toju server**. Ask naturally: **“Let's store this proposal so we can
-access it later.”** The agent prepares an immutable approval card; only the
-signed-in owner can approve publication and its capped testnet payment.
-
-The card stays beside its original response. Later messages continue below it,
-and saved conversations survive reloads. Use **Agents → Agent Chat** in the
-navigation bar to try the flow.
-
-### Links and deployment boundaries
-
-| Resource | Location |
-| --- | --- |
-| Integration branch | `feat/toju-agent-storage` in both [QMeshPy](https://github.com/QMeshPy/distributed-quantum/tree/feat/toju-agent-storage) and [Winter-Soren](https://github.com/Winter-Soren/distributed-quantum-services/tree/feat/toju-agent-storage) |
-| Toju API readiness | [Render health](https://toju-devcon-testnet.onrender.com/health) |
-| Toju API liveness | [Render liveness](https://toju-devcon-testnet.onrender.com/health/live) |
-| Full Toju server source | [Winter-Soren/afara, devcon/testnet](https://github.com/Winter-Soren/afara/tree/devcon/testnet), forked from the official Toju server |
-| Hosting instructions | [Full Render / Neon / QStash guide](docs/toju-render-testnet-guide.md) |
-| Video demo | [Watch the Toju agent storage demo on Google Drive](https://drive.google.com/file/d/1PZ6MHxBd5_XOqMTGnrS6OEB_tGlL6uGX/view?usp=drive_link) |
-
-**QuantumNodes runs locally for this demo. Render hosts the separate full Toju
-Node/Express server**, including its storage, payment, database and lifecycle-job
-routes. `backend/toju-client` is a payment/verification worker, not a replacement
-storage server. The retired `services/toju-demo` prototype must not be deployed.
-
-Agent storage payments use **Base Sepolia** (`eip155:84532`) and faucet USDC.
-The server's separate Solana route uses **Solana testnet**, with program
-`CSXnfQsFWxdPB5pnS73TQDA6ivK6kcFnRwtt6TgFquxH`. This agent demo does not execute
-a Solana payment. Neither route automatically falls back to mainnet.
-
-### Run the integration locally
-
-Use Python 3.12 (the tested runtime), `uv`, **Node 22**, Bun, and a running local
-MongoDB. Start with the backend/frontend setup below. The frontend uses Bun;
-the isolated payment worker has its own npm lockfile.
-
-```sh
-# From the repository root
-cd backend
-uv sync --extra dev
-cd toju-client
-npm ci
-cd ../../frontend
-bun install
-```
-
-Create ignored `backend/.env` and `frontend/.env.local` files from their example
-settings. Merge the values below into your local files; do not overwrite existing
-credentials. Generate **one** bridge secret with `openssl rand -hex 32` and use
-that same value on both sides. Generate a separate Better Auth secret.
-
-Backend configuration (`backend/.env`):
-
-```dotenv
-QB2_MONGODB_TARGET=local
-QB2_MONGODB_LOCAL_URI=mongodb://127.0.0.1:27017
-QB2_MONGODB_DATABASE=qds
-AGENT_AUTH_BRIDGE_SECRET=<same-generated-bridge-secret-as-frontend>
-
-AGENT_LLM_PROVIDER=openrouter
-OPENROUTER_API_KEY=<your-own-openrouter-key>
-OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
-
-CDP_API_KEY_ID=<your-own-cdp-key-id>
-CDP_API_KEY_SECRET=<your-own-cdp-key-secret>
-CDP_WALLET_SECRET=<your-own-cdp-wallet-secret>
-NETWORK=base-sepolia
-
-TOJU_API_URL=https://toju-devcon-testnet.onrender.com
-TOJU_PAYMENT_RECIPIENT=0xbB2Fc1cc295b53a75217319eA421256dABB3eacb
-TOJU_NODE_BINARY=node
-```
-
-`TOJU_NODE_BINARY` must resolve to Node 22; use its absolute path if your shell's
-default differs. The current agent services use `QB2_MONGODB_LOCAL_URI` directly;
-set that URI explicitly even if connecting to a remote MongoDB installation.
-
-For Groq instead, set `AGENT_LLM_PROVIDER=groq`, `GROQ_API_KEY`, and
-`GROQ_MODEL=openai/gpt-oss-20b`. OpenRouter accepts only free model names and sends
-zero-price provider limits. Provider switching is manual; there is no paid
-fallback or automatic rate-limit retry. Free model availability can change.
-
-Frontend configuration (`frontend/.env.local`):
-
-```dotenv
-NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8081
-MONGODB_URI=mongodb://127.0.0.1:27017
-MONGODB_DB_NAME=quantum_platform
-BETTER_AUTH_URL=http://localhost:3000
-BETTER_AUTH_SECRET=<separate-generated-auth-secret>
-AGENT_AUTH_BRIDGE_SECRET=<same-generated-bridge-secret-as-backend>
-RESEND_API_KEY=<your-own-resend-key>
-OTP_EMAIL_FROM=<sender-verified-in-your-resend-account>
-NEXT_PUBLIC_TRIAL_DISABLED=true
-```
-
-The trial flag is for local development; it does **not** bypass sign-in or export
-ownership checks. Email OTP authentication requires a working Resend sender.
-MongoDB stores chat/agent state and authentication; **Neon belongs to the Toju
-server**, not these MongoDB settings. Provider keys, the auth bridge and CDP
-signing credentials are server-only; never prefix them with `NEXT_PUBLIC_`.
-
-Start the two processes in separate terminals:
-
-```sh
-cd backend
-uv run quantum-backend --host 127.0.0.1 --port 8081
-```
-
-```sh
-cd frontend
-bun run dev
-```
-
-Sign in at [localhost:3000](http://localhost:3000), open **Agents → Agent Chat**,
-and use your own agent and its CDP Base Sepolia wallet. Fund that wallet with
-test USDC using the [Circle faucet](https://faucet.circle.com/) before approving
-an export. Do not use mainnet funds or another user's wallet.
-
-### Try a draft, approval and receipt
-
-1. Ask: `Draft a short Bell-pair experiment proposal. Clearly label it as a proposed experiment that has not been run. Show only the draft for now.`
-2. Then ask: `Let's store this proposal so we can access it later.`
-3. Review the exact content, public-IPFS notice, recipient, SHA-256, 30-day
-   retention and price. Click **Cancel** to decline or **Approve & store** once
-   to publish. A direct `yes` applies only to the current pending approval.
-4. Wait for **Stored and retrieved. SHA-256 verified.** Open the artifact and
-   testnet payment links. The worker checks the on-chain USDC Transfer and the
-   downloaded bytes; an upload response alone is not treated as proof.
-5. Reload the saved chat to see the persisted receipt. For an uncertain outcome,
-   use **Check receipt (no new payment)**; never repay automatically.
-
-The model can also propose exporting an owned workflow run ID. The backend reads
-that user's stored run snapshots and exports selected metadata/results rather
-than trusting model-invented results. Exports are limited to 256 KiB, approval
-expires after 15 minutes, and the current payment policy caps each export at
-24 micro-USDC (`0.000024` test USDC). Changing server pricing requires reviewing
-the client's matching policy; mismatched quotes fail closed.
-
-### Host your own full Toju server on Render
-
-Follow the [complete hosting guide](docs/toju-render-testnet-guide.md), which
-includes every environment variable, pricing initialization, migrations and
-signed QStash schedule. The reproduced installation uses Render Free, Neon Free
-and QStash Free; check your account's quotas before inviting additional users.
-
-- Deploy the **afara server fork**, branch `devcon/testnet`, with Render's
-  root directory blank. Do not deploy this entire QuantumNodes repository as Toju.
-- Use Node 22, `NODE_ENV=staging`, `X402_NETWORK=sepolia`,
-  `FILECOIN_NETWORK=calibration`, and a Solana testnet RPC/IDL.
-- Provide your own Neon `DATABASE_URL`, Pinata JWT/gateway, Resend sender/key,
-  QStash current/next signing keys, admin API secret and Base Sepolia recipient.
-  Keep all secrets in Render's environment settings.
-- Build: `corepack pnpm --filter server... install --frozen-lockfile --prod=false && corepack pnpm --dir server run build`
-- Start: `corepack pnpm --dir server exec tsx scripts/migrate.ts staging && node server/dist/index.js`
-- Set Render's health-check path to `/health/live`. Check `/health` separately
-  for database readiness and initialize pricing as documented in the guide.
-- Configure the five signed lifecycle/usage jobs described in the guide.
-  Do not schedule `/jobs/destroy`.
-- Point your QuantumNodes backend's `TOJU_API_URL` at your new service and set
-  `TOJU_PAYMENT_RECIPIENT` to its exact `BASE_USDC_WALLET` public address.
-
-The demo endpoint above is a shared test service, not a production availability
-guarantee. Its hosted `/health` returning healthy does not by itself verify
-payment settlement, IPFS retrieval or lifecycle cleanup.
-
-### Verification and known limits
-
-The earlier **DevCon Demo** draft completed a testnet payment and verified
-retrieval: [public report](https://gateway.pinata.cloud/ipfs/bafybeiaw3wgnhn5yort3hvvzohvyd6ms43xmjat4qhj4jaazr3e2rnuvie/report.md)
-and [Base Sepolia transaction](https://sepolia.basescan.org/tx/0x4b9e24bb741676455f1b5aa611d7459bd2b6fbf8666bf8353a2eca84602fa1fe).
-A later approved draft was pinned but settlement failed; its uncertain receipt
-is preserved. The exact historical settlement failure was not captured.
-
-Run the focused checks without consuming model quota or making payments:
-
-```sh
-cd backend
-uv run pytest tests/services/test_agent_bridge.py tests/services/test_groq_agent.py tests/services/test_toju_storage.py
-cd toju-client
-npm test
-cd ../../frontend
-bun run tsc --noEmit
-```
-
-The storage test uses a temporary local MongoDB database and removes only that
-test database. The provider/payment calls in these checks are mocked. Live
-coverage includes one completed export, receipt recovery and a signed QStash
-usage snapshot. A full quantum experiment, Solana/Filecoin payments, renewal
-email flow and time-based deletion have not been verified end to end. Public
-IPFS copies may remain after pin retention ends. Free-tier cold starts, quotas
-and external settlement failures remain demo limitations.
-
----
-
-## What This Is
 ## What this is
 
 A research platform that treats quantum operations as network services. A FastAPI coordinator discovers worker peers over py-libp2p (GossipSub), compiles OpenQASM circuits into distributed execution plans, routes fragments to workers over libp2p streams, and assembles results with Qiskit statevector simulation. A Next.js operator console shows the peer network, job lifecycle, and quantum analysis live.
@@ -220,6 +22,35 @@ A research platform that treats quantum operations as network services. A FastAP
 The same infrastructure powers a QAOA portfolio optimizer that benchmarks quantum against classical baselines.
 
 [Watch the demo video](https://www.loom.com/share/8c5a546cb99a4a98996e738bf23c3e7a)
+
+> **Scope:** this is a proof-of-concept on simulators, not a quantum hardware stack. Auth is dev-mode only.
+
+### Applications
+
+| Application | What it does | Status |
+|---|---|---|
+| Circuit orchestration | Normalize OpenQASM, plan, and execute distributed fragments across worker peers | Available |
+| Financial modelling | QAOA portfolio benchmarks against classical optimization | Available |
+| Risk and options | Simulated VaR, CVaR, credit-risk, and option-pricing experiments | Available |
+| Molecular workflows | Drug-discovery research pipeline with simulated quantum stages | Experimental |
+
+### Architecture
+
+```
+  Next.js operator console  ──(BFF proxy, REST)──▶  FastAPI coordinator
+                                                          │
+                                           py-libp2p runtime (Trio)
+                                      Ed25519 host · GossipSub · stream RPC
+                                                          │
+                                       ┌──────────────────┼──────────────────┐
+                                  Worker peer        Worker peer        Worker peer
+
+  Persistence: Postgres (event-sourced) · MongoDB (projections) · JSONL (peer log)
+```
+
+### Headline result
+
+97% of QAOA runtime is classical COBYLA parameter search, not the quantum circuit, so adding quantum nodes yields at most 1.03x speedup (Amdahl's Law). The advantage shows up in scaling: classical wins at 10 to 20 assets, and QAOA wins from about 40 assets (3.2x faster at 40, 9.5x at 60). The full analysis is in the [research paper draft](https://github.com/QMeshPy/documentations/blob/main/research/RESEARCH_PAPER_DRAFT.md).
 
 ---
 
@@ -629,79 +460,208 @@ Algorand x402 is intentionally positioned at the service boundary. The payment l
 - **Complete x402 TestNet runbook:**  
   [docs/algorand-x402-runbook.md](docs/algorand-x402-runbook.md)
 
-
 ---
 
-## Platform Architecture
+## Toju agent storage — testnet integration
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Next.js Operator Console                      │
-│   /dashboard  ·  /runs  ·  /runs/new  ·  /finance               │
-│   3D peer graph · circuit builder · quantum analysis · QAOA      │
-└──────────────────────────┬──────────────────────────────────────┘
-                           │ BFF proxy (REST polling)
-                           ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                   FastAPI Coordinator                            │
-│                                                                  │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────┐  │
-│  │ Circuit Jobs │  │   Finance    │  │  Enrollment &        │  │
-│  │   Service    │  │  (QAOA)      │  │  Discovery           │  │
-│  └──────────────┘  └──────────────┘  └──────────────────────┘  │
-│                                                                  │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │              py-libp2p Runtime (Trio)                    │   │
-│  │   Ed25519 host · GossipSub pubsub · Stream RPC           │   │
-│  └──────────────────────────┬─────────────────────────────┘    │
-└─────────────────────────────┼───────────────────────────────────┘
-                              │ libp2p streams
-           ┌──────────────────┼──────────────────┐
-           ▼                  ▼                  ▼
-   ┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-   │  Worker Peer  │  │  Worker Peer  │  │  Worker Peer  │
-   │  hadamard/cnot│  │  qft/teleport │  │  programmable │
-   └───────────────┘  └───────────────┘  └───────────────┘
+Agents can draft a report in chat and propose storing it on public IPFS through
+the **full Toju server**. Ask naturally: **“Let's store this proposal so we can
+access it later.”** The agent prepares an immutable approval card; only the
+signed-in owner can approve publication and its capped testnet payment.
 
-Persistence:  Postgres (event-sourced)  ·  MongoDB (projections)  ·  JSONL (peer log)
-```
-> **Scope:** this is a proof-of-concept on simulators, not a quantum hardware stack. Auth is dev-mode only.
+The card stays beside its original response. Later messages continue below it,
+and saved conversations survive reloads. Use **Agents → Agent Chat** in the
+navigation bar to try the flow.
 
-### Applications
+### Links and deployment boundaries
 
-| Application | What it does | Status |
-|---|---|---|
-| Circuit orchestration | Normalize OpenQASM, plan, and execute distributed fragments across worker peers | Available |
-| Financial modelling | QAOA portfolio benchmarks against classical optimization | Available |
-| Risk and options | Simulated VaR, CVaR, credit-risk, and option-pricing experiments | Available |
-| Molecular workflows | Drug-discovery research pipeline with simulated quantum stages | Experimental |
+| Resource | Location |
+| --- | --- |
+| Integration branch | `feat/toju-agent-storage` in both [QMeshPy](https://github.com/QMeshPy/distributed-quantum/tree/feat/toju-agent-storage) and [Winter-Soren](https://github.com/Winter-Soren/distributed-quantum-services/tree/feat/toju-agent-storage) |
+| Toju API readiness | [Render health](https://toju-devcon-testnet.onrender.com/health) |
+| Toju API liveness | [Render liveness](https://toju-devcon-testnet.onrender.com/health/live) |
+| Full Toju server source | [Winter-Soren/afara, devcon/testnet](https://github.com/Winter-Soren/afara/tree/devcon/testnet), forked from the official Toju server |
+| Hosting instructions | [Full Render / Neon / QStash guide](docs/toju-render-testnet-guide.md) |
+| Video demo | [Watch the Toju agent storage demo on Google Drive](https://drive.google.com/file/d/1PZ6MHxBd5_XOqMTGnrS6OEB_tGlL6uGX/view?usp=drive_link) |
 
-### Architecture
+**QuantumNodes runs locally for this demo. Render hosts the separate full Toju
+Node/Express server**, including its storage, payment, database and lifecycle-job
+routes. `backend/toju-client` is a payment/verification worker, not a replacement
+storage server. The retired `services/toju-demo` prototype must not be deployed.
 
-```
-  Next.js operator console  ──(BFF proxy, REST)──▶  FastAPI coordinator
-                                                          │
-                                           py-libp2p runtime (Trio)
-                                      Ed25519 host · GossipSub · stream RPC
-                                                          │
-                                       ┌──────────────────┼──────────────────┐
-                                  Worker peer        Worker peer        Worker peer
+Agent storage payments use **Base Sepolia** (`eip155:84532`) and faucet USDC.
+The server's separate Solana route uses **Solana testnet**, with program
+`CSXnfQsFWxdPB5pnS73TQDA6ivK6kcFnRwtt6TgFquxH`. This agent demo does not execute
+a Solana payment. Neither route automatically falls back to mainnet.
 
-  Persistence: Postgres (event-sourced) · MongoDB (projections) · JSONL (peer log)
+### Run the integration locally
+
+Use Python 3.12 (the tested runtime), `uv`, **Node 22**, Bun, and a running local
+MongoDB. Start with the backend/frontend setup below. The frontend uses Bun;
+the isolated payment worker has its own npm lockfile.
+
+```sh
+# From the repository root
+cd backend
+uv sync --extra dev
+cd toju-client
+npm ci
+cd ../../frontend
+bun install
 ```
 
-### Headline result
+Create ignored `backend/.env` and `frontend/.env.local` files from their example
+settings. Merge the values below into your local files; do not overwrite existing
+credentials. Generate **one** bridge secret with `openssl rand -hex 32` and use
+that same value on both sides. Generate a separate Better Auth secret.
 
-97% of QAOA runtime is classical COBYLA parameter search, not the quantum circuit, so adding quantum nodes yields at most 1.03x speedup (Amdahl's Law). The advantage shows up in scaling: classical wins at 10 to 20 assets, and QAOA wins from about 40 assets (3.2x faster at 40, 9.5x at 60). The full analysis is in the [research paper draft](https://github.com/QMeshPy/documentations/blob/main/research/RESEARCH_PAPER_DRAFT.md).
+Backend configuration (`backend/.env`):
+
+```dotenv
+QB2_MONGODB_TARGET=local
+QB2_MONGODB_LOCAL_URI=mongodb://127.0.0.1:27017
+QB2_MONGODB_DATABASE=qds
+AGENT_AUTH_BRIDGE_SECRET=<same-generated-bridge-secret-as-frontend>
+
+AGENT_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=<your-own-openrouter-key>
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
+
+CDP_API_KEY_ID=<your-own-cdp-key-id>
+CDP_API_KEY_SECRET=<your-own-cdp-key-secret>
+CDP_WALLET_SECRET=<your-own-cdp-wallet-secret>
+NETWORK=base-sepolia
+
+TOJU_API_URL=https://toju-devcon-testnet.onrender.com
+TOJU_PAYMENT_RECIPIENT=0xbB2Fc1cc295b53a75217319eA421256dABB3eacb
+TOJU_NODE_BINARY=node
+```
+
+`TOJU_NODE_BINARY` must resolve to Node 22; use its absolute path if your shell's
+default differs. The current agent services use `QB2_MONGODB_LOCAL_URI` directly;
+set that URI explicitly even if connecting to a remote MongoDB installation.
+
+For Groq instead, set `AGENT_LLM_PROVIDER=groq`, `GROQ_API_KEY`, and
+`GROQ_MODEL=openai/gpt-oss-20b`. OpenRouter accepts only free model names and sends
+zero-price provider limits. Provider switching is manual; there is no paid
+fallback or automatic rate-limit retry. Free model availability can change.
+
+Frontend configuration (`frontend/.env.local`):
+
+```dotenv
+NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8081
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DB_NAME=quantum_platform
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=<separate-generated-auth-secret>
+AGENT_AUTH_BRIDGE_SECRET=<same-generated-bridge-secret-as-backend>
+RESEND_API_KEY=<your-own-resend-key>
+OTP_EMAIL_FROM=<sender-verified-in-your-resend-account>
+NEXT_PUBLIC_TRIAL_DISABLED=true
+```
+
+The trial flag is for local development; it does **not** bypass sign-in or export
+ownership checks. Email OTP authentication requires a working Resend sender.
+MongoDB stores chat/agent state and authentication; **Neon belongs to the Toju
+server**, not these MongoDB settings. Provider keys, the auth bridge and CDP
+signing credentials are server-only; never prefix them with `NEXT_PUBLIC_`.
+
+Start the two processes in separate terminals:
+
+```sh
+cd backend
+uv run quantum-backend --host 127.0.0.1 --port 8081
+```
+
+```sh
+cd frontend
+bun run dev
+```
+
+Sign in at [localhost:3000](http://localhost:3000), open **Agents → Agent Chat**,
+and use your own agent and its CDP Base Sepolia wallet. Fund that wallet with
+test USDC using the [Circle faucet](https://faucet.circle.com/) before approving
+an export. Do not use mainnet funds or another user's wallet.
+
+### Try a draft, approval and receipt
+
+1. Ask: `Draft a short Bell-pair experiment proposal. Clearly label it as a proposed experiment that has not been run. Show only the draft for now.`
+2. Then ask: `Let's store this proposal so we can access it later.`
+3. Review the exact content, public-IPFS notice, recipient, SHA-256, 30-day
+   retention and price. Click **Cancel** to decline or **Approve & store** once
+   to publish. A direct `yes` applies only to the current pending approval.
+4. Wait for **Stored and retrieved. SHA-256 verified.** Open the artifact and
+   testnet payment links. The worker checks the on-chain USDC Transfer and the
+   downloaded bytes; an upload response alone is not treated as proof.
+5. Reload the saved chat to see the persisted receipt. For an uncertain outcome,
+   use **Check receipt (no new payment)**; never repay automatically.
+
+The model can also propose exporting an owned workflow run ID. The backend reads
+that user's stored run snapshots and exports selected metadata/results rather
+than trusting model-invented results. Exports are limited to 256 KiB, approval
+expires after 15 minutes, and the current payment policy caps each export at
+24 micro-USDC (`0.000024` test USDC). Changing server pricing requires reviewing
+the client's matching policy; mismatched quotes fail closed.
+
+### Host your own full Toju server on Render
+
+Follow the [complete hosting guide](docs/toju-render-testnet-guide.md), which
+includes every environment variable, pricing initialization, migrations and
+signed QStash schedule. The reproduced installation uses Render Free, Neon Free
+and QStash Free; check your account's quotas before inviting additional users.
+
+- Deploy the **afara server fork**, branch `devcon/testnet`, with Render's
+  root directory blank. Do not deploy this entire QuantumNodes repository as Toju.
+- Use Node 22, `NODE_ENV=staging`, `X402_NETWORK=sepolia`,
+  `FILECOIN_NETWORK=calibration`, and a Solana testnet RPC/IDL.
+- Provide your own Neon `DATABASE_URL`, Pinata JWT/gateway, Resend sender/key,
+  QStash current/next signing keys, admin API secret and Base Sepolia recipient.
+  Keep all secrets in Render's environment settings.
+- Build: `corepack pnpm --filter server... install --frozen-lockfile --prod=false && corepack pnpm --dir server run build`
+- Start: `corepack pnpm --dir server exec tsx scripts/migrate.ts staging && node server/dist/index.js`
+- Set Render's health-check path to `/health/live`. Check `/health` separately
+  for database readiness and initialize pricing as documented in the guide.
+- Configure the five signed lifecycle/usage jobs described in the guide.
+  Do not schedule `/jobs/destroy`.
+- Point your QuantumNodes backend's `TOJU_API_URL` at your new service and set
+  `TOJU_PAYMENT_RECIPIENT` to its exact `BASE_USDC_WALLET` public address.
+
+The demo endpoint above is a shared test service, not a production availability
+guarantee. Its hosted `/health` returning healthy does not by itself verify
+payment settlement, IPFS retrieval or lifecycle cleanup.
+
+### Verification and known limits
+
+The earlier **DevCon Demo** draft completed a testnet payment and verified
+retrieval: [public report](https://gateway.pinata.cloud/ipfs/bafybeiaw3wgnhn5yort3hvvzohvyd6ms43xmjat4qhj4jaazr3e2rnuvie/report.md)
+and [Base Sepolia transaction](https://sepolia.basescan.org/tx/0x4b9e24bb741676455f1b5aa611d7459bd2b6fbf8666bf8353a2eca84602fa1fe).
+A later approved draft was pinned but settlement failed; its uncertain receipt
+is preserved. The exact historical settlement failure was not captured.
+
+Run the focused checks without consuming model quota or making payments:
+
+```sh
+cd backend
+uv run pytest tests/services/test_agent_bridge.py tests/services/test_groq_agent.py tests/services/test_toju_storage.py
+cd toju-client
+npm test
+cd ../../frontend
+bun run tsc --noEmit
+```
+
+The storage test uses a temporary local MongoDB database and removes only that
+test database. The provider/payment calls in these checks are mocked. Live
+coverage includes one completed export, receipt recovery and a signed QStash
+usage snapshot. A full quantum experiment, Solana/Filecoin payments, renewal
+email flow and time-based deletion have not been verified end to end. Public
+IPFS copies may remain after pin retention ends. Free-tier cold starts, quotas
+and external settlement failures remain demo limitations.
 
 ---
 
 ## Quick start
 
-- Python 3.11+ with [uv](https://github.com/astral-sh/uv)
-- Node.js 22, Bun for the frontend, and npm for the isolated Toju payment worker
-- Docker (for full-stack deployment)
-**Prerequisites:** Python 3.11+ with [uv](https://github.com/astral-sh/uv), Node.js 20+, and Docker (full stack only).
+**Prerequisites:** Python 3.11+ with [uv](https://github.com/astral-sh/uv), Node.js 22 (Bun for the frontend, npm for the isolated Toju payment worker), and Docker (full stack only).
 
 **Backend** (http://localhost:8081, Swagger at `/docs`):
 
@@ -717,11 +677,6 @@ make run          # or `make run-clean` to reset runtime state
 cd frontend
 bun install
 bun run dev      # Next.js on http://localhost:3000
-```
-
-Create `frontend/.env`:
-npm install
-npm run dev
 ```
 
 Create `frontend/.env.local` first:
@@ -871,48 +826,6 @@ Long-form documentation lives in the **[QMeshPy/documentations](https://github.c
 
 ## Contributing
 
-1. Fork and create a feature branch.
-2. Read [CONTEXT.md](CONTEXT.md) first — the Trio/asyncio bridge and event-sourced persistence have constraints that aren't obvious.
-3. `make lint && make test` must pass in `backend/` before submitting.
-4. `npm run build` must succeed in `frontend/` (no TypeScript errors).
-5. Surgical changes only — match existing style, don't refactor adjacent code.
-
----
-
-## Citation
-
-```bibtex
-@article{bhoir2026quantum,
-  title={Quantum Portfolio Optimization: Bottleneck Analysis and Scaling Studies},
-  author={Bhoir, Soham and Gupta, Manusheel},
-  journal={[Pending submission]},
-  year={2026},
-  note={QAOA bottleneck profiling, Amdahl's Law analysis, and quantum advantage
-        characterization for financial portfolio optimization using distributed
-        py-libp2p infrastructure}
-}
-```
-
----
-
-## Acknowledgments
-
-- **Algorand x402** — machine-payable HTTP service payments and Algorand USDC settlement
-- [Qiskit](https://qiskit.org/) (IBM) — quantum computing framework
-- [py-libp2p](https://github.com/libp2p/py-libp2p) — peer-to-peer networking
-- [FastAPI](https://fastapi.tiangolo.com/) — async Python API framework
-- [shadcn/ui](https://ui.shadcn.com/) — UI component library
-- [Yahoo Finance](https://finance.yahoo.com/) / Prof. Aswath Damodaran (NYU Stern) — market data
-
----
-
-<div align="center">
-
-**[docs/START_HERE.md](docs/START_HERE.md)** · **[Research Paper](docs/research/RESEARCH_PAPER_DRAFT.md)** · **[Architecture](docs/ARCHITECTURE.md)** · **[Deployment](DEPLOYMENT-MANUAL.md)**
-
-*Built with quantum circuits, debugged with patience, documented with care.*
-
-</div>
 1. Fork the repo and create a feature branch.
 2. Read [CONTEXT.md](CONTEXT.md). The Trio/asyncio bridge and event-sourced persistence have constraints that aren't obvious.
 3. Run `make lint && make test` in `backend/` and `npm run build` in `frontend/` before opening a PR.
