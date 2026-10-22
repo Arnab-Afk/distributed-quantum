@@ -90,6 +90,69 @@ docker compose up --build
 
 ---
 
+## Platform content node (Kubo)
+
+The Compose stack includes **Kubo v0.43.1**, pinned by release tag and multi-platform
+image digest. With current Docker Engine/Compose, start only the content node:
+
+```bash
+docker compose up -d --wait kubo
+docker compose exec kubo ipfs --api=/ip4/127.0.0.1/tcp/5001 diag healthy
+docker compose stop kubo
+```
+
+No provider credentials or backend startup are required. Compose may warn about
+unset variables for the existing backend, even when starting only Kubo. If port
+8080 is in use, run `KUBO_GATEWAY_PORT=18080 docker compose up -d --wait kubo`
+(or set that variable in `.env`). The gateway remains loopback-only.
+
+| Interface | Exposure |
+|---|---|
+| Swarm `4001/tcp` and `4001/udp` | Published for IPFS peers, separate from quantum-worker libp2p |
+| Gateway `8080/tcp` | `127.0.0.1:8080` only; read content at `/ipfs/<CID>` |
+| Admin RPC `5001/tcp` | **Not published** or proxied by Caddy; trusted Compose containers use `http://kubo:5001` |
+
+The named `kubo_data` volume persists `/data/ipfs` across container recreation.
+Stopping/removing a container does not remove it. Volume deletion permanently
+removes this node's data and identity; do not use `docker compose down --volumes`
+on a deployment unless you intend to delete **all** that project's named volumes.
+The backend has no Kubo health dependency: content failures must not block compute.
+
+`IPFS_PROFILE=server` applies **only when a new repository is initialized**. It
+turns off mDNS and NAT port mapping and filters private swarm addresses. The
+image sets `Addresses.API=/ip4/0.0.0.0/tcp/5001` and
+`Addresses.Gateway=/ip4/0.0.0.0/tcp/8080` **inside the container**. Host exposure is
+controlled by the mappings above. Existing repositories are not reconfigured;
+back up the volume and review migrations/configuration before changing versions.
+See the pinned [release](https://github.com/ipfs/kubo/releases/tag/v0.43.1),
+[profile/configuration reference](https://github.com/ipfs/kubo/blob/v0.43.1/docs/config.md#server-profile),
+[image entrypoint](https://github.com/ipfs/kubo/blob/v0.43.1/bin/container_daemon),
+and [healthcheck](https://github.com/ipfs/kubo/blob/v0.43.1/Dockerfile).
+
+Checks require Python 3.10+ (via uv) and Docker Compose with `up --wait` support:
+
+```bash
+uv run --no-project python -m unittest discover -s scripts -p test_kubo_compose.py -v
+uv run --no-project python scripts/smoke_kubo.py
+```
+
+The first command checks deployment configuration without starting containers.
+The optional live smoke test extracts only Kubo into a uniquely named temporary
+project, ignores project `.env` values, uses random host ports and runs **offline**.
+It checks health/profile, RPC host-binding absence, loopback gateway, matching
+add/cat bytes and CIDs, and retained content/pin after container recreation. It
+attempts to remove only its own container/network/volume, including on failure.
+If cleanup also fails, it reports the disposable project label without replacing
+the original error. Command failures identify the operation without dumping
+possibly sensitive output. It needs no backend dependencies or private data;
+its fixture is harmless public text.
+
+The normal service is **online**: IPFS is public content-addressed networking,
+not confidential storage. Never add private data expecting the CID to be secret.
+Unpublished RPC is not authentication: containers on `backend_network` and Docker
+administrators remain trusted. RPC authorization/hardening (#60), the Python
+client (#61), automatic uploads and production hosting are separate work.
+
 ## Documentation
 
 Long-form documentation lives in the **[QMeshPy/documentations](https://github.com/QMeshPy/documentations)** repository. Start with its [START_HERE](https://github.com/QMeshPy/documentations/blob/main/START_HERE.md) page.
