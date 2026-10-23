@@ -428,8 +428,10 @@ its fixture is harmless public text.
 The normal service is **online**: IPFS is public content-addressed networking,
 not confidential storage. Never add private data expecting the CID to be secret.
 Native authentication adds defense beyond unpublished RPC; it does not make
-Docker administration or public IPFS content confidential. The Python client
-(#61), automatic uploads and production hosting are separate work.
+Docker administration or public IPFS content confidential. The typed async
+[Python RPC client](backend/README.md#kubo-rpc-client) supports content writes,
+pin management and block inspection with bounded requests and safe errors (#61).
+Automatic uploads, gateway reads and production hosting remain separate work.
 
 ## Documentation
 

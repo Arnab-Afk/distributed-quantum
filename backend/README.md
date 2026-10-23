@@ -10,25 +10,78 @@ grow into the full migration plan described in `backend-migration.md`.
 See [PROVENANCE.md](PROVENANCE.md) for the versioned canonical hashing and Merkle
 proof format, backward-compatible bundle fields, and Ethereum anchoring handoff.
 
-## Kubo RPC foundation
+## Kubo RPC client
 
-Optional `AppSettings.kubo` reads the deployment's existing `KUBO_RPC_SECRET`,
-plus `KUBO_RPC_URL` (default `http://kubo:5001`),
-`KUBO_RPC_TIMEOUT_SECONDS` (default 30 seconds, maximum 300), and
-`KUBO_RPC_MAX_RESPONSE_BYTES` (default 4 MiB, maximum 64 MiB). The token is masked;
-missing credentials do not prevent backend configuration loading. There are no
-startup probes or automatic content uploads. Use a private endpoint, never a
-browser-visible secret or publicly published admin port.
+`quantum_backend_v2.content.kubo.KuboClient` targets the pinned Kubo **v0.43.1**
+service from #59/#60. Use it on the backend's **asyncio** loop, not inside the
+libp2p Trio thread. It is optional: this change adds no startup probe, automatic
+uploads, gateway reads or quantum-job integration.
 
-Kubo can send an error only in a trailer after HTTP 200. The internal HTTP/1.1
-POST transport detects it using public `httpcore`/`h11` interfaces, keeping native
-pooling/TLS/timeouts without private monkeypatches. Direct dependencies are the
-already-locked versions, not new packages/upgrades. SDK methods follow separately.
-See the pinned [late-error emitter](https://github.com/ipfs/go-ipfs-cmds/blob/v0.16.1/http/responseemitter.go).
+Configuration flows through `AppSettings.from_env()` into `settings.kubo`:
+
+| Variable | Default / purpose |
+|---|---|
+| `KUBO_RPC_URL` | `http://kubo:5001`; HTTP(S) root or `/api/v0` base |
+| `KUBO_RPC_SECRET` | Private raw token shared with Kubo; required only when constructing the client |
+| `KUBO_RPC_TIMEOUT_SECONDS` | `30`; finite I/O and total-operation timeout, maximum `300` |
+| `KUBO_RPC_MAX_RESPONSE_BYTES` | `4194304`; decoded response budget, maximum 64 MiB |
+
+The default hostname resolves inside Compose's `content_network`. Outside Docker,
+use a protected connection; **do not publish RPC publicly**. URLs containing
+credentials, query parameters or fragments are rejected. Redirects and environment
+proxies are disabled; tokens are masked in settings and omitted from client errors.
+
+```python
+from quantum_backend_v2.config import KuboSettings
+from quantum_backend_v2.content.kubo import KuboClient, KuboError
+
+
+async def maybe_store(payload: bytes, config: KuboSettings) -> str | None:
+    try:
+        async with KuboClient(config) as client:
+            added = await client.add(payload)
+            return added.cid
+    except KuboError:
+        # Keep the original execution result; storage is optional.
+        return None
+```
+
+For repeated operations, reuse one client outside the loop. `async with`/`aclose()`
+closes its HTTP session; binary input files remain caller-owned, but multipart
+encoding may seek to their beginning and advance their cursor. Inputs may be
+bytes or regular binary files; do not pass blocking pipes/custom blocking readers.
+
+| Method | Typed result |
+|---|---|
+| `add(data, pin=True)` | CIDv1 and reported DAG size (not necessarily original file length) |
+| `pin_add(cid, recursive=True)` / `pin_rm(cid, recursive=True)` | Acknowledged pin CIDs; unpinning is not immediate deletion |
+| `pin_ls(cid=None)` | CID-to-pin metadata map; empty listings are valid |
+| `block_stat(cid)` | Reported CID and block size, not independent byte verification |
+
+`KuboRejectedError` covers invalid client configuration/arguments, rejected HTTP
+requests (including disallowed redirects) and explicit RPC/pin errors.
+`KuboUnavailableError` covers timeouts/transport failures, HTTP 408/429/5xx and
+invalid/incomplete responses. Errors expose only operation/category/status, never
+remote error text. Cancellation propagates. **No automatic retries:** a failed or
+timed-out mutation may already have stored blocks or changed pins; reconcile its
+outcome rather than blindly replaying it. CAR import follows in the final #61 slice.
+
+Kubo can put a late error in an HTTP trailer after status 200. The default
+HTTP/1.1 transport uses public `httpcore`/`h11` interfaces to detect it before
+returning a result; plain HTTPX otherwise drops these trailers. There is no
+private monkeypatch or replacement TLS/parser stack. Use a direct endpoint or a
+proxy that preserves trailers. Responses are read completely within the budget;
+compressed responses are rejected, and raw server bodies/headers should not be logged.
+See the pinned [RPC commands](https://github.com/ipfs/kubo/tree/v0.43.1/core/commands)
+and [late-error emitter](https://github.com/ipfs/go-ipfs-cmds/blob/v0.16.1/http/responseemitter.go).
 
 ```bash
-uv run --frozen pytest tests/unit/test_kubo_config.py tests/unit/test_kubo_transport.py -q
+uv run --frozen pytest tests/unit/test_kubo*.py -q
 ```
+
+MockTransport covers the five standard methods; local wire-level tests exercise actual
+chunked HTTP trailers, fragmentation, pooling and privacy without external services.
+CAR import and the opt-in full RPC integration check follow separately.
 
 ## Current Milestone
 
