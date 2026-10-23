@@ -33,8 +33,19 @@ export function PinButton({ cid, type, metadata }: PinButtonProps) {
 
   const handlePin = async (service: PinningService = DEFAULT_SERVICE) => {
     try {
-      await pin(cid, type, metadata, service);
-      toast.success(`Pinned to ${SERVICE_LABELS[service]}`);
+      const { gatewayCid } = await pin(cid, type, metadata, service);
+      const sharePath = `/vault/cid/${gatewayCid}`;
+      try {
+        await navigator.clipboard.writeText(
+          `${window.location.origin}${sharePath}`,
+        );
+      } catch {
+        // Clipboard may be blocked; toast still shows the CID.
+      }
+      toast.success(`Pinned to ${SERVICE_LABELS[service]} — share link copied`, {
+        description: gatewayCid,
+        duration: 12_000,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Pin failed");
     }

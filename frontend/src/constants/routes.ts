@@ -59,8 +59,10 @@ export const ROUTES = {
   VAULT: "/vault",
   VAULT_CIRCUITS: "/vault/circuits",
   VAULT_RUNS: "/vault/runs",
+  VAULT_CID: "/vault/cid",
   VAULT_MY_CIRCUITS: "/vault/my/circuits",
   VAULT_MY_RUNS: "/vault/my/runs",
   vaultCircuitDetail: (cid: string) => `/vault/circuits/${cid}` as const,
   vaultRunDetail: (cid: string) => `/vault/runs/${cid}` as const,
+  vaultCid: (cid: string) => `/vault/cid/${encodeURIComponent(cid)}` as const,
 } as const;
