@@ -10,7 +10,7 @@ from uuid import uuid4
 import pytest
 
 from quantum_backend_v2.config import AppSettings
-from quantum_backend_v2.content.kubo import KuboClient
+from quantum_backend_v2.content.kubo import KuboClient, KuboRejectedError
 
 pytestmark = [
     pytest.mark.anyio,
@@ -52,6 +52,13 @@ async def test_real_add_pin_unpin_listing_car_and_block_stat() -> None:
             await client.pin_rm(added.cid)
             owned.remove(added.cid)
             assert added.cid not in (await client.pin_ls()).pins
+            # Kubo reports these definite command errors as HTTP 500 JSON bodies.
+            with pytest.raises(KuboRejectedError):
+                await client.pin_rm(added.cid)
+            with pytest.raises(KuboRejectedError):
+                await client.pin_ls(added.cid)
+            with pytest.raises(KuboRejectedError):
+                await client.block_stat("not-a-cid")
             imported = await client.dag_import(car)
             owned.update(imported.pinned_roots)
             assert imported.pinned_roots == (car_cid,)
