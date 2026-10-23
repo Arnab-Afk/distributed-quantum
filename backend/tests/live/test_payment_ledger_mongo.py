@@ -267,6 +267,23 @@ async def test_concurrent_double_release_only_returns_once(ledger: LedgerService
     await _assert_no_drift(ledger)
 
 
+async def test_full_capture_takes_what_is_left_once(ledger: LedgerService) -> None:
+    await _funded(ledger, "10")
+    await ledger.hold("user-1", D("6"), hold_id="h1")
+    await ledger.capture("h1", D("1"), idempotency_key="cap-part")
+
+    results = await asyncio.gather(
+        *(ledger.capture("h1", idempotency_key=f"cap-rest-{i}") for i in range(5)),
+        ledger.release("h1", idempotency_key="rel-rest"),
+    )
+
+    assert [r.amount for r in results if r is not None] == [D("5")]
+    assert (await ledger.balance("user-1")).held == D("0")
+    replay = await ledger.capture("h1", idempotency_key="cap-part")
+    assert replay is not None and replay.amount == D("1")
+    await _assert_no_drift(ledger)
+
+
 async def test_capture_rebuilds_a_hold_guard_lost_in_a_crash(ledger: LedgerService) -> None:
     await _funded(ledger, "20")
     await ledger.hold("user-1", D("20"), hold_id="job-1")
