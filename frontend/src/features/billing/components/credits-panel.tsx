@@ -12,6 +12,7 @@ export function CreditsPanel() {
   const pollUntil = useCreditsReturn();
   const { data, isError, isPending } = useCredits(pollUntil);
   const buy = useBuyCredits();
+  const stablecoinOffers = data?.offers.filter((offer) => offer.stablecoin) ?? [];
 
   return (
     <Card className="border-hairline">
@@ -43,18 +44,37 @@ export function CreditsPanel() {
               ) : null}
             </div>
             {data && data.offers.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {data.offers.map((offer) => (
-                  <Button
-                    key={offer.priceId}
-                    variant="outline"
-                    disabled={buy.isPending}
-                    onClick={() => buy.mutate(offer.priceId)}
-                  >
-                    {UI.CREDITS.BUY_CTA(offer.credits, offer.price)}
-                  </Button>
-                ))}
-              </div>
+              <>
+                <div className="flex flex-wrap gap-2">
+                  {data.offers.map((offer) => (
+                    <Button
+                      key={offer.priceId}
+                      variant="outline"
+                      disabled={buy.isPending}
+                      onClick={() => buy.mutate({ priceId: offer.priceId, method: "card" })}
+                    >
+                      {UI.CREDITS.BUY_CTA(offer.credits, offer.price)}
+                    </Button>
+                  ))}
+                </div>
+                {stablecoinOffers.length > 0 ? (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-wrap gap-2">
+                      {stablecoinOffers.map((offer) => (
+                        <Button
+                          key={offer.priceId}
+                          variant="outline"
+                          disabled={buy.isPending}
+                          onClick={() => buy.mutate({ priceId: offer.priceId, method: "crypto" })}
+                        >
+                          {UI.CREDITS.BUY_STABLECOIN_CTA(offer.credits, offer.price)}
+                        </Button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{UI.CREDITS.STABLECOIN_NOTE}</p>
+                  </div>
+                ) : null}
+              </>
             ) : data ? (
               <p className="text-xs text-muted-foreground">{UI.CREDITS.UNAVAILABLE}</p>
             ) : null}

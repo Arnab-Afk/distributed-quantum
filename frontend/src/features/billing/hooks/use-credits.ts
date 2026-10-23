@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { API, BILLING, CONFIG, QUERY_KEYS, UI } from "@/constants";
+import type { CreditPaymentMethod } from "../lib/credit-packs";
 import type { CreditsOverview } from "../types";
 
 /** The signed-in user's credit balance and the packs on offer. */
@@ -27,11 +28,11 @@ export function useCredits(pollUntil: number | null) {
 /** Starts Stripe Checkout for a credit pack; the browser is redirected on success. */
 export function useBuyCredits() {
   return useMutation({
-    mutationFn: async (priceId: string) => {
+    mutationFn: async ({ priceId, method }: { priceId: string; method: CreditPaymentMethod }) => {
       const res = await fetch(API.BILLING.CREDITS_CHECKOUT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ priceId }),
+        body: JSON.stringify({ priceId, method }),
       });
       if (!res.ok) throw new Error(UI.CREDITS.UNAVAILABLE);
       const { url } = (await res.json()) as { url: string };

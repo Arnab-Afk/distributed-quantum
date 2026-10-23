@@ -104,6 +104,10 @@ export const UI = {
     JOB_COST: (cost: string) => `A circuit run costs ${cost} credits.`,
     JOB_COST_FREE: "Circuit runs don't use credits right now.",
     BUY_CTA: (credits: string, price: string) => `Buy ${credits} credits · ${price}`,
+    BUY_STABLECOIN_CTA: (credits: string, price: string) =>
+      `Buy ${credits} credits · ${price} in USDC`,
+    STABLECOIN_NOTE:
+      "USDC payments are handled by Stripe from your own wallet. Refunds go back to that wallet as USDC.",
     UNAVAILABLE: "Credit packs are not available yet.",
     CHECKOUT_SUCCESS: "Payment received — your credits will appear in a moment.",
     CHECKOUT_CANCELLED: "Checkout cancelled. You have not been charged.",
