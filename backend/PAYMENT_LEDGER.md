@@ -139,10 +139,72 @@ On-chain events are confirmed when the transaction is broadcast, as the legacy
 3. `confirm(key, external_ref=...)` when it settles, `fail` when it definitely
    did not, and `mark_uncertain` when you cannot tell.
 
+## Prepaid credits (#10)
+
+Users can buy credit packs by card and spend the credits on circuit runs. One
+credit is one USDC, so card-bought credits sit in the same ledger as everything else.
+
+```
+Settings → POST /api/billing/credits/checkout → Stripe Checkout (mode: payment)
+Stripe → /api/auth/stripe/webhook  (signature check, event-id de-dupe)
+       → line items → credits      (from STRIPE_CREDIT_PACKS, never the client)
+       → POST /api/v1/internal/billing/credit-purchases  (X-Billing-Internal-Secret)
+       → payment event stripe:checkout:<session id> → ledger credit
+```
+
+**Buying.** Packs are Stripe one-time Prices mapped to credit amounts in
+`STRIPE_CREDIT_PACKS` (frontend). The webhook handles credit-pack sessions itself
+and does not forward them to the subscription plugin. It works out the credits from
+the session's line items as Stripe recorded them. A session paid by a delayed
+method completes unpaid and is credited on
+`checkout.session.async_payment_succeeded`.
+
+**Exactly once.** The frontend de-duplicates Stripe events by id. The backend
+keys the purchase on the Checkout Session (`stripe:checkout:<session id>`), so a
+redelivered event, or the two events of one async session, credit once. A
+redelivery also finishes a credit that a crash interrupted.
+
+**Spending.** With `QB2_CIRCUIT_JOB_CREDIT_COST` above 0, submitting a circuit holds
+its cost under `job:<job id>`, or returns `402 insufficient_credits`. A completed job
+captures the hold and a failed one releases it. If the server stops mid-job, the
+hold stays reserved and is never spent twice. Releasing holds for jobs that never
+finish is a follow-up; there is no admin route for it yet. The default of 0
+keeps runs free. x402 runs are paid per request and never use credits.
+
+**Identity.** Runs and balances use the signed `qn1` assertion, so both sides need
+the same `AGENT_AUTH_BRIDGE_SECRET`. Without it, runs are submitted anonymously as
+before and are not charged to a user.
+
+### Configuration
+
+| Side | Variable | Purpose |
+| --- | --- | --- |
+| Frontend | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | Stripe billing (#42); required for packs too |
+| Frontend | `STRIPE_CREDIT_PACKS` | `price_abc:10,price_def:50` |
+| Both | `BILLING_INTERNAL_SECRET` / `QB2_BILLING_INTERNAL_SECRET` | Same 32+ character secret; guards the purchase route |
+| Both | `AGENT_AUTH_BRIDGE_SECRET` | Signs the user's identity for runs and balances |
+| Backend | `QB2_CIRCUIT_JOB_CREDIT_COST` | Credits per circuit run; `0` disables charging |
+
+### Manual test (Stripe CLI, test mode)
+
+1. In the Stripe Dashboard (test mode), create a product with a **one-time** price,
+   e.g. $10, and set `STRIPE_CREDIT_PACKS=price_...:10`.
+2. Set the secrets above, `QB2_CIRCUIT_JOB_CREDIT_COST=2`, and restart both apps.
+3. `stripe listen --forward-to localhost:3000/api/auth/stripe/webhook`
+4. Settings → Credits → **Buy 10 credits · $10.00**, pay with `4242 4242 4242 4242`.
+   The balance shows 10.
+5. `stripe events resend <evt_id>`: the webhook returns `duplicate: true` and the
+   balance stays 10. `GET /api/v1/admin/payments/events/stripe:checkout:<cs_...>`
+   shows one confirmed card event.
+6. Submit a circuit run: the balance drops to 8, with 2 reserved while it runs and
+   spent once it completes. With fewer than 2 credits, submitting shows the 402 message.
+
 ## Tests
 
 ```bash
-uv run pytest tests/unit/test_payment_ledger_models.py tests/unit/test_payments_admin_api.py
+uv run pytest tests/unit/test_payment_ledger_models.py tests/unit/test_payments_admin_api.py tests/unit/test_credits_api.py
+# Frontend webhook and credit-pack tests:
+(cd ../frontend && bun run test:billing)
 # Idempotency and concurrency need a real server (disposable local MongoDB only):
 QB2_MONGODB_TEST_URI=mongodb://127.0.0.1:27017 uv run pytest tests/live -q
 ```
@@ -151,3 +213,6 @@ The live tests cover replayed keys, concurrent confirms, concurrent holds that
 would overspend, concurrent double captures and releases, rebuilding a lost hold
 guard, drift detection, randomized concurrent traffic that must keep guards equal
 to ledger sums, and the payout paths (paid once, never retried when uncertain).
+`tests/live/test_credits_mongo.py` covers credit purchases delivered twice or
+concurrently, the two events of one async session, crash recovery, and job
+metering that charges only completed jobs.
