@@ -76,6 +76,16 @@ export function creditPackSessionFromEvent(event: {
   return { sessionId, accountId, paid: field(session, "payment_status") === "paid" };
 }
 
+/**
+ * The method that paid a session, from a Checkout Session retrieved with
+ * `payment_intent.payment_method` expanded. Only stablecoins get their own
+ * rail; cards and Stripe's other dynamic methods stay on the card rail.
+ */
+export function paymentMethodOfSession(session: unknown): CreditPaymentMethod {
+  const type = field(field(field(session, "payment_intent"), "payment_method"), "type");
+  return type === BILLING.STABLECOIN_PAYMENT_METHOD ? "crypto" : "card";
+}
+
 function field(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null && key in value
     ? Object.getOwnPropertyDescriptor(value, key)?.value

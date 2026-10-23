@@ -9,6 +9,7 @@ import {
   creditPackSessionFromEvent,
   creditsForLineItems,
   parseCreditPacks,
+  paymentMethodOfSession,
   stablecoinPaymentsEnabled,
   type CreditPack,
   type CreditPaymentMethod,
@@ -162,10 +163,13 @@ export async function handleCreditPackEvent(event: VerifiedEvent): Promise<boole
   if (!config)
     throw new Error("Received a credit-pack payment but credit packs are not configured");
 
-  // The amount comes from Stripe's record of what was bought, never the client.
-  const lineItems = await config.stripe.checkout.sessions.listLineItems(session.sessionId, {
-    limit: 100,
-  });
+  // The amount and the method come from Stripe's record of the payment, never the client.
+  const [lineItems, paid] = await Promise.all([
+    config.stripe.checkout.sessions.listLineItems(session.sessionId, { limit: 100 }),
+    config.stripe.checkout.sessions.retrieve(session.sessionId, {
+      expand: ["payment_intent.payment_method"],
+    }),
+  ]);
   const items = lineItems.data.map((item) => ({
     priceId: item.price?.id ?? "",
     quantity: item.quantity ?? 0,
@@ -184,6 +188,7 @@ export async function handleCreditPackEvent(event: VerifiedEvent): Promise<boole
       credits,
       stripe_event_id: event.id,
       price_id: items[0]?.priceId ?? null,
+      payment_method: paymentMethodOfSession(paid),
     }),
     cache: "no-store",
   });
