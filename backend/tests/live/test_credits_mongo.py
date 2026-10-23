@@ -1,4 +1,4 @@
-"""Opt-in real MongoDB checks for card-bought credits and job metering (#10).
+"""Opt-in real MongoDB checks for Stripe-bought credits and job metering (#10).
 
 QB2_MONGODB_TEST_URI=mongodb://127.0.0.1:27017 uv run pytest tests/live -q
 """
@@ -22,7 +22,7 @@ from quantum_backend_v2.payments.credits import (
 )
 from quantum_backend_v2.payments.errors import InsufficientCreditError
 from quantum_backend_v2.payments.ledger import CREDIT_LEDGER, LedgerService
-from quantum_backend_v2.payments.models import LedgerEntryType, PaymentEventStatus
+from quantum_backend_v2.payments.models import LedgerEntryType, PaymentEventStatus, PaymentRail
 
 pytestmark = pytest.mark.anyio
 
@@ -94,6 +94,17 @@ async def test_completed_and_async_succeeded_events_for_one_session_credit_once(
     )
 
     assert await _credits(ledger) == [D("10")]
+
+
+async def test_stablecoin_purchase_credits_once_on_its_own_rail(ledger: LedgerService) -> None:
+    purchase = _purchase().model_copy(update={"payment_method": "crypto"})
+    await record_credit_purchase(ledger, purchase)
+    await record_credit_purchase(ledger, purchase)
+
+    assert await _credits(ledger) == [D("10")]
+    event = await ledger.get_event("stripe:checkout:cs_test_1")
+    assert event.rail is PaymentRail.STABLECOIN
+    assert event.status is PaymentEventStatus.CONFIRMED
 
 
 async def test_redelivery_finishes_a_credit_interrupted_by_a_crash(ledger: LedgerService) -> None:

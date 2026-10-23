@@ -1,12 +1,13 @@
-"""Prepaid credits: card-purchased packs and per-job spending (#10).
+"""Prepaid credits: Stripe-purchased packs and per-job spending (#10, #76).
 
-One credit is one USDC in the ledger, so card-bought and on-chain credits are
-interchangeable.
+One credit is one USDC in the ledger, so card-bought, stablecoin-bought and
+on-chain credits are interchangeable.
 """
 
 from __future__ import annotations
 
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -24,6 +25,15 @@ def card_purchase_key(checkout_session_id: str) -> str:
     return f"stripe:checkout:{checkout_session_id}"
 
 
+# Stripe's payment method type for a paid session, mapped to the ledger rail.
+StripePaymentMethod = Literal["card", "crypto"]
+
+_RAILS: dict[str, PaymentRail] = {
+    "card": PaymentRail.CARD,
+    "crypto": PaymentRail.STABLECOIN,
+}
+
+
 class CreditPurchase(BaseModel):
     """A paid Stripe Checkout Session for a credit pack."""
 
@@ -34,13 +44,14 @@ class CreditPurchase(BaseModel):
     credits: Decimal = Field(gt=0, le=Decimal("100000"), decimal_places=6)
     stripe_event_id: str | None = Field(default=None, max_length=255)
     price_id: str | None = Field(default=None, max_length=255)
+    payment_method: StripePaymentMethod = "card"
 
 
 async def record_credit_purchase(ledger: LedgerService, purchase: CreditPurchase) -> RecordResult:
     """Record a paid credit pack and credit the buyer, once per Checkout Session."""
     result = await ledger.record_event(
         idempotency_key=card_purchase_key(purchase.checkout_session_id),
-        rail=PaymentRail.CARD,
+        rail=_RAILS[purchase.payment_method],
         purpose=PaymentPurpose.CREDIT_PURCHASE,
         amount=purchase.credits,
         status=PaymentEventStatus.CONFIRMED,

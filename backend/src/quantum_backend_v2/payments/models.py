@@ -28,6 +28,8 @@ class PaymentRail(str, Enum):
 
     X402 = "x402"
     CARD = "card"
+    # USDC and other stablecoins paid through Stripe; Stripe settles in USD.
+    STABLECOIN = "stablecoin"
     ZCASH = "zcash"
     ONCHAIN = "onchain"
     SWAP = "swap"
