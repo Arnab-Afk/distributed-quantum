@@ -60,6 +60,7 @@ export const UI = {
     SESSION_EXPIRED: "Your session has expired. Please sign in again.",
     NO_ACCOUNT: "No account found with this email. Please sign up first.",
     EMAIL_EXISTS: "An account with this email already exists. Please sign in instead.",
+    RUN_CREATE_FAILED: "Failed to create run",
   },
   SUCCESS: {
     OTP_SENT: "Verification code sent to your email",
@@ -93,6 +94,20 @@ export const UI = {
       "Payment received. Your subscription will activate in a moment — refresh if it doesn't.",
     CHECKOUT_CANCELLED: "Checkout cancelled. You have not been charged.",
     ERROR: "Could not reach billing. Please try again.",
+  },
+  CREDITS: {
+    TITLE: "Credits",
+    DESCRIPTION: "Prepaid credits for running jobs. One credit is one USDC.",
+    BALANCE_LABEL: "Available",
+    BALANCE_LOADING: "—",
+    HELD_LABEL: "Reserved for running jobs",
+    JOB_COST: (cost: string) => `A circuit run costs ${cost} credits.`,
+    JOB_COST_FREE: "Circuit runs don't use credits right now.",
+    BUY_CTA: (credits: string, price: string) => `Buy ${credits} credits · ${price}`,
+    UNAVAILABLE: "Credit packs are not available yet.",
+    CHECKOUT_SUCCESS: "Payment received — your credits will appear in a moment.",
+    CHECKOUT_CANCELLED: "Checkout cancelled. You have not been charged.",
+    ERROR: "Could not load credits. Please try again.",
   },
   NAV: {
     DASHBOARD: "Dashboard",

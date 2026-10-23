@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 
@@ -127,6 +128,16 @@ class AppSettings(BaseModel):
         ),
     )
     x402_gateway_secret: str | None = Field(default=None, min_length=16)
+    billing_internal_secret: str | None = Field(
+        default=None,
+        min_length=32,
+        description="Shared with the frontend's Stripe webhook to record credit purchases.",
+    )
+    circuit_job_credit_cost: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        description="Credits charged per circuit job. 0 turns credit metering off.",
+    )
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
@@ -145,6 +156,8 @@ class AppSettings(BaseModel):
             auth_required=_parse_bool(env.get("QB2_AUTH_REQUIRED", "true")),
             allow_dev_bearer_tokens=_parse_bool(env.get("QB2_ALLOW_DEV_BEARER_TOKENS", "false")),
             x402_gateway_secret=_optional(env.get("QB2_X402_GATEWAY_SECRET")),
+            billing_internal_secret=_optional(env.get("QB2_BILLING_INTERNAL_SECRET")),
+            circuit_job_credit_cost=Decimal(env.get("QB2_CIRCUIT_JOB_CREDIT_COST", "0")),
             logging=LoggingSettings(
                 level=env.get("QB2_LOG_LEVEL", "INFO"),
                 json_logs=_parse_bool(env.get("QB2_JSON_LOGS", "true")),

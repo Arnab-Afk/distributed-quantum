@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { Settings } from "lucide-react";
 import { PageHeader } from "@/shared/components/layout/page-header";
 import { ProfileForm } from "@/features/settings/components/profile-form";
-import { BillingPanel } from "@/features/billing";
+import { BillingPanel, CreditsPanel } from "@/features/billing";
 
 export default function SettingsPage() {
   return (
@@ -18,6 +18,9 @@ export default function SettingsPage() {
         <ProfileForm />
         <Suspense>
           <BillingPanel />
+        </Suspense>
+        <Suspense>
+          <CreditsPanel />
         </Suspense>
       </div>
     </div>

@@ -58,6 +58,10 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def new_circuit_job_id() -> str:
+    return f"job-{uuid.uuid4()}"
+
+
 class CircuitJobService:
     """Durable circuit job submission, planning, and execution bridge."""
 
@@ -81,8 +85,9 @@ class CircuitJobService:
         *,
         circuit_text: str,
         owner_user_id: str,
+        job_id: str | None = None,
     ) -> WorkflowRunDocument:
-        job_id = f"job-{uuid.uuid4()}"
+        job_id = job_id or new_circuit_job_id()
         now = _utc_now()
         await _ensure_platform_user(owner_user_id)
         doc = WorkflowRunDocument(

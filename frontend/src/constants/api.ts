@@ -4,6 +4,10 @@ export const API = {
     CHECK_EMAIL: "/api/auth/check-email",
     STRIPE_WEBHOOK: "/api/auth/stripe/webhook",
   },
+  BILLING: {
+    CREDITS: "/api/billing/credits",
+    CREDITS_CHECKOUT: "/api/billing/credits/checkout",
+  },
   DASHBOARD: {
     ROOT: "/api/dashboard",
     STATS: "/api/dashboard/stats",

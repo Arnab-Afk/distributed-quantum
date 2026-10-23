@@ -450,14 +450,42 @@ class LedgerService:
     async def capture(
         self,
         hold_id: str,
-        amount: Decimal,
+        amount: Decimal | None = None,
         *,
         idempotency_key: str,
         memo: str | None = None,
-    ) -> LedgerEntry:
-        """Spend part or all of a hold."""
+    ) -> LedgerEntry | None:
+        """Spend part of a hold, or everything left when ``amount`` is None.
+
+        Returns None when a full capture finds nothing left to spend.
+        """
         await self._ready()
         hold = await self._get_hold(hold_id)
+        replay = await self._replayed(
+            idempotency_key, LedgerEntryType.CAPTURE, hold_id, amount
+        )
+        if replay is not None:
+            return replay
+
+        try:
+            if amount is None:
+                amount = await self._take_rest_of_hold(hold_id)
+                if amount == _ZERO:
+                    # Nothing left, possibly because a concurrent replay took it.
+                    return await self._replayed(
+                        idempotency_key, LedgerEntryType.CAPTURE, hold_id, None
+                    )
+            else:
+                await self._take_from_hold(hold_id, amount)
+        except HoldExceededError:
+            # A concurrent replay of this same capture may have used the hold up.
+            replay = await self._replayed(
+                idempotency_key, LedgerEntryType.CAPTURE, hold_id, amount
+            )
+            if replay is not None:
+                return replay
+            raise
+
         entry = _new_entry(
             idempotency_key=idempotency_key,
             account_id=hold["account_id"],
@@ -467,18 +495,6 @@ class LedgerService:
             job_id=hold.get("job_id"),
             memo=memo,
         )
-        existing = await self._existing_entry(entry)
-        if existing is not None:
-            return existing
-
-        try:
-            await self._take_from_hold(hold_id, amount)
-        except HoldExceededError:
-            # A concurrent replay of this same capture may have used the hold up.
-            existing = await self._existing_entry(entry)
-            if existing is not None:
-                return existing
-            raise
         stored = await self._insert_entry(entry)
         if stored is not entry:
             await self._return_to_hold(hold_id, amount)
@@ -500,7 +516,7 @@ class LedgerService:
         """
         await self._ready()
         hold = await self._get_hold(hold_id)
-        replay = await self._release_replay(idempotency_key, hold_id, amount)
+        replay = await self._replayed(idempotency_key, LedgerEntryType.RELEASE, hold_id, amount)
         if replay is not None:
             return replay
 
@@ -509,11 +525,13 @@ class LedgerService:
                 amount = await self._take_rest_of_hold(hold_id)
                 if amount == _ZERO:
                     # Nothing left, possibly because a concurrent replay took it.
-                    return await self._release_replay(idempotency_key, hold_id, None)
+                    return await self._replayed(
+                        idempotency_key, LedgerEntryType.RELEASE, hold_id, None
+                    )
             else:
                 await self._take_from_hold(hold_id, amount)
         except HoldExceededError:
-            replay = await self._release_replay(idempotency_key, hold_id, amount)
+            replay = await self._replayed(idempotency_key, LedgerEntryType.RELEASE, hold_id, amount)
             if replay is not None:
                 return replay
             raise
@@ -629,15 +647,20 @@ class LedgerService:
             raise HoldNotFoundError(hold_id)
         return rebuilt
 
-    async def _release_replay(
-        self, idempotency_key: str, hold_id: str, amount: Decimal | None
+    async def _replayed(
+        self,
+        idempotency_key: str,
+        entry_type: LedgerEntryType,
+        hold_id: str,
+        amount: Decimal | None,
     ) -> LedgerEntry | None:
+        """The entry already stored under this key, checked to be the same operation."""
         doc = await self._ledger.find_one({"idempotency_key": idempotency_key})
         if doc is None:
             return None
         stored = _doc_to_entry(doc)
         if (
-            stored.entry_type is not LedgerEntryType.RELEASE
+            stored.entry_type is not entry_type
             or stored.hold_id != hold_id
             or (amount is not None and stored.amount != amount)
         ):

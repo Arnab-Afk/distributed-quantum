@@ -29,6 +29,7 @@ from quantum_backend_v2.api.routers import discovery_router, system_router
 from quantum_backend_v2.api.routers.agent import router as agent_router
 from quantum_backend_v2.api.routers.chains import build_chains_router
 from quantum_backend_v2.api.routers.circuits import build_circuits_router
+from quantum_backend_v2.api.routers.credits import build_credits_router
 from quantum_backend_v2.api.routers.enrollment import build_enrollment_router
 from quantum_backend_v2.api.routers.financial import build_financial_router
 from quantum_backend_v2.api.routers.options import build_options_router
@@ -50,6 +51,7 @@ from quantum_backend_v2.chains.models import ChainRegistry
 from quantum_backend_v2.config import AppSettings
 from quantum_backend_v2.discovery.service import DiscoveryService
 from quantum_backend_v2.libp2p import Libp2pBootstrapPlan, Libp2pRuntime
+from quantum_backend_v2.payments.credits import JobCreditMeter
 from quantum_backend_v2.payments.ledger import LedgerService
 from quantum_backend_v2.persistence import PersistenceRuntime
 from quantum_backend_v2.provenance.service import ProvenanceService
@@ -84,6 +86,11 @@ def create_app(
     mongodb = persistence_runtime.mongodb
     ledger_service = LedgerService(mongodb.database) if mongodb is not None else None
     reconcile_interval = int(os.getenv("QB2_PAYMENT_RECONCILE_INTERVAL_SECONDS", "300"))
+    credit_meter = (
+        JobCreditMeter(ledger_service, cost=settings.circuit_job_credit_cost)
+        if ledger_service is not None and settings.circuit_job_credit_cost > 0
+        else None
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> Any:
@@ -184,6 +191,7 @@ def create_app(
             build_circuits_router(
                 job_service=circuit_job_service,
                 x402_gateway_secret=settings.x402_gateway_secret,
+                credit_meter=credit_meter,
             )
         )
     app.include_router(build_services_router(discovery_service=discovery_service))
@@ -205,6 +213,13 @@ def create_app(
 
     if ledger_service is not None:
         app.include_router(build_payments_admin_router(ledger_service=ledger_service))
+        app.include_router(
+            build_credits_router(
+                ledger_service=ledger_service,
+                circuit_job_cost=settings.circuit_job_credit_cost,
+                billing_internal_secret=settings.billing_internal_secret,
+            )
+        )
 
     app.include_router(benchmark_router)
     app.include_router(pharma_router)

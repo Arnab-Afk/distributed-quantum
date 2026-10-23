@@ -1,6 +1,8 @@
 import "server-only";
 import { cache } from "react";
 import { BACKEND } from "@/constants";
+import { backendAssertion } from "@/features/auth/server/backend-assertion";
+import { getSession } from "@/features/auth/server/session";
 import type { BackendJobListItem, BackendJobDetail } from "../types";
 import {
   transformRunSummary,
@@ -30,3 +32,22 @@ export const getRunDetail = cache(async (jobId: string) => {
     return null;
   }
 });
+
+/**
+ * Submits a circuit as the signed-in user, so the backend can charge their
+ * credits. Without a session or bridge secret it submits anonymously, as before.
+ */
+export async function submitCircuitRun(body: unknown): Promise<Response> {
+  const session = await getSession();
+  const assertion = session?.user ? backendAssertion(session.user) : null;
+  const res = await fetch(BACKEND.CIRCUITS.SUBMIT, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(assertion ? { Authorization: assertion } : {}),
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  return Response.json(await res.json(), { status: res.status });
+}

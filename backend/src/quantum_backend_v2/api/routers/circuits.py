@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import hmac
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, status
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
-from quantum_backend_v2.api.errors.models import not_found
+from quantum_backend_v2.api.errors.models import ErrorCode, PlatformException, not_found
 from quantum_backend_v2.api.models.circuits import (
     CircuitSubmitRequest,
     CircuitSubmitResponse,
@@ -17,8 +18,12 @@ from quantum_backend_v2.api.models.circuits import (
     JobResult,
     JobStatusResponse,
 )
-from quantum_backend_v2.application.parity import CircuitJobService
+from quantum_backend_v2.application.parity import CircuitJobService, new_circuit_job_id
+from quantum_backend_v2.payments.credits import JobCreditMeter
+from quantum_backend_v2.payments.errors import InsufficientCreditError
 from quantum_backend_v2.persistence.mongodb import WorkflowRunDocument
+
+logger = logging.getLogger(__name__)
 
 _X402_GATEWAY_HEADER = "X-X402-Gateway-Secret"
 _X402_OWNER_USER_ID = "x402-algorand"
@@ -28,9 +33,27 @@ def build_circuits_router(
     *,
     job_service: CircuitJobService,
     x402_gateway_secret: str | None = None,
+    credit_meter: JobCreditMeter | None = None,
 ) -> APIRouter:
-    """Build the circuits/jobs router."""
+    """Build the circuits/jobs router.
+
+    With a ``credit_meter``, each user-submitted job holds its cost on submit
+    and is charged only if it completes. x402 jobs are paid per request instead.
+    """
     router = APIRouter(prefix="/api/v1", tags=["circuits", "jobs"])
+
+    async def process_and_settle(job_id: str, owner_user_id: str, meter: JobCreditMeter) -> None:
+        try:
+            await job_service.process(job_id)
+        finally:
+            run = await job_service.get_job_for_owner(job_id, owner_user_id=owner_user_id)
+            succeeded = run is not None and run.status == "COMPLETED"
+            try:
+                await meter.settle(job_id, succeeded=succeeded)
+            except Exception:
+                # The hold stays reserved, never spendable twice; the
+                # reconciliation sweep reports it.
+                logger.exception("failed to settle credits for job %s", job_id)
 
     @router.post(
         "/circuits/submit",
@@ -43,11 +66,35 @@ def build_circuits_router(
         background_tasks: BackgroundTasks,
         current_user: CurrentUser,
     ) -> CircuitSubmitResponse:
-        record = await job_service.submit(
-            circuit_text=body.circuit,
-            owner_user_id=current_user.user_id,
+        if credit_meter is None:
+            record = await job_service.submit(
+                circuit_text=body.circuit,
+                owner_user_id=current_user.user_id,
+            )
+            background_tasks.add_task(job_service.process, record.id)
+            return CircuitSubmitResponse(job_id=record.id, status=record.status)
+
+        job_id = new_circuit_job_id()
+        try:
+            await credit_meter.reserve(current_user.user_id, job_id)
+        except InsufficientCreditError:
+            raise PlatformException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                error=ErrorCode.INSUFFICIENT_CREDITS,
+                message=f"A circuit job costs {credit_meter.cost} credits. Buy credits to run it.",
+            ) from None
+        try:
+            record = await job_service.submit(
+                circuit_text=body.circuit,
+                owner_user_id=current_user.user_id,
+                job_id=job_id,
+            )
+        except Exception:
+            await credit_meter.settle(job_id, succeeded=False)
+            raise
+        background_tasks.add_task(
+            process_and_settle, record.id, current_user.user_id, credit_meter
         )
-        background_tasks.add_task(job_service.process, record.id)
         return CircuitSubmitResponse(job_id=record.id, status=record.status)
 
     @router.get(
