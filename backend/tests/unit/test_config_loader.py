@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from pathlib import Path
 
 from quantum_backend_v2.config import load_settings
@@ -9,6 +10,22 @@ def test_load_settings_reads_x402_gateway_secret() -> None:
     settings = load_settings(env={"QB2_X402_GATEWAY_SECRET": "test-shared-secret"})
 
     assert settings.x402_gateway_secret == "test-shared-secret"
+
+
+def test_load_settings_reads_billing_settings() -> None:
+    settings = load_settings(
+        env={"QB2_BILLING_INTERNAL_SECRET": "b" * 32, "QB2_CIRCUIT_JOB_CREDIT_COST": "1.5"}
+    )
+
+    assert settings.billing_internal_secret == "b" * 32
+    assert settings.circuit_job_credit_cost == Decimal("1.5")
+
+
+def test_credit_metering_is_off_by_default() -> None:
+    settings = load_settings(env={})
+
+    assert settings.billing_internal_secret is None
+    assert settings.circuit_job_credit_cost == Decimal("0")
 
 
 def test_load_settings_reads_environment_overrides() -> None:
