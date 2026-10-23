@@ -3,6 +3,9 @@ export const QUERY_KEYS = {
     all: () => ["auth"] as const,
     session: () => ["auth", "session"] as const,
   },
+  billing: {
+    credits: () => ["billing", "credits"] as const,
+  },
   dashboard: {
     all: () => ["dashboard"] as const,
     overview: () => ["dashboard", "overview"] as const,
