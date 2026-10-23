@@ -36,7 +36,7 @@ class CreditPurchase(BaseModel):
     price_id: str | None = Field(default=None, max_length=255)
 
 
-async def record_card_purchase(ledger: LedgerService, purchase: CreditPurchase) -> RecordResult:
+async def record_credit_purchase(ledger: LedgerService, purchase: CreditPurchase) -> RecordResult:
     """Record a paid credit pack and credit the buyer, once per Checkout Session."""
     result = await ledger.record_event(
         idempotency_key=card_purchase_key(purchase.checkout_session_id),
