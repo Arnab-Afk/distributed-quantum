@@ -53,6 +53,34 @@ async def test_malformed_success_is_not_a_content_mismatch_or_rejection(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    "body",
+    [
+        b'{"Stats":{"BlockCount":0,"BlockBytesCount":0}}\n{"Stats":{"BlockCount":0,"BlockBytesCount":0}}\n',
+        b'{"Root":null,"Stats":null}\n',
+        b'{"Stats":{"BlockCount":true,"BlockBytesCount":0}}\n',
+        b'{"Stats":{"BlockCount":0,"BlockBytesCount":-1}}\n',
+    ],
+)
+async def test_car_invalid_events_are_unavailable(body: bytes) -> None:
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, content=body))
+    async with KuboClient(settings(), transport=transport) as client:
+        with pytest.raises(KuboUnavailableError):
+            await client.dag_import(b"car")
+
+
+@pytest.mark.anyio
+async def test_rootless_car_can_succeed_without_claiming_pinned_roots() -> None:
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(200, json={"Stats": {"BlockCount": 0, "BlockBytesCount": 0}})
+    )
+    async with KuboClient(settings(), transport=transport) as client:
+        result = await client.dag_import(b"car")
+    assert result.pinned_roots == ()
+    assert result.block_count == 0
+
+
+@pytest.mark.anyio
 async def test_explicit_streamed_rpc_error_is_rejected_without_echoing_it() -> None:
     transport = httpx.MockTransport(
         lambda request: httpx.Response(200, json={"Message": SECRET, "Code": 0, "Type": "error"})

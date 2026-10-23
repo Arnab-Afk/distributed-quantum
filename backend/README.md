@@ -56,6 +56,7 @@ bytes or regular binary files; do not pass blocking pipes/custom blocking reader
 | `add(data, pin=True)` | CIDv1 and reported DAG size (not necessarily original file length) |
 | `pin_add(cid, recursive=True)` / `pin_rm(cid, recursive=True)` | Acknowledged pin CIDs; unpinning is not immediate deletion |
 | `pin_ls(cid=None)` | CID-to-pin metadata map; empty listings are valid |
+| `dag_import(data, pin_roots=True)` | CAR block statistics and successfully pinned roots |
 | `block_stat(cid)` | Reported CID and block size, not independent byte verification |
 
 `KuboRejectedError` covers invalid client configuration/arguments, rejected HTTP
@@ -64,7 +65,8 @@ requests (including disallowed redirects) and explicit RPC/pin errors.
 invalid/incomplete responses. Errors expose only operation/category/status, never
 remote error text. Cancellation propagates. **No automatic retries:** a failed or
 timed-out mutation may already have stored blocks or changed pins; reconcile its
-outcome rather than blindly replaying it. CAR import follows in the final #61 slice.
+outcome rather than blindly replaying it. CAR import is not transactional, and
+`pin_roots=False` returns no pinned roots, not an inventory of CAR header roots.
 
 Kubo can put a late error in an HTTP trailer after status 200. The default
 HTTP/1.1 transport uses public `httpcore`/`h11` interfaces to detect it before
@@ -79,9 +81,17 @@ and [late-error emitter](https://github.com/ipfs/go-ipfs-cmds/blob/v0.16.1/http/
 uv run --frozen pytest tests/unit/test_kubo*.py -q
 ```
 
-MockTransport covers the five standard methods; local wire-level tests exercise actual
+MockTransport covers all six methods; local wire-level tests exercise actual
 chunked HTTP trailers, fragmentation, pooling and privacy without external services.
-CAR import and the opt-in full RPC integration check follow separately.
+An optional `tests/live/test_kubo_rpc.py` check is skipped unless
+`QB2_KUBO_LIVE_TEST=1`. Run it **only against a disposable private node**, with its
+URL/secret already provisioned in the environment; it creates harmless unique
+fixtures and removes only their pins, never runs GC or deletes unrelated content.
+
+```bash
+# Only after provisioning the private disposable test URL/token in the environment:
+QB2_KUBO_LIVE_TEST=1 uv run --frozen pytest tests/live/test_kubo_rpc.py -m live_kubo -q
+```
 
 ## Current Milestone
 

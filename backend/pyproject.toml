@@ -80,6 +80,7 @@ minversion = "8.0"
 addopts = "-ra"
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["live_kubo: opt-in integration against a disposable private Kubo node"]
 
 [tool.ruff]
 line-length = 100

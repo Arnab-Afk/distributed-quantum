@@ -99,6 +99,33 @@ class BlockStat(_Result):
     size_bytes: _Count = Field(alias="Size")
 
 
+class ImportResult(_Result):
+    """Imported block statistics and roots pinned by this call, not all CAR header roots."""
+
+    pinned_roots: tuple[_CID, ...]
+    block_count: _Count
+    block_bytes: _Count
+
+
+class _Link(_Result):
+    cid: _CID = Field(alias="/")
+
+
+class _ImportRoot(_Result):
+    cid: _Link = Field(alias="Cid")
+    pin_error: str = Field(default="", alias="PinErrorMsg", repr=False)
+
+
+class _ImportStats(_Result):
+    block_count: _Count = Field(alias="BlockCount")
+    block_bytes: _Count = Field(alias="BlockBytesCount")
+
+
+class _ImportEvent(_Result):
+    root: _ImportRoot | None = Field(default=None, alias="Root")
+    stats: _ImportStats | None = Field(default=None, alias="Stats")
+
+
 def _single(records: list[object], model: type[_ResultT]) -> _ResultT:
     if len(records) != 1:
         raise ValueError("Expected a single RPC result")
@@ -249,6 +276,43 @@ class KuboClient:
             "block/stat",
             lambda records: _single(records, BlockStat),
             params={"arg": self._cid(cid, "block/stat")},
+        )
+
+    async def dag_import(self, data: bytes | BinaryIO, *, pin_roots: bool = True) -> ImportResult:
+        """Import a CAR; when pin_roots=False, Kubo does not report its header roots."""
+
+        def parse(records: list[object]) -> ImportResult:
+            roots: list[str] = []
+            seen: set[str] = set()
+            stats: _ImportStats | None = None
+            for record in records:
+                event = _ImportEvent.model_validate(record)
+                if (event.root is None) == (event.stats is None) or stats is not None:
+                    raise ValueError("Invalid CAR result sequence")
+                if event.root is not None:
+                    if event.root.pin_error:
+                        raise KuboRejectedError("dag/import")
+                    if not pin_roots or event.root.cid.cid in seen:
+                        raise ValueError("Unexpected CAR root")
+                    seen.add(event.root.cid.cid)
+                    roots.append(event.root.cid.cid)
+                else:
+                    stats = event.stats
+            if stats is None:
+                raise ValueError("Missing CAR statistics")
+            return ImportResult(
+                pinned_roots=tuple(roots),
+                block_count=stats.block_count,
+                block_bytes=stats.block_bytes,
+            )
+
+        return await self._perform(
+            "dag/import",
+            parse,
+            data=data,
+            filename="import.car",
+            media_type="application/vnd.ipld.car",
+            params={"pin-roots": str(pin_roots).lower(), "stats": "true"},
         )
 
     async def _perform(
