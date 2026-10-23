@@ -60,6 +60,7 @@ export const UI = {
     SESSION_EXPIRED: "Your session has expired. Please sign in again.",
     NO_ACCOUNT: "No account found with this email. Please sign up first.",
     EMAIL_EXISTS: "An account with this email already exists. Please sign in instead.",
+    RUN_CREATE_FAILED: "Failed to create run",
   },
   SUCCESS: {
     OTP_SENT: "Verification code sent to your email",
