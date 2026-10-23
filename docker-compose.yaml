@@ -89,6 +89,18 @@ services:
       PINATA_JWT: "${PINATA_JWT}"
       PINATA_API_KEY: "${PINATA_API_KEY}"
       PINATA_API_SECRET: "${PINATA_API_SECRET}"
+      # Agent chat, LLM providers, and Toju storage
+      AGENT_AUTH_BRIDGE_SECRET: "${AGENT_AUTH_BRIDGE_SECRET:-}"
+      AGENT_LLM_PROVIDER: "${AGENT_LLM_PROVIDER:-groq}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      GROQ_MODEL: "${GROQ_MODEL:-openai/gpt-oss-20b}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-nvidia/nemotron-3.5-lightning:free}"
+      NEARAI_API_KEY: "${NEARAI_API_KEY:-}"
+      NEAR_MODEL: "${NEAR_MODEL:-z-ai/glm-5.3-flash}"
+      TOJU_API_URL: "${TOJU_API_URL:-https://toju-devcon-testnet.onrender.com}"
+      TOJU_PAYMENT_RECIPIENT: "${TOJU_PAYMENT_RECIPIENT:-0xbB2Fc1cc295b53a75217319eA421256dABB3eacb}"
+      TOJU_NODE_BINARY: "${TOJU_NODE_BINARY:-node}"
     volumes:
       - backend_runtime:/workspace/backend/quantum-backend
     healthcheck:

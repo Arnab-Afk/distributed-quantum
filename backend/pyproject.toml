@@ -7,7 +7,7 @@ name = "quantum-backend"
 version = "0.1.0"
 description = "Backend v2 foundation for the decentralized quantum service network"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = { text = "Apache-2.0" }
 authors = [{ name = "Quantum Libp2p Contributors" }]
 dependencies = [
@@ -48,6 +48,7 @@ dependencies = [
   "cryptography>=43.0.0",
   "motor>=3.3.0",
   "mcp[cli]>=1.0.0",
+  "nearai-inference-sdk>=0.1.0",
 ]
 
 [project.optional-dependencies]
