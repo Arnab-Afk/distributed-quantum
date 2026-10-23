@@ -7,7 +7,7 @@ from decimal import Decimal
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 def _default_peer_log_directory() -> Path:
@@ -102,6 +102,17 @@ class Libp2pSettings(BaseModel):
         return f"{self.rendezvous_namespace}.peer-heartbeat.v1"
 
 
+class KuboSettings(BaseModel):
+    """Optional content RPC configuration; readiness is checked only by its client."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    rpc_url: str = Field(default="http://kubo:5001", repr=False)
+    rpc_secret: SecretStr | None = Field(default=None, repr=False)
+    timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
+
+
 class AppSettings(BaseModel):
     """Top-level application settings."""
 
@@ -141,6 +152,7 @@ class AppSettings(BaseModel):
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
+    kubo: KuboSettings = Field(default_factory=KuboSettings)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AppSettings:
@@ -158,6 +170,15 @@ class AppSettings(BaseModel):
             x402_gateway_secret=_optional(env.get("QB2_X402_GATEWAY_SECRET")),
             billing_internal_secret=_optional(env.get("QB2_BILLING_INTERNAL_SECRET")),
             circuit_job_credit_cost=Decimal(env.get("QB2_CIRCUIT_JOB_CREDIT_COST", "0")),
+            # Reuse the deployment's KUBO_* names rather than a second credential alias.
+            kubo=KuboSettings.model_validate(
+                {
+                    "rpc_url": env.get("KUBO_RPC_URL") or "http://kubo:5001",
+                    "rpc_secret": env.get("KUBO_RPC_SECRET") or None,
+                    "timeout_seconds": env.get("KUBO_RPC_TIMEOUT_SECONDS", "30"),
+                    "max_response_bytes": env.get("KUBO_RPC_MAX_RESPONSE_BYTES", "4194304"),
+                }
+            ),
             logging=LoggingSettings(
                 level=env.get("QB2_LOG_LEVEL", "INFO"),
                 json_logs=_parse_bool(env.get("QB2_JSON_LOGS", "true")),
