@@ -9,10 +9,21 @@ export interface ProcessedEventStore {
   release(eventId: string): Promise<void>;
 }
 
+export interface VerifiedEvent {
+  id: string;
+  type: string;
+  data: { object: unknown };
+}
+
 export interface StripeWebhookDeps {
   /** Verifies the Stripe signature and returns the parsed event; throws if invalid. */
-  verify(payload: string, signature: string): Promise<{ id: string }>;
+  verify(payload: string, signature: string): Promise<VerifiedEvent>;
   store: ProcessedEventStore;
+  /**
+   * Handles events this app owns (credit packs). Returns true when the event
+   * was fully handled and must not be forwarded; throws to have Stripe retry.
+   */
+  handle?(event: VerifiedEvent): Promise<boolean>;
   /** Hands the verified request to the subscription handler. */
   forward(request: Request): Promise<Response>;
 }
@@ -28,15 +39,25 @@ export async function handleStripeWebhook(
 
   const payload = await request.text();
 
-  let eventId: string;
+  let event: VerifiedEvent;
   try {
-    ({ id: eventId } = await deps.verify(payload, signature));
+    event = await deps.verify(payload, signature);
   } catch {
     return Response.json({ error: "Invalid Stripe signature" }, { status: 400 });
   }
+  const eventId = event.id;
 
   if (!(await deps.store.claim(eventId))) {
     return Response.json({ received: true, duplicate: true });
+  }
+
+  if (deps.handle) {
+    try {
+      if (await deps.handle(event)) return Response.json({ received: true });
+    } catch (error) {
+      await deps.store.release(eventId);
+      throw error;
+    }
   }
 
   // The body stream was consumed above, so rebuild the request for the handler.

@@ -6,6 +6,7 @@ import { BILLING } from "@/constants";
 import { getAuth } from "@/features/auth/server/auth";
 import { getDatabase } from "@/shared/lib/mongodb";
 import { handleStripeWebhook, type ProcessedEventStore } from "../lib/webhook";
+import { handleCreditPackEvent } from "./credits";
 import { getStripeClient, getStripeConfig } from "./stripe";
 
 const DUPLICATE_KEY_ERROR = 11000;
@@ -49,6 +50,7 @@ export async function handleStripeWebhookRequest(request: Request): Promise<Resp
     verify: (payload, signature) =>
       client.webhooks.constructEventAsync(payload, signature, config.webhookSecret),
     store: createMongoEventStore(await getDatabase()),
+    handle: handleCreditPackEvent,
     forward: POST,
   });
 }
