@@ -59,10 +59,16 @@ bytes or regular binary files; do not pass blocking pipes/custom blocking reader
 | `block_stat(cid)` | Reported CID and block size, not independent byte verification |
 
 `KuboRejectedError` covers invalid client configuration/arguments, rejected HTTP
-requests (including disallowed redirects) and explicit RPC/pin errors.
-`KuboUnavailableError` covers timeouts/transport failures, HTTP 408/429/5xx and
-invalid/incomplete responses. Errors expose only operation/category/status, never
-remote error text. Cancellation propagates. **No automatic retries:** a failed or
+requests (including disallowed redirects) and explicit RPC/pin errors. Kubo sends
+most command errors, such as an invalid CID or `pin_rm`/`pin_ls` on an unpinned
+CID, as HTTP 500 with a JSON error body; a well-formed one with code 0 (normal),
+1 (client) or 4 (forbidden) is rejected.
+`KuboUnavailableError` covers timeouts/transport failures, HTTP 408/429/502-504,
+any other HTTP 500 (implementation errors, rate limits, Kubo-internal context
+timeouts, non-Kubo bodies) and invalid/incomplete responses. The total-operation
+timeout includes upload time, so raise it for large inputs. Errors expose only
+operation/category/status, never remote error text. Cancellation propagates.
+**No automatic retries:** a failed or
 timed-out mutation may already have stored blocks or changed pins; reconcile its
 outcome rather than blindly replaying it. CAR import follows in the final #61 slice.
 

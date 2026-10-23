@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import traceback
 from collections.abc import AsyncIterator
@@ -117,6 +118,49 @@ async def test_http_failure_category_without_echoing_response(status: int) -> No
     assert caught.value.status_code == status
     assert SECRET not in str(caught.value) + repr(caught.value)
     assert calls == 1
+
+
+def kubo_error_body(message: str, code: object, kind: object = "error") -> bytes:
+    """Shape of Kubo v0.43.1 command errors, e.g. pin/rm on an unpinned CID."""
+    return json.dumps({"Message": message, "Code": code, "Type": kind}).encode()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("body", "error_type"),
+    [
+        # Definite command outcomes observed from a real node: do not retry these.
+        (kubo_error_body(f"not pinned or pinned indirectly {SECRET}", 0), KuboRejected),
+        (kubo_error_body(f'invalid path "{SECRET}"', 0), KuboRejected),
+        (kubo_error_body("invalid argument", 1), KuboRejected),
+        (kubo_error_body("request forbidden", 4), KuboRejected),
+        # Server bugs, rate limits and Kubo-internal timeouts are not definite.
+        (kubo_error_body("internal error", 2), KuboUnavailable),
+        (kubo_error_body("rate limited", 3), KuboUnavailable),
+        (kubo_error_body("pin: context deadline exceeded", 0), KuboUnavailable),
+        (kubo_error_body("context canceled", 0), KuboUnavailable),
+        # Anything that is not a well-formed Kubo error object, e.g. from a proxy.
+        (kubo_error_body("failed", True), KuboUnavailable),
+        (kubo_error_body("failed", "0"), KuboUnavailable),
+        (kubo_error_body("failed", 0, kind="warning"), KuboUnavailable),
+        (b'{"Code":0,"Type":"error"}', KuboUnavailable),
+        (b'{"Message":"a","Message":"b","Code":0,"Type":"error"}', KuboUnavailable),
+        (f"<html>{SECRET}</html>".encode(), KuboUnavailable),
+        (kubo_error_body("x" * 70_000, 0), KuboUnavailable),
+    ],
+)
+async def test_http_500_is_classified_from_kubo_error_body(
+    body: bytes, error_type: type[Exception]
+) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, content=body)
+
+    async with KuboClient(settings(), transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(error_type) as caught:
+            await client.pin_rm(CID)
+    assert caught.value.status_code == 500
+    assert SECRET not in str(caught.value) + repr(caught.value)
+    assert caught.value.__cause__ is None and caught.value.__context__ is None
 
 
 @pytest.mark.anyio
