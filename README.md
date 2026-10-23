@@ -430,7 +430,7 @@ not confidential storage. Never add private data expecting the CID to be secret.
 Native authentication adds defense beyond unpublished RPC; it does not make
 Docker administration or public IPFS content confidential. The typed async
 [Python RPC client](backend/README.md#kubo-rpc-client) supports content writes,
-pin management and block inspection with bounded requests and safe errors (#61).
+pin management and CAR imports with bounded requests and safe errors (#61).
 Automatic uploads, gateway reads and production hosting remain separate work.
 
 ## Documentation

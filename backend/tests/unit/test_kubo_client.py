@@ -132,6 +132,24 @@ async def test_block_stat_contract() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("pin_roots", [True, False])
+async def test_car_import_parses_root_and_terminal_stats(pin_roots: bool) -> None:
+    async def handle(request: httpx.Request) -> httpx.Response:
+        check_request(request, "dag/import")
+        assert request.url.params["pin-roots"] == str(pin_roots).lower()
+        assert request.url.params["stats"] == "true"
+        assert b"opaque-car-fixture" in await request.aread()
+        root = f'{{"Root":{{"Cid":{{"/":"{CID}"}},"PinErrorMsg":""}}}}\n'
+        body = (root if pin_roots else "") + '{"Stats":{"BlockCount":1,"BlockBytesCount":17}}\n'
+        return httpx.Response(200, content=body)
+
+    async with KuboClient(settings(), transport=httpx.MockTransport(handle)) as client:
+        result = await client.dag_import(b"opaque-car-fixture", pin_roots=pin_roots)
+    assert result.pinned_roots == ((CID,) if pin_roots else ())
+    assert (result.block_count, result.block_bytes) == (1, 17)
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize("status", [400, 401, 403, 404, 413, 302, 408, 429, 500, 503])
 async def test_http_failure_category_without_echoing_response(status: int) -> None:
     calls = 0
@@ -273,6 +291,28 @@ async def test_invalid_response_is_unavailable(body: bytes) -> None:
     ) as client:
         with pytest.raises(KuboUnavailable):
             await client.block_stat(CID)
+
+
+@pytest.mark.anyio
+async def test_car_root_pin_failure_is_not_success() -> None:
+    body = f'{{"Root":{{"Cid":{{"/":"{CID}"}},"PinErrorMsg":"{SECRET}"}}}}\n'
+    body += '{"Stats":{"BlockCount":1,"BlockBytesCount":17}}\n'
+    async with KuboClient(
+        settings(), transport=httpx.MockTransport(lambda request: httpx.Response(200, content=body))
+    ) as client:
+        with pytest.raises(KuboRejected) as caught:
+            await client.dag_import(b"car")
+    assert SECRET not in str(caught.value)
+
+
+@pytest.mark.anyio
+async def test_partial_car_response_without_stats_is_unavailable() -> None:
+    body = f'{{"Root":{{"Cid":{{"/":"{CID}"}},"PinErrorMsg":""}}}}\n'
+    async with KuboClient(
+        settings(), transport=httpx.MockTransport(lambda request: httpx.Response(200, content=body))
+    ) as client:
+        with pytest.raises(KuboUnavailable):
+            await client.dag_import(b"car")
 
 
 @pytest.mark.anyio
