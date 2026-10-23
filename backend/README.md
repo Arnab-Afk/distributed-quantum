@@ -55,7 +55,7 @@ bytes or regular binary files; do not pass blocking pipes/custom blocking reader
 |---|---|
 | `add(data, pin=True)` | CIDv1 and reported DAG size (not necessarily original file length) |
 | `pin_add(cid, recursive=True)` / `pin_rm(cid, recursive=True)` | Acknowledged pin CIDs; unpinning is not immediate deletion |
-| `pin_ls(cid=None)` | CID-to-pin metadata map; empty listings are valid |
+| `pin_ls(cid=None)` | CID-to-pin metadata map; empty listings are valid; an indirect pin reports its pinned root in `through` |
 | `block_stat(cid)` | Reported CID and block size, not independent byte verification |
 
 `KuboRejectedError` covers invalid client configuration/arguments, rejected HTTP

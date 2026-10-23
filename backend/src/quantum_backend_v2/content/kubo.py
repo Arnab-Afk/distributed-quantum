@@ -10,7 +10,7 @@ from types import TracebackType
 from typing import Annotated, BinaryIO, Literal, TypeVar
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from quantum_backend_v2.config import KuboSettings
 from quantum_backend_v2.content._transport import KuboRPCTransport
@@ -80,10 +80,24 @@ class PinResult(_Result):
 
 
 class PinInfo(_Result):
-    """Pin type/name as reported by Kubo."""
+    """Pin type/name as reported by Kubo; `through` is the pinned root of an indirect pin."""
 
     type: Literal["recursive", "direct", "indirect"] = Field(alias="Type")
     name: str = Field(default="", alias="Name")
+    through: _CID | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _split_indirect_root(cls, value: object) -> object:
+        # Kubo v0.43.1 reports "indirect through <root CID>" when pin/ls is given a CID.
+        if isinstance(value, dict):
+            kind = value.get("Type")
+            prefix = "indirect through "
+            if isinstance(kind, str) and kind.startswith(prefix):
+                root = kind.removeprefix(prefix)
+                if root and not any(c.isspace() for c in root):
+                    return {**value, "Type": "indirect", "through": root}
+        return value
 
 
 class PinListResult(_Result):
@@ -113,18 +127,28 @@ _TRANSIENT_ERROR_TEXT = (b"context deadline exceeded", b"context canceled")
 _ERROR_BODY_LIMIT = 64 * 1024
 
 
+def _is_identity_encoded(response: httpx.Response) -> bool:
+    encoding: str = response.headers.get("Content-Encoding", "identity")
+    return encoding.lower() == "identity"
+
+
 async def _classify_command_error(response: httpx.Response, operation: str) -> KuboError:
     """Return rejected only for a well-formed, definite Kubo command error.
 
     The message is inspected but never kept, so remote error text cannot reach logs.
     Proxies, crashes, rate limits and malformed bodies remain unavailable.
     """
+    # Decoding a compressed body would allocate before any size check could apply.
+    if not _is_identity_encoded(response):
+        return KuboUnavailableError(operation, 500)
     body = bytearray()
     try:
+        if int(response.headers.get("Content-Length", "0")) > _ERROR_BODY_LIMIT:
+            return KuboUnavailableError(operation, 500)
         async for chunk in response.aiter_bytes():
-            body.extend(chunk)
-            if len(body) > _ERROR_BODY_LIMIT:
+            if len(body) + len(chunk) > _ERROR_BODY_LIMIT:
                 return KuboUnavailableError(operation, 500)
+            body.extend(chunk)
         record = json.loads(body, object_pairs_hook=_unique_object)
     except (httpx.HTTPError, ValueError):
         return KuboUnavailableError(operation, 500)
@@ -330,10 +354,7 @@ class KuboClient:
                     else KuboRejectedError
                 )
                 raise error(operation, status)
-            if (
-                response.headers.get("X-Stream-Error")
-                or response.headers.get("Content-Encoding", "identity").lower() != "identity"
-            ):
+            if response.headers.get("X-Stream-Error") or not _is_identity_encoded(response):
                 raise KuboUnavailableError(operation)
             maximum = self._settings.max_response_bytes
             if int(response.headers.get("Content-Length", "0")) > maximum:
