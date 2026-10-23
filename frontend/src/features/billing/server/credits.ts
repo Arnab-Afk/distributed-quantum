@@ -5,10 +5,14 @@ import { BACKEND, BILLING, ROUTES, UI } from "@/constants";
 import { backendAssertion } from "@/features/auth/server/backend-assertion";
 import { getSession } from "@/features/auth/server/session";
 import {
+  checkoutPaymentMethods,
   creditPackSessionFromEvent,
   creditsForLineItems,
   parseCreditPacks,
+  paymentMethodOfSession,
+  stablecoinPaymentsEnabled,
   type CreditPack,
+  type CreditPaymentMethod,
 } from "../lib/credit-packs";
 import type { VerifiedEvent } from "../lib/webhook";
 import type { CreditOffer, CreditsOverview } from "../types";
@@ -18,6 +22,8 @@ interface CreditsConfig {
   stripe: Stripe;
   packs: CreditPack[];
   billingSecret: string;
+  /** Stablecoin checkout is opt-in and off by default (#76). */
+  stablecoin: boolean;
 }
 
 interface BillingUser {
@@ -47,7 +53,12 @@ export function getCreditsConfig(): CreditsConfig | null {
   ) {
     return null;
   }
-  return { stripe: getStripeClient(stripeConfig.secretKey), packs, billingSecret };
+  return {
+    stripe: getStripeClient(stripeConfig.secretKey),
+    packs,
+    billingSecret,
+    stablecoin: stablecoinPaymentsEnabled(process.env.STRIPE_STABLECOIN_PAYMENTS),
+  };
 }
 
 let _offers: Promise<CreditOffer[]> | undefined;
@@ -62,7 +73,12 @@ function listOffers(config: CreditsConfig): Promise<CreditOffer[]> {
         style: "currency",
         currency: price.currency.toUpperCase(),
       }).format(amount);
-      return { priceId: pack.priceId, credits: pack.credits, price: formatted };
+      return {
+        priceId: pack.priceId,
+        credits: pack.credits,
+        price: formatted,
+        stablecoin: config.stablecoin && price.currency === BILLING.STABLECOIN_CURRENCY,
+      };
     }),
   ).catch((error: unknown) => {
     _offers = undefined;
@@ -96,14 +112,22 @@ export async function getCreditsOverview(user: BillingUser): Promise<CreditsOver
   };
 }
 
-/** Starts a one-off Checkout Session for a configured pack and returns its URL. */
+/**
+ * Starts a one-off Checkout Session for a configured pack and returns its URL.
+ * Stablecoin sessions are offered only when the flag is on and the pack is priced in USD.
+ */
 export async function createCreditCheckout(
   user: BillingUser,
   priceId: string,
   origin: string,
+  method: CreditPaymentMethod = "card",
 ): Promise<string | null> {
   const config = getCreditsConfig();
   if (!config || !config.packs.some((pack) => pack.priceId === priceId)) return null;
+  if (method === "crypto") {
+    const offers = await listOffers(config);
+    if (!offers.some((offer) => offer.priceId === priceId && offer.stablecoin)) return null;
+  }
 
   const returnUrl = (result: string) => {
     const url = new URL(ROUTES.SETTINGS, origin);
@@ -113,6 +137,7 @@ export async function createCreditCheckout(
   const session = await config.stripe.checkout.sessions.create({
     mode: "payment",
     line_items: [{ price: priceId, quantity: 1 }],
+    ...checkoutPaymentMethods(method),
     client_reference_id: user.id,
     ...(user.stripeCustomerId
       ? { customer: user.stripeCustomerId }
@@ -138,10 +163,13 @@ export async function handleCreditPackEvent(event: VerifiedEvent): Promise<boole
   if (!config)
     throw new Error("Received a credit-pack payment but credit packs are not configured");
 
-  // The amount comes from Stripe's record of what was bought, never the client.
-  const lineItems = await config.stripe.checkout.sessions.listLineItems(session.sessionId, {
-    limit: 100,
-  });
+  // The amount and the method come from Stripe's record of the payment, never the client.
+  const [lineItems, paid] = await Promise.all([
+    config.stripe.checkout.sessions.listLineItems(session.sessionId, { limit: 100 }),
+    config.stripe.checkout.sessions.retrieve(session.sessionId, {
+      expand: ["payment_intent.payment_method"],
+    }),
+  ]);
   const items = lineItems.data.map((item) => ({
     priceId: item.price?.id ?? "",
     quantity: item.quantity ?? 0,
@@ -160,6 +188,7 @@ export async function handleCreditPackEvent(event: VerifiedEvent): Promise<boole
       credits,
       stripe_event_id: event.id,
       price_id: items[0]?.priceId ?? null,
+      payment_method: paymentMethodOfSession(paid),
     }),
     cache: "no-store",
   });
@@ -189,10 +218,17 @@ export async function creditCheckoutResponse(request: Request): Promise<Response
   const body: unknown = await request.json().catch(() => null);
   const priceId =
     typeof body === "object" && body !== null && "priceId" in body ? body.priceId : null;
-  if (typeof priceId !== "string") {
+  const method =
+    typeof body === "object" && body !== null && "method" in body ? body.method : "card";
+  if (typeof priceId !== "string" || (method !== "card" && method !== "crypto")) {
     return Response.json({ error: UI.CREDITS.UNAVAILABLE }, { status: 400 });
   }
-  const url = await createCreditCheckout(session.user, priceId, new URL(request.url).origin);
+  const url = await createCreditCheckout(
+    session.user,
+    priceId,
+    new URL(request.url).origin,
+    method,
+  );
   if (!url) return Response.json({ error: UI.CREDITS.UNAVAILABLE }, { status: 400 });
   return Response.json({ url });
 }

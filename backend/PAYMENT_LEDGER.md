@@ -184,6 +184,7 @@ before and are not charged to a user.
 | Both | `BILLING_INTERNAL_SECRET` / `QB2_BILLING_INTERNAL_SECRET` | Same 32+ character secret; guards the purchase route |
 | Both | `AGENT_AUTH_BRIDGE_SECRET` | Signs the user's identity for runs and balances |
 | Backend | `QB2_CIRCUIT_JOB_CREDIT_COST` | Credits per circuit run; `0` disables charging |
+| Frontend | `STRIPE_STABLECOIN_PAYMENTS` | `true` also offers USD packs in USDC (#76); off by default |
 
 ### Manual test (Stripe CLI, test mode)
 
@@ -198,6 +199,64 @@ before and are not charged to a user.
    shows one confirmed card event.
 6. Submit a circuit run: the balance drops to 8, with 2 reserved while it runs and
    spent once it completes. With fewer than 2 credits, submitting shows the 402 message.
+
+### Stablecoin credit packs (#76)
+
+With `STRIPE_STABLECOIN_PAYMENTS=true`, each USD-priced pack can also be bought
+in stablecoins through Stripe's `crypto` payment method. The customer pays from
+their own wallet on crypto.stripe.com and Stripe settles to our balance in USD. We
+hold no wallet keys, run no on-chain code and store no payment details.
+
+```
+Settings → "… in USDC" → POST /api/billing/credits/checkout {priceId, method: "crypto"}
+       → Checkout Session with payment_method_types: ["crypto"]
+Stripe → webhook → session retrieved with payment_intent.payment_method expanded
+       → POST …/credit-purchases {…, payment_method: "crypto"}
+       → payment event stripe:checkout:<session id>, rail "stablecoin"
+```
+
+- **Hidden when off.** Once stablecoins are enabled in the Stripe Dashboard,
+  Stripe shows them on every Checkout. Card sessions therefore always pass
+  `excluded_payment_method_types: ["crypto"]`, and a stablecoin session is only
+  created when the flag is on and the pack's Price is in USD.
+- **Exactly once.** Nothing new: the purchase is still keyed on the Checkout
+  Session, so a redelivered event, or `completed` followed by
+  `async_payment_succeeded`, credits once. The rail is part of the event's
+  identity, so one session can never be recorded as both card and stablecoin.
+- **Rail.** Only Stripe's `crypto` method is recorded on the `stablecoin` rail.
+  Cards and Stripe's other dynamic methods stay on `card`.
+
+**Not supported (per Stripe's docs):**
+
+- **Disputes.** Stablecoin payments cannot be disputed, so there are no chargebacks
+  to claw credits back.
+- **Manual capture.** Stablecoin payments cannot be authorized and captured later.
+  Credit packs never relied on that: credits are granted once the session is paid,
+  and job holds are taken from the internal ledger, not from Stripe.
+- **Refunds** are supported, full or partial, and go back as stablecoins to the
+  paying wallet. Refunding does not yet debit the credits it granted; that applies
+  to card refunds too and is a follow-up.
+- **Limits.** Stablecoin Checkout needs USD prices, US$10,000 at most per
+  transaction, and a Stripe account approved for "Stablecoins and Cryptocurrency".
+  Stripe currently offers it to US businesses (not New York); other regions are in
+  private preview. Stablecoin subscriptions are out of scope.
+
+**Manual test (sandbox).**
+
+1. Dashboard → Settings → Payment methods: request **Stablecoins and Cryptocurrency**
+   and wait until it is active.
+2. Use a USD one-time price in `STRIPE_CREDIT_PACKS`, set
+   `STRIPE_STABLECOIN_PAYMENTS=true` and restart the frontend.
+3. Fund a MetaMask wallet on Polygon Amoy with test USDC (faucet.circle.com) and a
+   little POL for gas (faucet.polygon.technology).
+4. `stripe listen --forward-to localhost:3000/api/auth/stripe/webhook`, then
+   Settings → Credits → **Buy 10 credits · $10.00 in USDC** and pay on
+   crypto.stripe.com. The balance shows 10.
+5. `stripe events resend <evt_id>`: `duplicate: true`, the balance stays 10, and
+   `GET /api/v1/admin/payments/events/stripe:checkout:<cs_...>` shows one confirmed
+   `stablecoin` event.
+6. With the flag off, the USDC buttons disappear and card Checkout no longer
+   lists crypto.
 
 ## Tests
 

@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import ErrorCode, PlatformException, conflict
-from quantum_backend_v2.payments.credits import CreditPurchase, record_card_purchase
+from quantum_backend_v2.payments.credits import CreditPurchase, record_credit_purchase
 from quantum_backend_v2.payments.errors import IdempotencyConflictError
 from quantum_backend_v2.payments.ledger import LedgerService
 from quantum_backend_v2.payments.models import CreditBalance
@@ -82,7 +82,7 @@ def build_credits_router(
             _: None = Depends(require_billing_secret),
         ) -> CreditPurchaseResponse:
             try:
-                result = await record_card_purchase(ledger_service, body)
+                result = await record_credit_purchase(ledger_service, body)
             except IdempotencyConflictError as exc:
                 raise conflict(str(exc)) from None
             return CreditPurchaseResponse(

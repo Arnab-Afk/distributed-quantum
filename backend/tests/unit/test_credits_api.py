@@ -40,6 +40,7 @@ def dev_auth(monkeypatch: pytest.MonkeyPatch) -> None:
 class FakeLedger:
     def __init__(self) -> None:
         self.purchases: dict[str, Decimal] = {}
+        self.rails: dict[str, PaymentRail] = {}
 
     async def record_event(self, **fields: Any) -> RecordResult:
         key = fields["idempotency_key"]
@@ -47,9 +48,10 @@ class FakeLedger:
             raise IdempotencyConflictError(key)
         created = key not in self.purchases
         self.purchases[key] = fields["amount"]
+        self.rails[key] = fields["rail"]
         event = PaymentEvent(
             idempotency_key=key,
-            rail=PaymentRail.CARD,
+            rail=fields["rail"],
             purpose=PaymentPurpose.CREDIT_PURCHASE,
             asset="USDC",
             amount=fields["amount"],
@@ -125,6 +127,21 @@ def test_purchase_is_recorded_once_per_checkout_session() -> None:
 
 
 @pytest.mark.parametrize(
+    ("payment_method", "rail"),
+    [(None, PaymentRail.CARD), ("card", PaymentRail.CARD), ("crypto", PaymentRail.STABLECOIN)],
+)
+def test_purchase_is_recorded_on_the_rail_it_was_paid_with(
+    payment_method: str | None, rail: PaymentRail
+) -> None:
+    client, ledger = _credits_client(SECRET)
+    headers = {"X-Billing-Internal-Secret": SECRET}
+    body = _purchase() if payment_method is None else _purchase(payment_method=payment_method)
+
+    assert client.post(PURCHASES, json=body, headers=headers).status_code == 200
+    assert ledger.rails == {f"stripe:checkout:{SESSION}": rail}
+
+
+@pytest.mark.parametrize(
     "overrides",
     [
         {"checkout_session_id": "not-a-session"},
@@ -132,6 +149,7 @@ def test_purchase_is_recorded_once_per_checkout_session() -> None:
         {"credits": "-5"},
         {"credits": "0.0000001"},
         {"unexpected": "field"},
+        {"payment_method": "paypal"},
     ],
 )
 def test_purchase_rejects_invalid_payloads(overrides: dict[str, Any]) -> None:

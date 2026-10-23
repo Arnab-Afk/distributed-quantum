@@ -1,4 +1,4 @@
-"""Opt-in real MongoDB checks for card-bought credits and job metering (#10).
+"""Opt-in real MongoDB checks for Stripe-bought credits and job metering (#10).
 
 QB2_MONGODB_TEST_URI=mongodb://127.0.0.1:27017 uv run pytest tests/live -q
 """
@@ -18,11 +18,11 @@ from pymongo import AsyncMongoClient
 from quantum_backend_v2.payments.credits import (
     CreditPurchase,
     JobCreditMeter,
-    record_card_purchase,
+    record_credit_purchase,
 )
 from quantum_backend_v2.payments.errors import InsufficientCreditError
 from quantum_backend_v2.payments.ledger import CREDIT_LEDGER, LedgerService
-from quantum_backend_v2.payments.models import LedgerEntryType, PaymentEventStatus
+from quantum_backend_v2.payments.models import LedgerEntryType, PaymentEventStatus, PaymentRail
 
 pytestmark = pytest.mark.anyio
 
@@ -65,8 +65,8 @@ async def _credits(ledger: LedgerService) -> list[Decimal]:
 
 
 async def test_webhook_delivered_twice_credits_once(ledger: LedgerService) -> None:
-    first = await record_card_purchase(ledger, _purchase())
-    second = await record_card_purchase(ledger, _purchase())
+    first = await record_credit_purchase(ledger, _purchase())
+    second = await record_credit_purchase(ledger, _purchase())
 
     assert (first.created, second.created) == (True, False)
     assert await _credits(ledger) == [D("10")]
@@ -76,7 +76,7 @@ async def test_webhook_delivered_twice_credits_once(ledger: LedgerService) -> No
 
 
 async def test_concurrent_deliveries_credit_once(ledger: LedgerService) -> None:
-    await asyncio.gather(*(record_card_purchase(ledger, _purchase()) for _ in range(10)))
+    await asyncio.gather(*(record_credit_purchase(ledger, _purchase()) for _ in range(10)))
 
     assert await _credits(ledger) == [D("10")]
     assert (await ledger.balance("user-1")).available == D("10")
@@ -86,26 +86,41 @@ async def test_completed_and_async_succeeded_events_for_one_session_credit_once(
     ledger: LedgerService,
 ) -> None:
     # Different Stripe events, same Checkout Session.
-    await record_card_purchase(ledger, _purchase().model_copy(update={"stripe_event_id": "evt_a"}))
-    await record_card_purchase(ledger, _purchase().model_copy(update={"stripe_event_id": "evt_b"}))
+    await record_credit_purchase(
+        ledger, _purchase().model_copy(update={"stripe_event_id": "evt_a"})
+    )
+    await record_credit_purchase(
+        ledger, _purchase().model_copy(update={"stripe_event_id": "evt_b"})
+    )
 
     assert await _credits(ledger) == [D("10")]
 
 
+async def test_stablecoin_purchase_credits_once_on_its_own_rail(ledger: LedgerService) -> None:
+    purchase = _purchase().model_copy(update={"payment_method": "crypto"})
+    await record_credit_purchase(ledger, purchase)
+    await record_credit_purchase(ledger, purchase)
+
+    assert await _credits(ledger) == [D("10")]
+    event = await ledger.get_event("stripe:checkout:cs_test_1")
+    assert event.rail is PaymentRail.STABLECOIN
+    assert event.status is PaymentEventStatus.CONFIRMED
+
+
 async def test_redelivery_finishes_a_credit_interrupted_by_a_crash(ledger: LedgerService) -> None:
-    await record_card_purchase(ledger, _purchase())
+    await record_credit_purchase(ledger, _purchase())
     # Simulate a crash after the event was stored but before the credit entry.
     await ledger._db[CREDIT_LEDGER].delete_many({})  # noqa: SLF001 - test setup
     await ledger._db["credit_balances"].delete_many({})  # noqa: SLF001 - test setup
 
-    await record_card_purchase(ledger, _purchase())
+    await record_credit_purchase(ledger, _purchase())
 
     assert await _credits(ledger) == [D("10")]
     assert (await ledger.run_reconciliation()).drifted_accounts == ()
 
 
 async def test_job_meter_charges_only_completed_jobs(ledger: LedgerService) -> None:
-    await record_card_purchase(ledger, _purchase(credits="5"))
+    await record_credit_purchase(ledger, _purchase(credits="5"))
     meter = JobCreditMeter(ledger, cost=D("2"))
 
     await meter.reserve("user-1", "job-ok")

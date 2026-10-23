@@ -3,9 +3,12 @@ import { describe, expect, test } from "bun:test";
 import { handleStripeWebhook } from "../src/features/billing/lib/webhook.ts";
 import { customerIdFromEvent, isEntitled } from "../src/features/billing/lib/subscription.ts";
 import {
+  checkoutPaymentMethods,
   creditPackSessionFromEvent,
   creditsForLineItems,
   parseCreditPacks,
+  paymentMethodOfSession,
+  stablecoinPaymentsEnabled,
 } from "../src/features/billing/lib/credit-packs.ts";
 
 const WEBHOOK_URL = "http://localhost:3000/api/auth/stripe/webhook";
@@ -164,6 +167,20 @@ describe("credit-pack events", () => {
     expect(credited).toEqual([]);
   });
 
+  test("a replayed stablecoin payment is credited once", async () => {
+    const credited = [];
+    const d = deps({ handle: crediting(credited) });
+    const event = packEvent("evt_usdc");
+    event.data.object.payment_intent = { payment_method: { type: "crypto" } };
+
+    await handleStripeWebhook(packDelivery(event), d);
+    const replay = await handleStripeWebhook(packDelivery(event), d);
+
+    expect(await replay.json()).toEqual({ received: true, duplicate: true });
+    expect(credited).toEqual(["cs_test_1"]);
+    expect(d.forwarded).toHaveLength(0);
+  });
+
   test("a failed credit releases the claim so Stripe retries", async () => {
     const store = memoryStore();
     const failing = deps({
@@ -251,6 +268,32 @@ describe("credit packs", () => {
         event("checkout.session.completed", { ...session, client_reference_id: null }),
       ),
     ).toBeNull();
+  });
+});
+
+describe("stablecoin payments", () => {
+  test("are off unless the flag is exactly true", () => {
+    expect(stablecoinPaymentsEnabled("true")).toBe(true);
+    expect(stablecoinPaymentsEnabled(" TRUE ")).toBe(true);
+    for (const raw of [undefined, "", "false", "1", "yes"]) {
+      expect(stablecoinPaymentsEnabled(raw)).toBe(false);
+    }
+  });
+
+  test("card checkout hides stablecoins; stablecoin checkout offers only them", () => {
+    expect(checkoutPaymentMethods("card")).toEqual({ excluded_payment_method_types: ["crypto"] });
+    expect(checkoutPaymentMethods("crypto")).toEqual({ payment_method_types: ["crypto"] });
+  });
+
+  test("the paying method is read from Stripe's PaymentIntent", () => {
+    const paidWith = (type) => ({ payment_intent: { payment_method: { type } } });
+
+    expect(paymentMethodOfSession(paidWith("crypto"))).toBe("crypto");
+    expect(paymentMethodOfSession(paidWith("card"))).toBe("card");
+    expect(paymentMethodOfSession(paidWith("link"))).toBe("card");
+    // An unexpanded PaymentIntent id or a missing one falls back to card.
+    expect(paymentMethodOfSession({ payment_intent: "pi_123" })).toBe("card");
+    expect(paymentMethodOfSession({})).toBe("card");
   });
 });
 

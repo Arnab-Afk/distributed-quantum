@@ -24,6 +24,10 @@ export const BILLING = {
     "checkout.session.async_payment_succeeded",
   ] as readonly string[],
   CREDITS_RESULT_PARAM: "credits",
+  /** Stripe's payment method type for stablecoins (USDC and others). */
+  STABLECOIN_PAYMENT_METHOD: "crypto",
+  /** Stripe only presents stablecoin payments for USD prices. */
+  STABLECOIN_CURRENCY: "usd",
   /** Sent to the backend's internal credit-purchase route. */
   BILLING_SECRET_HEADER: "X-Billing-Internal-Secret",
   MIN_BILLING_SECRET_LENGTH: 32,
