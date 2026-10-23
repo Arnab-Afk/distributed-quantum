@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import gzip
 import io
 import json
 import logging
 import traceback
+import tracemalloc
 from collections.abc import AsyncIterator
 
 import httpx
@@ -85,6 +87,36 @@ async def test_pin_listing_contract(payload: dict[str, object]) -> None:
     keys = payload.get("Keys", {})
     assert isinstance(keys, dict)
     assert len(result.pins) == len(keys)
+
+
+ROOT = "bafybeif3vhnjf322zwn4srnmqu36buxgqbtvoiuwca2ghgfxel4hq3dbsm"
+
+
+@pytest.mark.anyio
+async def test_pin_ls_accepts_cid_pinned_indirectly_through_root() -> None:
+    # Exact shape returned by Kubo v0.43.1 for pin/ls on a child of a pinned directory.
+    payload = {"Keys": {CID: {"Type": f"indirect through {ROOT}", "Name": ""}}}
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=payload)
+
+    async with KuboClient(settings(), transport=httpx.MockTransport(handle)) as client:
+        result = await client.pin_ls(CID)
+    assert result.pins[CID].type == "indirect"
+    assert result.pins[CID].through == ROOT
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "kind", ["indirect through ", "indirect through a b", "recursive through x", "Indirect"]
+)
+async def test_pin_ls_rejects_malformed_pin_type(kind: str) -> None:
+    def handle(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"Keys": {CID: {"Type": kind, "Name": ""}}})
+
+    async with KuboClient(settings(), transport=httpx.MockTransport(handle)) as client:
+        with pytest.raises(KuboUnavailable):
+            await client.pin_ls(CID)
 
 
 @pytest.mark.anyio
@@ -179,6 +211,44 @@ async def test_http_500_is_classified_from_kubo_error_body(
     assert caught.value.status_code == 500
     assert SECRET not in str(caught.value) + repr(caught.value)
     assert caught.value.__cause__ is None and caught.value.__context__ is None
+
+
+class _GzipBombStream(httpx.AsyncByteStream):
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.reads = 0
+
+    async def __aiter__(self) -> AsyncIterator[bytes]:
+        self.reads += 1
+        yield self.payload
+
+
+class _StreamingTransport(httpx.AsyncBaseTransport):
+    """Unlike MockTransport, leaves the body unread so the client's own reads are measured."""
+
+    def __init__(self, stream: httpx.AsyncByteStream) -> None:
+        self.stream = stream
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, headers={"Content-Encoding": "gzip"}, stream=self.stream)
+
+
+@pytest.mark.anyio
+async def test_compressed_http_500_is_never_decoded() -> None:
+    # About 20 KB of gzip that would inflate to 20 MiB if it were decoded.
+    stream = _GzipBombStream(gzip.compress(b"0" * (20 * 1024 * 1024), compresslevel=9))
+
+    async with KuboClient(settings(), transport=_StreamingTransport(stream)) as client:
+        tracemalloc.start()
+        try:
+            with pytest.raises(KuboUnavailable) as caught:
+                await client.pin_rm(CID)
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+    assert caught.value.status_code == 500
+    assert stream.reads == 0
+    assert peak < 2 * 1024 * 1024
 
 
 @pytest.mark.anyio
