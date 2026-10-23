@@ -14,6 +14,9 @@ export interface CreditPackSession {
   paid: boolean;
 }
 
+/** How a credit pack is paid: by card (and Stripe's other dynamic methods) or in stablecoins. */
+export type CreditPaymentMethod = "card" | "crypto";
+
 export interface LineItem {
   priceId: string;
   quantity: number;
@@ -38,6 +41,24 @@ export function parseCreditPacks(raw: string | undefined): CreditPack[] {
     if (toMicro(credits) === ZERO) throw new Error(`Credit pack ${priceId} grants no credits`);
     return { priceId, credits };
   });
+}
+
+/** `STRIPE_STABLECOIN_PAYMENTS` turns stablecoin checkout on; anything but "true" leaves it off. */
+export function stablecoinPaymentsEnabled(raw: string | undefined): boolean {
+  return raw?.trim().toLowerCase() === "true";
+}
+
+/**
+ * Payment methods for a credit-pack Checkout Session. Stripe shows stablecoins
+ * on every Checkout once they are enabled in the Dashboard, so the card session
+ * always excludes them; only an explicit stablecoin session offers them.
+ */
+export function checkoutPaymentMethods(method: CreditPaymentMethod):
+  | { payment_method_types: string[] }
+  | { excluded_payment_method_types: string[] } {
+  return method === "crypto"
+    ? { payment_method_types: [BILLING.STABLECOIN_PAYMENT_METHOD] }
+    : { excluded_payment_method_types: [BILLING.STABLECOIN_PAYMENT_METHOD] };
 }
 
 /** Returns the credit-pack session an event completes, or null for any other event. */
