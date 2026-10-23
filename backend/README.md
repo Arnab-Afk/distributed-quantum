@@ -10,6 +10,26 @@ grow into the full migration plan described in `backend-migration.md`.
 See [PROVENANCE.md](PROVENANCE.md) for the versioned canonical hashing and Merkle
 proof format, backward-compatible bundle fields, and Ethereum anchoring handoff.
 
+## Kubo RPC foundation
+
+Optional `AppSettings.kubo` reads the deployment's existing `KUBO_RPC_SECRET`,
+plus `KUBO_RPC_URL` (default `http://kubo:5001`),
+`KUBO_RPC_TIMEOUT_SECONDS` (default 30 seconds, maximum 300), and
+`KUBO_RPC_MAX_RESPONSE_BYTES` (default 4 MiB, maximum 64 MiB). The token is masked;
+missing credentials do not prevent backend configuration loading. There are no
+startup probes or automatic content uploads. Use a private endpoint, never a
+browser-visible secret or publicly published admin port.
+
+Kubo can send an error only in a trailer after HTTP 200. The internal HTTP/1.1
+POST transport detects it using public `httpcore`/`h11` interfaces, keeping native
+pooling/TLS/timeouts without private monkeypatches. Direct dependencies are the
+already-locked versions, not new packages/upgrades. SDK methods follow separately.
+See the pinned [late-error emitter](https://github.com/ipfs/go-ipfs-cmds/blob/v0.16.1/http/responseemitter.go).
+
+```bash
+uv run --frozen pytest tests/unit/test_kubo_config.py tests/unit/test_kubo_transport.py -q
+```
+
 ## Current Milestone
 
 The current scaffold establishes:
