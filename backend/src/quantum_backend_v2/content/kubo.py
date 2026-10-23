@@ -132,6 +132,41 @@ def _single(records: list[object], model: type[_ResultT]) -> _ResultT:
     return model.model_validate(records[0])
 
 
+# go-ipfs-cmds v0.16.1 ErrorType values. Kubo sends ErrClient as HTTP 400 and every
+# other command error as HTTP 500 with a JSON {"Message", "Code", "Type": "error"} body.
+_DEFINITE_ERROR_CODES = frozenset({0, 1, 4})  # ErrNormal, ErrClient, ErrForbidden
+# Kubo reports its own internal timeouts as ErrNormal; those outcomes are not definite.
+_TRANSIENT_ERROR_TEXT = (b"context deadline exceeded", b"context canceled")
+_ERROR_BODY_LIMIT = 64 * 1024
+
+
+async def _classify_command_error(response: httpx.Response, operation: str) -> KuboError:
+    """Return rejected only for a well-formed, definite Kubo command error.
+
+    The message is inspected but never kept, so remote error text cannot reach logs.
+    Proxies, crashes, rate limits and malformed bodies remain unavailable.
+    """
+    body = bytearray()
+    try:
+        async for chunk in response.aiter_bytes():
+            body.extend(chunk)
+            if len(body) > _ERROR_BODY_LIMIT:
+                return KuboUnavailableError(operation, 500)
+        record = json.loads(body, object_pairs_hook=_unique_object)
+    except (httpx.HTTPError, ValueError):
+        return KuboUnavailableError(operation, 500)
+    if (
+        isinstance(record, dict)
+        and record.get("Type") == "error"
+        and type(record.get("Code")) is int
+        and record["Code"] in _DEFINITE_ERROR_CODES
+        and isinstance(record.get("Message"), str)
+        and not any(text in record["Message"].encode() for text in _TRANSIENT_ERROR_TEXT)
+    ):
+        return KuboRejectedError(operation, 500)
+    return KuboUnavailableError(operation, 500)
+
+
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     result: dict[str, object] = {}
     for key, value in pairs:
@@ -350,10 +385,12 @@ class KuboClient:
             "POST", operation, params={"encoding": "json", **(params or {})}, files=files
         ) as response:
             status = response.status_code
+            if status == 500:
+                raise await _classify_command_error(response, operation)
             if status != 200:
                 error = (
                     KuboUnavailableError
-                    if status >= 500 or status in {408, 429} or status < 300
+                    if status > 500 or status in {408, 429} or status < 300
                     else KuboRejectedError
                 )
                 raise error(operation, status)
