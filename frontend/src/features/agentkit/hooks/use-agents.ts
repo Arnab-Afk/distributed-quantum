@@ -54,7 +54,7 @@ export type AgentItem = {
 
 export function collapseDuplicatePersonalAgents<T extends { agent_id: string; agent_name: string; created_at: string }>(
   agents: T[],
-  sessions: { agentId: string }[],
+  sessions: { agentId?: string }[],
 ): T[] {
   const personal = agents.filter((agent) => agent.agent_name === DEFAULT_AGENT_BODY.agent_name);
   if (personal.length <= 1) return agents;

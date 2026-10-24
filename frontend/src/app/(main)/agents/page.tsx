@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/shared/components/layout/page-header";
 import { useAgents, type AgentItem } from "@/features/agentkit";
 import { collapseDuplicatePersonalAgents, humanSpan, humanWhen, shortAddress } from "@/features/agentkit/hooks/use-agents";
+import { WalletAddressCopy } from "@/features/agentkit/components/wallet-address-copy";
 import { useChatSessions, type ChatSession } from "@/features/agentkit/hooks/use-chat-sessions";
 import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, animate } from "motion/react";
 import { toast } from "sonner";
@@ -292,7 +293,7 @@ function ErrorState() {
   );
 }
 
-function DetailRow({ label, value, title, mono }: { label: string; value: string; title?: string; mono?: boolean }) {
+function DetailRow({ label, value, title, mono }: { label: string; value: ReactNode; title?: string; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <span className="shrink-0 text-xs uppercase tracking-wider text-white/40">{label}</span>
@@ -311,7 +312,6 @@ function AgentDetails({ agent }: { agent: AgentItem }) {
   const config = readConfig(agent.config);
   const created = whenLabel(agent.created_at);
   const updated = whenLabel(agent.updated_at);
-  const wallet = shortAddress(agent.wallet_address);
   return (
     <div
       className="space-y-4 rounded-2xl p-4 ring-1 ring-white/8"
@@ -320,7 +320,7 @@ function AgentDetails({ agent }: { agent: AgentItem }) {
       <DetailRow label="Name" value={agent.agent_name} />
       <DetailRow label="Status" value="Active" />
       <DetailRow label="Agent ID" value={agent.agent_id} />
-      <DetailRow label="Wallet" value={wallet || "—"} title={agent.wallet_address || undefined} mono />
+      <DetailRow label="Wallet" value={<WalletAddressCopy address={agent.wallet_address} className="text-sm" />} />
       <DetailRow label="Owner" value={agent.owner_id} />
       <DetailRow label="Created" value={created.text} title={created.title} />
       <DetailRow label="Updated" value={updated.text} title={updated.title} />

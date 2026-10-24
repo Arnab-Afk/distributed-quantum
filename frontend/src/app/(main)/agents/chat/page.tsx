@@ -14,7 +14,8 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAgents, useCreateAgent } from "@/features/agentkit";
-import { collapseDuplicatePersonalAgents, humanSpan, shortAddress, type AgentItem } from "@/features/agentkit/hooks/use-agents";
+import { collapseDuplicatePersonalAgents, humanSpan, type AgentItem } from "@/features/agentkit/hooks/use-agents";
+import { WalletAddressCopy } from "@/features/agentkit/components/wallet-address-copy";
 import {
   RichMessageRenderer,
   type RichContent,
@@ -31,16 +32,11 @@ import { useStorageExports, type StorageExport } from "@/features/agentkit/hooks
 import { StorageExports } from "@/features/agentkit/components/storage-exports";
 
 function AgentChatIdentity({ agent, session }: { agent: AgentItem; session: ChatSession | null }) {
-  const wallet = shortAddress(agent.wallet_address);
   const span = humanSpan(session?.createdAt, session?.updatedAt);
-  if (!wallet && !span) return null;
+  if (!agent.wallet_address && !span) return null;
   return (
     <div className="flex flex-col items-end gap-0.5 text-right">
-      {wallet && (
-        <p className="font-mono text-[11px] tracking-wide text-white/55" title={agent.wallet_address}>
-          {wallet}
-        </p>
-      )}
+      {agent.wallet_address && <WalletAddressCopy address={agent.wallet_address} className="text-[11px]" />}
       {span && (
         <p className="text-[11px] leading-relaxed text-white/35" title={span.title}>
           {span.text}
