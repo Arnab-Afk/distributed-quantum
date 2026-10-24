@@ -2,6 +2,16 @@
 
 Browser-side Helia stores vault circuits and runs as content-addressed JSON in IndexedDB. Sharing a CID with another user only works if they can obtain the block — either from a prior pin sync or via **trustless HTTP gateways**.
 
+## Publish a circuit — Lab → New Run
+
+Location: `/runs/new` (`RunCreateForm`) — **Publish circuit to VAULT**.
+
+Publishes a Helia JSON record with:
+
+`name`, `description`, `qasm`, `qubitCount`, `gateCount`, `author`, `publishedAt`, `tags`
+
+After publish, the same **Pin** flow used for runs appears. The circuit shows up in the local Circuit Library and can be re-opened by CID. The share button is loaded with `next/dynamic({ ssr: false })` so Helia never runs on the server.
+
 ## Open any CID — `/vault/cid/[cid]`
 
 - Paste a CID on `/vault/cid`, or open a shared link `/vault/cid/<cid>`.
@@ -33,4 +43,5 @@ Trustless gateways see every CID you request (and your client IP). Prefer a self
 
 ```bash
 bun test:vault-cid
+bun test:vault-circuit
 ```
