@@ -24,6 +24,8 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
+from services.agentkit_service import AgentKitService
+
 logger = logging.getLogger(__name__)
 
 
@@ -197,13 +199,12 @@ def create_platform_mcp(db: AsyncIOMotorDatabase, owner_id: str, agent_id: str |
             doc = await db.wallets.find_one({"entity_id": agent_id, "entity_type": "agent"})
             if not doc:
                 return {"error": "No wallet found for this agent"}
-            usdc = doc.get("balance_usdc", 0)
-            eth = doc.get("balance_eth", 0)
+            balance = await AgentKitService().get_balance(doc["default_address"])
             return {
-                "address": doc.get("default_address", ""),
+                "address": balance["wallet_address"],
                 "network": doc.get("network", "base-sepolia"),
-                "usdc_balance": str(usdc.to_decimal() if hasattr(usdc, "to_decimal") else usdc),
-                "eth_balance": str(eth.to_decimal() if hasattr(eth, "to_decimal") else eth),
+                "usdc_balance": str(balance["usdc_balance"]),
+                "eth_balance": str(balance["eth_balance"]),
             }
         except Exception as e:
             logger.error("get_wallet tool failed: %s", e)
