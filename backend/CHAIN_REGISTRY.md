@@ -30,8 +30,13 @@ settings; unset uses package data. Relative paths use the working directory.
 `NETWORK` selects the wallet network by alias or canonical ID. When unset, the
 registry default applies; the packaged default remains Base Sepolia. Empty or
 unknown values fail startup. Wallet endpoints use an application-scoped service
-with the same immutable registry as the public chain endpoint. Standalone
-`AgentKitService` callers load these settings too, or accept an injected registry
+with the same immutable registry as the public chain endpoint. Proposal and AI
+agent API services share this wallet service, including proposal broadcasts,
+agent wallet creation, autonomous funding, and escrow release. Research services
+are initialized lazily per application; their MongoDB clients and the proposal
+service’s Bedrock client close on application shutdown. Standalone proposal and agent callers can inject a
+wallet service; otherwise each lazily creates and reuses its own service.
+Standalone `AgentKitService` callers load these settings too, or accept an injected registry
 and explicit network. Injected registries use their own default, without reading
 process-wide network selection.
 
@@ -167,6 +172,6 @@ Aave transaction or contract verification was performed for this migration.
 
 This is **Part of #2**, not its completion. Remaining slices must verify and enable
 additional wallet networks, add transaction verification, design network-aware
-wallet/payment persistence, propagate application-scoped services through the
-remaining proposal/agent orchestration, and add a frontend selector. Existing
-payment recording and confirmation semantics remain unchanged.
+wallet/payment persistence, migrate the remaining marketplace singleton, and add
+a frontend selector. Existing payment recording and confirmation semantics
+remain unchanged.

@@ -20,11 +20,14 @@ from __future__ import annotations
 
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
-from typing import Any, Optional, Literal
+from typing import TYPE_CHECKING, Any, Optional, Literal
 import logging
 import os
 import uuid
 import json
+
+if TYPE_CHECKING:
+    from services.agentkit_service import AgentKitService
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +83,12 @@ class ProposalService:
     - Escrow release and payment distribution
     """
 
-    def __init__(self, notification_service=None, agentkit_service=None, ai_agent_service=None) -> None:
+    def __init__(
+        self,
+        notification_service=None,
+        agentkit_service: AgentKitService | None = None,
+        ai_agent_service=None,
+    ) -> None:
         """
         Initialize Proposal service with AWS Bedrock and MongoDB.
 
@@ -129,6 +137,15 @@ class ProposalService:
         self._notification_service = notification_service
         self._agentkit_service = agentkit_service
         self._ai_agent_service = ai_agent_service
+
+    @property
+    def agentkit(self) -> AgentKitService:
+        if self._agentkit_service is None:
+            from services.agentkit_service import AgentKitService
+
+            self._agentkit_service = AgentKitService()
+        return self._agentkit_service
+
     async def create_proposal(
         self,
         researcher_id: str,
@@ -329,9 +346,7 @@ class ProposalService:
 
             funder_wallet = funder_wallet_doc["default_address"]
 
-            # Import AgentKitService
-            from services.agentkit_service import AgentKitService
-            agentkit_service = self._agentkit_service or AgentKitService()
+            agentkit_service = self.agentkit
 
             # Deposit to Aave pool on behalf of proposal wallet
             # This locks the funds in escrow while earning yield
@@ -817,7 +832,9 @@ class ProposalService:
         try:
             # Import AI agent service
             from services.ai_agent_service import AIAgentService
-            ai_agent_service = self._ai_agent_service or AIAgentService()
+            if self._ai_agent_service is None:
+                self._ai_agent_service = AIAgentService(agentkit_service=self.agentkit)
+            ai_agent_service = self._ai_agent_service
 
             # Get all active agents with auto_fund enabled
             agent_docs = await self.db.ai_agents.find({"config.auto_fund": True}).to_list(None)
@@ -895,9 +912,7 @@ class ProposalService:
 
             researcher_wallet = researcher_wallet_doc["default_address"]
 
-            # Import AgentKitService
-            from services.agentkit_service import AgentKitService
-            agentkit_service = self._agentkit_service or AgentKitService()
+            agentkit_service = self.agentkit
 
             # One payout per fragment: refuses to pay again while an earlier
             # attempt is pending, paid or uncertain
@@ -983,9 +998,7 @@ class ProposalService:
             # Get total raised
             total_raised = _decimal128_to_decimal(proposal_doc["budget_raised"])
 
-            # Import AgentKitService
-            from services.agentkit_service import AgentKitService
-            agentkit_service = self._agentkit_service or AgentKitService()
+            agentkit_service = self.agentkit
 
             # One full release per proposal
             release_key = await begin_payout(

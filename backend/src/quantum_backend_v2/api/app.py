@@ -121,6 +121,13 @@ def create_app(
         finally:
             if reconcile_task is not None:
                 reconcile_task.cancel()
+            for service_name in ("proposal_service", "ai_agent_service"):
+                service = getattr(app.state, service_name, None)
+                if service is not None:
+                    service.mongo_client.close()
+                    bedrock = getattr(service, "bedrock", None)
+                    if bedrock is not None:
+                        bedrock.close()
             wallet_service = getattr(app.state, "wallet_service", None)
             if wallet_service is not None:
                 wallet_service.mongo_client.close()

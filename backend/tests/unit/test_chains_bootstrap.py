@@ -129,3 +129,21 @@ def test_application_selects_canonical_wallet_network_and_closes_client(applicat
         assert app.state.wallet_chain_id == "eip155:84532"
         assert app.state.chain_registry.resolve().chain_id == "eip155:84532"
     mongo_client.close.assert_called_once()
+
+
+@pytest.mark.parametrize("bedrock_available", [True, False])
+def test_application_closes_research_clients(application_factory, bedrock_available):
+    create_application, _, _ = application_factory
+    app = create_application(env={"NETWORK": "base-sepolia"})
+    services = [
+        SimpleNamespace(mongo_client=Mock(), bedrock=Mock() if bedrock_available else None)
+        for _ in range(2)
+    ]
+    del services[0].bedrock
+    app.state.ai_agent_service, app.state.proposal_service = services
+    with TestClient(app):
+        assert not hasattr(app.state, "wallet_service")
+    for service in services:
+        service.mongo_client.close.assert_called_once_with()
+        if getattr(service, "bedrock", None) is not None:
+            service.bedrock.close.assert_called_once_with()

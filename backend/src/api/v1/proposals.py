@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
 from db.agentkit_collections import ResearchProposalDocument
-from services.proposal_service import ProposalService
+from quantum_backend_v2.api.deps.research import ProposalServiceDep
 
 logger = logging.getLogger(__name__)
 
@@ -222,9 +222,6 @@ class GenerateFragmentsResponse(BaseModel):
 
 router = APIRouter(prefix="/api/v1/proposals", tags=["proposals"])
 
-# Initialize Proposal service
-proposal_service = ProposalService()
-
 
 @router.post(
     "",
@@ -236,6 +233,7 @@ proposal_service = ProposalService()
 async def create_proposal(
     body: ProposalCreateRequest,
     current_user: CurrentUser,
+    proposal_service: ProposalServiceDep,
     background_tasks: BackgroundTasks,
 ) -> ProposalResponse:
     """Create a new research proposal.
@@ -512,6 +510,7 @@ async def fund_proposal(
     proposal_id: str,
     body: FundProposalRequest,
     current_user: CurrentUser,
+    proposal_service: ProposalServiceDep,
     background_tasks: BackgroundTasks,
 ) -> FundProposalResponse:
     """Fund a research proposal with USDC.
@@ -546,9 +545,10 @@ async def fund_proposal(
             amount=amount,
         )
 
-        # Generate Basescan URL
         transaction_hash = funding_result["transaction_hash"]
-        basescan_url = f"https://sepolia.basescan.org/tx/{transaction_hash}"
+        basescan_url = proposal_service.agentkit.explorer.explorer_url(
+            "transaction", transaction_hash
+        )
 
         # Calculate funding percentage
         new_total = funding_result["new_total_raised"]
@@ -600,6 +600,7 @@ async def claim_fragment(
     proposal_id: str,
     fragment_id: str,
     current_user: CurrentUser,
+    proposal_service: ProposalServiceDep,
 ) -> ClaimFragmentResponse:
     """Claim a research fragment for execution.
 
@@ -662,6 +663,7 @@ async def submit_results(
     proposal_id: str,
     body: SubmitResultsRequest,
     current_user: CurrentUser,
+    proposal_service: ProposalServiceDep,
     background_tasks: BackgroundTasks,
 ) -> SubmitResultsResponse:
     """Submit research results.
@@ -817,6 +819,7 @@ async def get_funders(
 async def generate_fragments(
     proposal_id: str,
     current_user: CurrentUser,
+    proposal_service: ProposalServiceDep,
 ) -> GenerateFragmentsResponse:
     """Generate research fragments using Claude 3.5 Sonnet.
 
