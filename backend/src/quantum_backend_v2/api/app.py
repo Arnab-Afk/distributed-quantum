@@ -121,7 +121,7 @@ def create_app(
         finally:
             if reconcile_task is not None:
                 reconcile_task.cancel()
-            for service_name in ("proposal_service", "ai_agent_service"):
+            for service_name in ("proposal_service", "ai_agent_service", "marketplace_service"):
                 service = getattr(app.state, service_name, None)
                 if service is not None:
                     service.mongo_client.close()

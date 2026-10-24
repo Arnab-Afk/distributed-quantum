@@ -132,15 +132,16 @@ def test_application_selects_canonical_wallet_network_and_closes_client(applicat
 
 
 @pytest.mark.parametrize("bedrock_available", [True, False])
-def test_application_closes_research_clients(application_factory, bedrock_available):
+def test_application_closes_scoped_service_clients(application_factory, bedrock_available):
     create_application, _, _ = application_factory
     app = create_application(env={"NETWORK": "base-sepolia"})
     services = [
         SimpleNamespace(mongo_client=Mock(), bedrock=Mock() if bedrock_available else None)
-        for _ in range(2)
+        for _ in range(3)
     ]
     del services[0].bedrock
-    app.state.ai_agent_service, app.state.proposal_service = services
+    del services[2].bedrock
+    app.state.ai_agent_service, app.state.proposal_service, app.state.marketplace_service = services
     with TestClient(app):
         assert not hasattr(app.state, "wallet_service")
     for service in services:
