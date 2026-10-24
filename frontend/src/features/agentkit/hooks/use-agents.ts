@@ -1,6 +1,45 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { format, formatDistanceToNow } from "date-fns";
 import { QUERY_KEYS_AGENTKIT } from "@/constants/query-keys";
 import { API_AGENTKIT } from "@/constants/api";
+
+export function shortAddress(value: string | null | undefined) {
+  const address = value?.trim() ?? "";
+  if (!address) return "";
+  if (address.length <= 13) return address;
+  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+}
+
+export function parseApiTimestamp(value: string): Date | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const hasZone = /(?:Z|[+-]\d{2}:\d{2})$/.test(trimmed);
+  const date = new Date(hasZone ? trimmed : `${trimmed}Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+export function humanWhen(value: string | number | null | undefined) {
+  if (value == null || value === "") return null;
+  const date = typeof value === "number"
+    ? (Number.isFinite(value) && value > 0 ? new Date(value) : null)
+    : parseApiTimestamp(value);
+  if (!date) return null;
+  return {
+    relative: formatDistanceToNow(date, { addSuffix: true }),
+    exact: format(date, "MMM d, yyyy 'at' h:mm a"),
+  };
+}
+
+export function humanSpan(created: string | number | null | undefined, updated: string | number | null | undefined) {
+  const start = humanWhen(created);
+  const last = humanWhen(updated);
+  if (!start && !last) return null;
+  const title = [start && `Started ${start.exact}`, last && `Updated ${last.exact}`].filter(Boolean).join(" · ");
+  const text = start && last && start.relative === last.relative && start.exact !== last.exact
+    ? `Started ${start.exact} · Updated ${last.exact}`
+    : [start && `Started ${start.relative}`, last && `Updated ${last.relative}`].filter(Boolean).join(" · ");
+  return { text, title };
+}
 
 export type AgentItem = {
   agent_id: string;
@@ -10,7 +49,25 @@ export type AgentItem = {
   config: Record<string, unknown>;
   total_spent: string;
   created_at: string;
+  updated_at?: string;
 };
+
+export function collapseDuplicatePersonalAgents<T extends { agent_id: string; agent_name: string; created_at: string }>(
+  agents: T[],
+  sessions: { agentId?: string }[],
+): T[] {
+  const personal = agents.filter((agent) => agent.agent_name === DEFAULT_AGENT_BODY.agent_name);
+  if (personal.length <= 1) return agents;
+  const keeper = [...personal].sort((a, b) => {
+    const aSessions = sessions.filter((session) => session.agentId === a.agent_id).length;
+    const bSessions = sessions.filter((session) => session.agentId === b.agent_id).length;
+    if (aSessions !== bSessions) return bSessions - aSessions;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  })[0];
+  return agents.filter(
+    (agent) => agent.agent_name !== DEFAULT_AGENT_BODY.agent_name || agent.agent_id === keeper?.agent_id,
+  );
+}
 
 const DEFAULT_AGENT_BODY = {
   agent_name: "Research Assistant",
@@ -36,21 +93,32 @@ export function useAgents() {
   });
 }
 
+let personalAgentCreate: Promise<AgentItem> | null = null;
+
+async function postAgent(payload: typeof DEFAULT_AGENT_BODY): Promise<AgentItem> {
+  const res = await fetch(API_AGENTKIT.AGENTS, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message ?? err.error ?? "Failed to create agent");
+  }
+  return res.json();
+}
+
 export function useCreateAgent() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (body?: typeof DEFAULT_AGENT_BODY) => {
-      const payload = body ?? DEFAULT_AGENT_BODY;
-      const res = await fetch(API_AGENTKIT.AGENTS, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message ?? err.error ?? "Failed to create agent");
+      if (body) return postAgent(body);
+      if (!personalAgentCreate) {
+        personalAgentCreate = postAgent(DEFAULT_AGENT_BODY).finally(() => {
+          personalAgentCreate = null;
+        });
       }
-      return res.json();
+      return personalAgentCreate;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS_AGENTKIT.agents() });

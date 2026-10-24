@@ -311,13 +311,34 @@ def test_wallet_api_transfer_uses_application_registry(monkeypatch, wallet_bound
     assert app.state.wallet_service.registry is app.state.chain_registry
 
 
-def test_faucet_api_reports_manual_instructions(monkeypatch, wallet_boundary):
+def test_faucet_api_returns_cdp_transaction_hash(monkeypatch, wallet_boundary):
     from fastapi.testclient import TestClient
 
+    hashes = {"eth": "0x" + "ab" * 32, "usdc": "0x" + "cd" * 32}
+
+    class _Faucet:
+        async def request_faucet(self, **kwargs):
+            return hashes[kwargs["token"]]
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            self.evm = _Faucet()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    monkeypatch.setattr(module, "CdpClient", _Client)
     with TestClient(wallet_app(monkeypatch, wallet_boundary)) as client:
         response = client.post("/api/v1/wallet/fund-testnet")
     assert response.status_code == 201
-    assert response.json()["message"].startswith("Please visit ")
+    body = response.json()
+    assert body["eth_transaction_hash"] == hashes["eth"]
+    assert body["usdc_transaction_hash"] == hashes["usdc"]
+    assert body["eth_basescan_url"] == "https://sepolia.basescan.org/tx/" + hashes["eth"]
+    assert body["usdc_basescan_url"] == "https://sepolia.basescan.org/tx/" + hashes["usdc"]
     wallet_boundary.provider.assert_not_called()
     wallet_boundary.web3.assert_not_called()
 

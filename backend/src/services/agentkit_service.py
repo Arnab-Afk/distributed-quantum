@@ -73,8 +73,9 @@ class AgentKitService:
         Initialize AgentKit service with CDP credentials.
 
         Loads credentials from environment variables:
-        - CDP_API_KEY_NAME
-        - CDP_API_KEY_PRIVATE_KEY
+        - CDP_API_KEY_ID
+        - CDP_API_KEY_SECRET
+        - CDP_WALLET_SECRET
         - NETWORK (default: base-sepolia)
         - MONGODB_URI
         - MONGODB_DATABASE
@@ -89,12 +90,9 @@ class AgentKitService:
         self.explorer = EvmExplorerAdapter(self.chain)
         logger.info("Initializing AgentKitService")
 
-        # Load CDP credentials from environment
-        # CDP_API_KEY_ID / CDP_API_KEY_NAME are both accepted for the key ID
-        self.api_key_id = os.getenv("CDP_API_KEY_ID") or os.getenv("CDP_API_KEY_NAME")
-        # CDP_API_KEY_SECRET / CDP_API_KEY_PRIVATE_KEY are both accepted for the Ed25519 private key
-        self.api_key_secret = os.getenv("CDP_API_KEY_SECRET") or os.getenv("CDP_API_KEY_PRIVATE_KEY")
-        # CDP_WALLET_SECRET is a separate secret created in the CDP portal for wallet encryption
+        # Official CDP names only. A second pair in the same file is ignored.
+        self.api_key_id = os.getenv("CDP_API_KEY_ID")
+        self.api_key_secret = os.getenv("CDP_API_KEY_SECRET")
         self.wallet_secret = os.getenv("CDP_WALLET_SECRET")
 
         if not self.api_key_id or not self.api_key_secret or not self.wallet_secret:
@@ -227,10 +225,7 @@ class AgentKitService:
                 None, lambda: CdpEvmWalletProvider(config)
             )
             wallet_address = wallet_provider.get_address()
-
             logger.info(f"Created wallet {wallet_address} for {entity_type}:{entity_id}")
-
-            # Store a marker so we know the wallet was created with this env wallet_secret
             seed_encrypted = self.fernet.encrypt((self.wallet_secret or "").encode()).decode()
 
             # Record current block number so we can scan from here in transaction history
@@ -807,40 +802,73 @@ class AgentKitService:
             wallet_address: Wallet to receive testnet funds
 
         Returns:
-            dict: Faucet request result containing:
-                - wallet_address: Recipient wallet
-                - faucet_url: Faucet URL used
-                - status: Request status
-                - timestamp: Request timestamp
+            dict: Faucet request result containing ETH and USDC hashes and explorer URLs.
+                A token that the faucet rejects is omitted. Both failing raises.
 
         Raises:
             ValueError: If called on mainnet
-            Exception: If faucet request fails
+            Exception: If both faucet requests fail
         """
         logger.info(f"Requesting testnet funds for {wallet_address}")
         try:
             self.require_operation("faucet_instructions")
             validate_address(wallet_address)
             await self._validate_stored_wallet(wallet_address)
+            network = self.chain.provider_aliases.cdp
+            if network is None:
+                raise UnsupportedOperationError("CDP network mapping is unavailable")
 
-            # Note: CDP SDK does not provide a built-in faucet method
-            # Users must manually request funds from public faucets:
-            # - Base Sepolia: https://www.coinbase.com/faucets/base-ethereum-goerli-faucet
-            # - Alternative: https://sepoliafaucet.com/
+            funded: dict[str, tuple[str, str]] = {}
+            failures: list[str] = []
+            last_error: Exception | None = None
+            async with CdpClient(
+                api_key_id=self.api_key_id,
+                api_key_secret=self.api_key_secret,
+                wallet_secret=self.wallet_secret,
+            ) as cdp:
+                for token in ("eth", "usdc"):
+                    try:
+                        transaction_hash = await cdp.evm.request_faucet(
+                            address=wallet_address,
+                            network=network,
+                            token=token,
+                        )
+                        funded[token] = (
+                            transaction_hash,
+                            self.explorer.explorer_url("transaction", transaction_hash),
+                        )
+                    except Exception as token_error:
+                        last_error = token_error
+                        failures.append(token)
+                        logger.warning(
+                            "Faucet %s failed for %s: %s", token, wallet_address, token_error
+                        )
+            if not funded:
+                raise last_error or RuntimeError("CDP faucet returned no transactions")
 
-            faucet_url = "https://www.coinbase.com/faucets/base-ethereum-goerli-faucet"
+            eth = funded.get("eth")
+            usdc = funded.get("usdc")
             timestamp = datetime.utcnow()
-
-            logger.info(
-                f"Testnet funds must be requested manually from {faucet_url} for {wallet_address}"
-            )
-
+            if failures:
+                message = (
+                    "Testnet faucet partial: "
+                    + ", ".join(f"{token} submitted" for token in funded)
+                    + "; "
+                    + ", ".join(f"{token} failed" for token in failures)
+                )
+                status_name = "partial"
+            else:
+                message = "Testnet ETH and USDC faucet transactions submitted"
+                status_name = "submitted"
             return {
                 "wallet_address": wallet_address,
-                "faucet_url": faucet_url,
-                "status": "manual_request_required",
+                "eth_transaction_hash": eth[0] if eth else None,
+                "eth_basescan_url": eth[1] if eth else None,
+                "usdc_transaction_hash": usdc[0] if usdc else None,
+                "usdc_basescan_url": usdc[1] if usdc else None,
+                "status": status_name,
                 "timestamp": timestamp,
-                "message": f"Please visit {faucet_url} to request testnet funds for {wallet_address}",
+                "message": message,
             }
 
         except Exception as e:

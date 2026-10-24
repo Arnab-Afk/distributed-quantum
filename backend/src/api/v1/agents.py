@@ -1,7 +1,7 @@
 """AI Agents router for autonomous research funding.
 
 This module provides REST API endpoints for managing AI agents that autonomously
-analyze and fund quantum research proposals using Claude 3.5 Sonnet via AWS Bedrock.
+analyze and fund quantum research proposals using the configured provider (`AGENT_LLM_PROVIDER`).
 
 Features:
 - Create/manage AI agents with spending controls
@@ -160,7 +160,7 @@ async def create_agent(
     """Create a new AI agent for autonomous research funding.
 
     The agent will have its own crypto wallet and can analyze proposals using
-    Claude 3.5 Sonnet. Spending limits and research interests are configurable.
+    the configured provider (`AGENT_LLM_PROVIDER`). Spending limits and research interests are configurable.
 
     Args:
         body: Agent creation request with name and configuration
@@ -506,7 +506,7 @@ async def analyze_proposal(
 ) -> AnalysisResult:
     """Manually trigger analysis of a research proposal.
 
-    Uses Claude 3.5 Sonnet via AWS Bedrock to analyze the proposal against the
+    Uses the configured provider (`AGENT_LLM_PROVIDER`) to analyze the proposal against the
     agent's research interests and budget constraints. If auto_fund is enabled
     and the analysis is positive, funding will be executed automatically.
 
@@ -705,9 +705,25 @@ class ChatRequest(BaseModel):
     session_id: str | None = None
 
 
+class AttestationSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["near"] = "near"
+    status: Literal["model_tee_verified", "gateway_verified", "unverified"] = Field(
+        description="Attestation verification status"
+    )
+    signature_kind: str = Field(description="Signature kind (provider_tee, gateway, or none)")
+    model: str = Field(description="Canonical model ID")
+    request_id: str | None = Field(default=None, description="X-Request-Id or completion ID")
+    rounds: int = Field(default=1, ge=1, description="Number of verified completion rounds")
+
+
 class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reply: str = Field(description="Agent's reply")
+    attestation: AttestationSummary | None = Field(
+        default=None,
+        description="NEAR AI Cloud private inference attestation summary when provider=near",
+    )
 
 
 @router.post(
@@ -715,14 +731,14 @@ class ChatResponse(BaseModel):
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
     summary="Chat with an AI agent",
-    description="Send a free-form message to an agent backed by Groq.",
+    description="Send a free-form message to an agent backed by the configured LLM provider.",
 )
 async def chat_with_agent(
     agent_id: str,
     body: ChatRequest,
     current_user: CurrentUser,
 ) -> ChatResponse:
-    """Send a message to an AI agent and get a response from Claude.
+    """Send a message to an AI agent and get a response from the configured provider (`AGENT_LLM_PROVIDER`).
 
     Maintains conversation context by accepting prior history. The agent is
     aware of its wallet, the platform's proposals, and can take actions.
@@ -742,6 +758,7 @@ async def chat_with_agent(
                 message="You do not have permission to use this agent",
             )
 
+        meta: dict[str, Any] = {}
         reply = await ai_agent_service.chat(
             agent_id=agent_id,
             agent_name=agent_doc.agent_name,
@@ -749,8 +766,10 @@ async def chat_with_agent(
             history=[{"role": m.role, "content": m.content} for m in body.history],
             owner_id=current_user.user_id,
             session_id=body.session_id if current_user.external_subject.startswith("betterauth|") else None,
+            meta=meta,
         )
-        return ChatResponse(reply=reply)
+        attestation = AttestationSummary(**meta) if meta.get("provider") == "near" else None
+        return ChatResponse(reply=reply, attestation=attestation)
 
     except PlatformException:
         raise

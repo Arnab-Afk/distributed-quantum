@@ -528,8 +528,8 @@ WEB3_STORAGE_API_KEY=your_api_key
 
 # Blockchain
 NETWORK=base-sepolia
-CDP_API_KEY_NAME=your_coinbase_api_key_name
-CDP_API_KEY_PRIVATE_KEY=your_coinbase_api_key
+CDP_API_KEY_ID=your_cdp_api_key_id
+CDP_API_KEY_SECRET=your_cdp_api_key_secret
 ```
 
 ---

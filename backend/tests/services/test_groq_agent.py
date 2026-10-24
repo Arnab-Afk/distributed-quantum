@@ -1,8 +1,10 @@
 import asyncio
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
+from nearai_inference_sdk.utils.errors import verification_failure
 
 from services.groq_agent import complete
 
@@ -97,3 +99,138 @@ def test_openrouter_refuses_paid_model_before_network(monkeypatch):
     monkeypatch.setenv("OPENROUTER_MODEL", "paid/model")
     with pytest.raises(ValueError, match="Only free"):
         asyncio.run(complete([], api_key="test"))
+
+
+def test_near_missing_model_or_key_fails_closed(monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "near")
+    monkeypatch.delenv("NEAR_MODEL", raising=False)
+    monkeypatch.setenv("NEARAI_API_KEY", "test-key")
+    with pytest.raises(ValueError, match="NEAR_MODEL"):
+        asyncio.run(complete([{"role": "user", "content": "hi"}]))
+
+    monkeypatch.setenv("NEAR_MODEL", "zai-org/GLM-5.1-FP8")
+    monkeypatch.delenv("NEARAI_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="NEARAI_API_KEY"):
+        asyncio.run(complete([{"role": "user", "content": "hi"}]))
+
+
+def test_near_verifies_every_tool_round_and_populates_attestation_meta(monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "near")
+    monkeypatch.setenv("NEAR_MODEL", "zai-org/GLM-5.1-FP8")
+    verified_ids: list[str] = []
+
+    class FakeVerifier:
+        async def verify_response(self, completion_id: str):
+            verified_ids.append(completion_id)
+            return SimpleNamespace(
+                id=completion_id,
+                signature_kind="provider_tee",
+                signature=SimpleNamespace(kind="provider_tee"),
+            )
+
+    rounds = 0
+    def respond(request: httpx.Request):
+        nonlocal rounds
+        rounds += 1
+        assert str(request.url) == "https://cloud-api.near.ai/v1/chat/completions"
+        assert request.headers.get("x-no-aliasing") == "true"
+        body = json.loads(request.content)
+        if rounds == 1:
+            msg = {
+                "role": "assistant",
+                "content": None,
+                "reasoning_content": "internal chain of thought",
+                "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "lookup", "arguments": '{"q":"bell"}'}}],
+            }
+            return httpx.Response(200, headers={"x-request-id": "req-round-1"}, json={"id": "chatcmpl-r1", "choices": [{"message": msg}]})
+        # Ensure reasoning_content was not replayed in history
+        assert all("reasoning_content" not in m for m in body["messages"])
+        msg = {"role": "assistant", "content": "Verified TEE answer."}
+        return httpx.Response(200, headers={"x-request-id": "req-round-2"}, json={"id": "chatcmpl-r2", "choices": [{"message": msg}]})
+
+    async def invoke(name, args):
+        return {"ok": True, "query": args["q"]}
+
+    meta: dict = {}
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await complete(
+                [{"role": "user", "content": "Run lookup"}],
+                tools=[{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}],
+                invoke=invoke,
+                client=client,
+                api_key="near-test",
+                meta=meta,
+                inference_client=FakeVerifier(),  # type: ignore[arg-type]
+            )
+
+    reply = asyncio.run(run())
+    assert reply == "Verified TEE answer."
+    assert verified_ids == ["chatcmpl-r1", "chatcmpl-r2"]
+    assert meta == {
+        "provider": "near",
+        "status": "model_tee_verified",
+        "signature_kind": "provider_tee",
+        "model": "zai-org/GLM-5.1-FP8",
+        "request_id": "req-round-2",
+        "rounds": 2,
+    }
+
+
+def test_near_failed_signature_marks_chat_unverified_and_raises_for_non_chat(monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "near")
+    monkeypatch.setenv("NEAR_MODEL", "zai-org/GLM-5.1-FP8")
+
+    class FailingVerifier:
+        async def verify_response(self, completion_id: str):
+            raise verification_failure("signature.invalid")
+
+    def respond(_request: httpx.Request):
+        return httpx.Response(
+            200,
+            headers={"x-request-id": "req-unverified"},
+            json={"id": "chatcmpl-bad", "choices": [{"message": {"role": "assistant", "content": "Reply text"}}]},
+        )
+
+    meta: dict = {}
+    async def run_chat():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            return await complete(
+                [{"role": "user", "content": "hello"}],
+                client=client,
+                api_key="near-test",
+                meta=meta,
+                inference_client=FailingVerifier(),  # type: ignore[arg-type]
+            )
+
+    assert asyncio.run(run_chat()) == "Reply text"
+    assert meta["status"] == "unverified"
+    assert meta["signature_kind"] == "none"
+
+    async def run_headless():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            await complete(
+                [{"role": "user", "content": "analyze"}],
+                client=client,
+                api_key="near-test",
+                meta=None,
+                inference_client=FailingVerifier(),  # type: ignore[arg-type]
+            )
+
+    with pytest.raises(ValueError, match="verification failed"):
+        asyncio.run(run_headless())
+
+
+def test_near_non_tee_model_rejected_without_fallback(monkeypatch):
+    monkeypatch.setenv("AGENT_LLM_PROVIDER", "near")
+    monkeypatch.setenv("NEAR_MODEL", "incognito/non-tee")
+
+    def respond(_request: httpx.Request):
+        raise verification_failure("policy.model_attestation_required")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+            await complete([{"role": "user", "content": "hello"}], client=client, api_key="near-test")
+
+    with pytest.raises(ValueError, match="not a Confidential TEE model"):
+        asyncio.run(run())

@@ -67,7 +67,10 @@ class FundTestnetResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    transaction_hash: str = Field(description="Transaction hash from faucet")
+    eth_transaction_hash: str | None = Field(description="ETH faucet transaction hash")
+    eth_basescan_url: str | None = Field(description="Explorer URL for the ETH faucet transaction")
+    usdc_transaction_hash: str | None = Field(description="USDC faucet transaction hash")
+    usdc_basescan_url: str | None = Field(description="Explorer URL for the USDC faucet transaction")
     message: str = Field(description="Status message")
 
 
@@ -341,7 +344,7 @@ async def transfer_usdc(
     response_model=FundTestnetResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Request testnet faucet funds",
-    description="Requests ETH and USDC from the Base Sepolia testnet faucet.",
+    description="Requests test ETH and USDC from the Base Sepolia CDP faucet.",
 )
 async def fund_testnet_wallet(
     current_user: CurrentUser,
@@ -349,8 +352,9 @@ async def fund_testnet_wallet(
 ) -> FundTestnetResponse:
     """Request funds from the Base Sepolia testnet faucet.
 
-    Requests test ETH and USDC from the faucet for the authenticated user's
-    wallet. This endpoint is only available on testnet networks.
+    Requests test ETH and USDC from the CDP faucet for the authenticated user's
+    wallet. A token the faucet rejects is omitted. This endpoint is only
+    available on testnet networks.
 
     Args:
         current_user: Authenticated user from dependency injection
@@ -379,8 +383,11 @@ async def fund_testnet_wallet(
         faucet_result = await agentkit_service.request_testnet_funds(wallet_doc.default_address)
 
         return FundTestnetResponse(
-            transaction_hash=faucet_result.get("transaction_hash", "pending"),
-            message=faucet_result["message"]
+            eth_transaction_hash=faucet_result["eth_transaction_hash"],
+            eth_basescan_url=faucet_result["eth_basescan_url"],
+            usdc_transaction_hash=faucet_result["usdc_transaction_hash"],
+            usdc_basescan_url=faucet_result["usdc_basescan_url"],
+            message=faucet_result["message"],
         )
 
     except PlatformException:
