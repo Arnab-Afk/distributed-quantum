@@ -639,6 +639,22 @@ QB2_LIBP2P_PEER_ID=qb2-production-peer
 QB2_LIBP2P_DEV_SERVICE_PEER_COUNT=0
 ```
 
+**Agent Chat & Private Inference (`AGENT_LLM_PROVIDER`)**:
+```env
+AGENT_AUTH_BRIDGE_SECRET=<same 32+ char secret as frontend>
+# Explicit provider selection: groq | openrouter | near (no silent fallback)
+AGENT_LLM_PROVIDER=groq
+GROQ_API_KEY=<if using groq>
+GROQ_MODEL=openai/gpt-oss-20b
+OPENROUTER_API_KEY=<if using openrouter>
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
+NEARAI_API_KEY=<if using near; set per-key spend limit in NEAR dashboard>
+NEAR_MODEL=<canonical Confidential TEE model ID>
+TOJU_API_URL=https://toju-devcon-testnet.onrender.com
+TOJU_PAYMENT_RECIPIENT=0xbB2Fc1cc295b53a75217319eA421256dABB3eacb
+TOJU_NODE_BINARY=node
+```
+
 ### Frontend (Vercel Dashboard)
 
 **Required**:

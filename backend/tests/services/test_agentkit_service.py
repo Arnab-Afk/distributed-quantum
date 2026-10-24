@@ -33,8 +33,10 @@ from services.agentkit_service import AgentKitService
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Mock environment variables for AgentKit service."""
-    monkeypatch.setenv("CDP_API_KEY_NAME", "test-key-id")
-    monkeypatch.setenv("CDP_API_KEY_PRIVATE_KEY", "test-secret-key")
+    monkeypatch.setenv("CDP_API_KEY_ID", "test-key-id")
+    monkeypatch.setenv("CDP_API_KEY_SECRET", "test-secret-key")
+    monkeypatch.delenv("CDP_API_KEY_NAME", raising=False)
+    monkeypatch.delenv("CDP_API_KEY_PRIVATE_KEY", raising=False)
     monkeypatch.setenv("CDP_WALLET_SECRET", "test-wallet-secret-not-a-live-credential")
     monkeypatch.setenv("NETWORK", "base-sepolia")
     monkeypatch.setenv("QB2_MONGODB_LOCAL_URI", "mongodb://localhost:27017")
@@ -441,19 +443,69 @@ async def test_aave_withdraw(agentkit_service, mock_wallet_provider):
 
 @pytest.mark.anyio
 async def test_request_testnet_funds(agentkit_service):
-    """Test requesting testnet funds from faucet."""
-    # Arrange
+    """Test requesting testnet funds from the CDP faucet."""
     wallet_address = "0x1234567890123456789012345678901234567890"
+    hashes = {"eth": "0x" + "ab" * 32, "usdc": "0x" + "cd" * 32}
+    seen: list[str] = []
 
-    # Act
-    result = await agentkit_service.request_testnet_funds(wallet_address)
+    class _Faucet:
+        async def request_faucet(self, **kwargs):
+            assert kwargs["address"] == wallet_address
+            assert kwargs["network"] == "base-sepolia"
+            seen.append(kwargs["token"])
+            return hashes[kwargs["token"]]
 
-    # Assert
-    assert result["wallet_address"] == wallet_address
-    assert "faucet_url" in result
-    assert result["status"] == "manual_request_required"
-    assert "message" in result
-    assert "timestamp" in result
+    class _Client:
+        def __init__(self, **kwargs):
+            assert kwargs["api_key_id"] == "test-key-id"
+            self.evm = _Faucet()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    with patch("services.agentkit_service.CdpClient", _Client):
+        result = await agentkit_service.request_testnet_funds(wallet_address)
+
+    assert seen == ["eth", "usdc"]
+    assert result["eth_transaction_hash"] == hashes["eth"]
+    assert result["usdc_transaction_hash"] == hashes["usdc"]
+    assert result["eth_basescan_url"] == "https://sepolia.basescan.org/tx/" + hashes["eth"]
+    assert result["usdc_basescan_url"] == "https://sepolia.basescan.org/tx/" + hashes["usdc"]
+    assert result["status"] == "submitted"
+
+
+@pytest.mark.anyio
+async def test_request_testnet_funds_keeps_successful_token(agentkit_service):
+    """A failed faucet token does not discard the token that succeeded."""
+    wallet_address = "0x1234567890123456789012345678901234567890"
+    eth_hash = "0x" + "ab" * 32
+
+    class _Faucet:
+        async def request_faucet(self, **kwargs):
+            if kwargs["token"] == "usdc":
+                raise RuntimeError("faucet rate limit")
+            return eth_hash
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            self.evm = _Faucet()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    with patch("services.agentkit_service.CdpClient", _Client):
+        result = await agentkit_service.request_testnet_funds(wallet_address)
+
+    assert result["status"] == "partial"
+    assert result["eth_transaction_hash"] == eth_hash
+    assert result["usdc_transaction_hash"] is None
+    assert "usdc failed" in result["message"]
 
 
 # ---------------------------------------------------------------------------

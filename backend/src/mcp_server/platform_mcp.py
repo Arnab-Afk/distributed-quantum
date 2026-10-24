@@ -27,7 +27,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 logger = logging.getLogger(__name__)
 
 
-def create_platform_mcp(db: AsyncIOMotorDatabase, owner_id: str) -> FastMCP:
+def create_platform_mcp(db: AsyncIOMotorDatabase, owner_id: str, agent_id: str | None = None) -> FastMCP:
     """
     Create a FastMCP instance scoped to a specific user/owner.
 
@@ -38,6 +38,7 @@ def create_platform_mcp(db: AsyncIOMotorDatabase, owner_id: str) -> FastMCP:
     Args:
         db: Motor async MongoDB database handle
         owner_id: The authenticated user ID — tools only touch this user's data
+        agent_id: The agent in this chat. Wallet reads use that agent's record.
 
     Returns:
         FastMCP: Configured MCP server instance
@@ -182,15 +183,20 @@ def create_platform_mcp(db: AsyncIOMotorDatabase, owner_id: str) -> FastMCP:
 
     @mcp.tool()
     async def get_wallet() -> dict:
-        """Get the current user's wallet address, USDC balance, and ETH balance.
+        """Get this agent's wallet address, USDC balance, and ETH balance.
 
-        Returns the on-chain wallet address and current token balances.
+        Returns the on-chain wallet created for the agent in this chat.
         Call this whenever the user asks about their balance, wallet, or funds.
         """
         try:
-            doc = await db.wallets.find_one({"entity_id": owner_id})
+            if not agent_id:
+                return {"error": "No agent wallet is selected for this chat"}
+            agent_doc = await db.ai_agents.find_one({"agent_id": agent_id, "owner_id": owner_id})
+            if not agent_doc:
+                return {"error": "No AI agent found for this user"}
+            doc = await db.wallets.find_one({"entity_id": agent_id, "entity_type": "agent"})
             if not doc:
-                return {"error": "No wallet found for this user"}
+                return {"error": "No wallet found for this agent"}
             usdc = doc.get("balance_usdc", 0)
             eth = doc.get("balance_eth", 0)
             return {

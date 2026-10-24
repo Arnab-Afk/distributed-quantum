@@ -44,7 +44,7 @@ class AIAgentService:
     Service for managing autonomous AI research agents with spending controls.
 
     AI agents can:
-    - Analyze research proposals using Claude 3.5 Sonnet
+    - Analyze research proposals using the configured provider (`AGENT_LLM_PROVIDER`)
     - Make autonomous funding decisions based on configured criteria
     - Form coalitions with other agents for collaborative funding
     - Track spending history and enforce budget limits
@@ -136,6 +136,21 @@ class AIAgentService:
             if isinstance(config["daily_budget"], (int, float, str)):
                 config["daily_budget"] = Decimal(str(config["daily_budget"]))
 
+            existing = await self.db.ai_agents.find_one(
+                {"owner_id": owner_id, "agent_name": agent_name},
+                sort=[("created_at", -1)],
+            )
+            if existing:
+                logger.info("Reusing agent %s for owner %s", existing["agent_id"], owner_id)
+                return {
+                    "agent_id": existing["agent_id"],
+                    "owner_id": existing["owner_id"],
+                    "agent_name": existing["agent_name"],
+                    "wallet_address": existing["wallet_address"],
+                    "config": config,
+                    "created_at": existing["created_at"],
+                }
+
             # Import AgentKitService here to avoid circular imports
             from services.agentkit_service import AgentKitService
 
@@ -192,7 +207,7 @@ class AIAgentService:
         """
         Analyze a research proposal and make funding decision.
 
-        Uses Claude 3.5 Sonnet via AWS Bedrock to analyze the proposal against
+        Uses the configured provider (`AGENT_LLM_PROVIDER`) to analyze the proposal against
         agent's research interests, budget constraints, and reputation thresholds.
 
         Args:
@@ -276,12 +291,12 @@ class AIAgentService:
             for key, value in template_vars.items():
                 prompt = prompt.replace(f"{{{key}}}", str(value))
 
-            logger.info(f"Sending proposal analysis request to Claude via Bedrock")
+            logger.info("Sending proposal analysis request to configured LLM provider")
 
-            # Call Claude 3.5 Sonnet via AWS Bedrock
-            response = await self._call_bedrock(prompt)
+            # Call configured LLM provider (AGENT_LLM_PROVIDER)
+            response = await self._call_llm(prompt)
 
-            logger.info(f"Received analysis response from Claude")
+            logger.info("Received analysis response from configured LLM provider")
 
             # Parse JSON response
             decision = self._parse_decision_response(response)
@@ -357,7 +372,7 @@ class AIAgentService:
         """
         Form a coalition of agents to collaboratively fund a proposal.
 
-        Uses Claude 3.5 Sonnet to determine optimal funding allocation strategy
+        Uses the configured provider (`AGENT_LLM_PROVIDER`) to determine optimal funding allocation strategy
         across multiple agents based on their confidence levels and budget capacity.
 
         Args:
@@ -465,12 +480,12 @@ class AIAgentService:
             for key, value in template_vars.items():
                 prompt = prompt.replace(f"{{{key}}}", str(value))
 
-            logger.info("Sending coalition formation request to Claude via Bedrock")
+            logger.info("Sending coalition formation request to configured LLM provider")
 
-            # Call Claude 3.5 Sonnet via AWS Bedrock
-            response = await self._call_bedrock(prompt)
+            # Call configured LLM provider (AGENT_LLM_PROVIDER)
+            response = await self._call_llm(prompt)
 
-            logger.info("Received coalition formation response from Claude")
+            logger.info("Received coalition formation response from configured LLM provider")
 
             # Parse JSON response
             coalition_plan = self._parse_coalition_response(response)
@@ -680,17 +695,17 @@ class AIAgentService:
             logger.error(f"Failed to calculate daily remaining: {e}")
             raise
 
-    async def _call_bedrock(self, prompt: str) -> str:
-        # Keep the existing callers while using only the configured free-plan provider.
+    async def _call_llm(self, prompt: str) -> str:
+        # Call the configured LLM provider (AGENT_LLM_PROVIDER) without automatic fallback.
         from services.groq_agent import complete
         return await complete([{"role": "user", "content": prompt}])
 
     def _parse_decision_response(self, response: str) -> dict:
         """
-        Parse Claude's proposal analysis response.
+        Parse the LLM proposal analysis response.
 
         Args:
-            response: Raw JSON response from Claude
+            response: Raw JSON response from the configured LLM provider
 
         Returns:
             dict: Parsed decision with keys:
@@ -730,10 +745,10 @@ class AIAgentService:
 
     def _parse_coalition_response(self, response: str) -> dict:
         """
-        Parse Claude's coalition formation response.
+        Parse the LLM coalition formation response.
 
         Args:
-            response: Raw JSON response from Claude
+            response: Raw JSON response from the configured LLM provider
 
         Returns:
             dict: Parsed coalition plan with keys:
@@ -784,10 +799,11 @@ class AIAgentService:
 
     async def chat(self, agent_id: str, agent_name: str, message: str,
                    history: list[dict] | None = None, owner_id: str | None = None,
-                   session_id: str | None = None) -> str:
+                   session_id: str | None = None,
+                   meta: dict[str, Any] | None = None) -> str:
         from services.groq_agent import complete
         from mcp_server.platform_mcp import create_platform_mcp
-        mcp_server = create_platform_mcp(self.db, owner_id or "")
+        mcp_server = create_platform_mcp(self.db, owner_id or "", agent_id)
         tool_map = await mcp_server.list_tools()
         definitions = [{"type": "function", "function": {
             "name": tool.name, "description": " ".join((tool.description or "").split()),
@@ -832,4 +848,4 @@ class AIAgentService:
         messages.extend({"role": h["role"], "content": h["content"]}
                         for h in (history or [])[-20:] if h["role"] in ("user", "assistant"))
         messages.append({"role": "user", "content": message})
-        return await complete(messages, tools=definitions, invoke=invoke)
+        return await complete(messages, tools=definitions, invoke=invoke, meta=meta)

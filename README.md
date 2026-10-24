@@ -153,8 +153,13 @@ set that URI explicitly even if connecting to a remote MongoDB installation.
 
 For Groq instead, set `AGENT_LLM_PROVIDER=groq`, `GROQ_API_KEY`, and
 `GROQ_MODEL=openai/gpt-oss-20b`. OpenRouter accepts only free model names and sends
-zero-price provider limits. Provider switching is manual; there is no paid
-fallback or automatic rate-limit retry. Free model availability can change.
+zero-price provider limits. For NEAR AI Cloud private inference in a Confidential TEE,
+set `AGENT_LLM_PROVIDER=near`, `NEARAI_API_KEY`, and `NEAR_MODEL` (canonical Confidential TEE
+model ID from `https://cloud-api.near.ai/v1/model/list` with `attestationSupported=true`);
+configure a per-key spend limit in the NEAR dashboard. Each completion round is verified
+with `nearai-inference-sdk` and surfaced as an attestation badge (`Model TEE verified`,
+`Gateway verified`, or `Unverified`) on the chat message. Provider switching is manual;
+there is no paid fallback or automatic rate-limit retry. Free model availability can change.
 
 Frontend configuration (`frontend/.env.local`):
 
@@ -271,7 +276,7 @@ and external settlement failures remain demo limitations.
 
 ## Quick start
 
-**Prerequisites:** Python 3.11+ with [uv](https://github.com/astral-sh/uv), Node.js 22 (Bun for the frontend, npm for the isolated Toju payment worker), and Docker (full stack only).
+**Prerequisites:** Python 3.12+ with [uv](https://github.com/astral-sh/uv), Node.js 22 (Bun for the frontend, npm for the isolated Toju payment worker), and Docker (full stack only).
 
 **Backend** (http://localhost:8081, Swagger at `/docs`):
 
