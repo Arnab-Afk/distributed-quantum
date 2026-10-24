@@ -80,7 +80,8 @@ function EmptyState() {
       <HardDrive className="mb-3 size-10 text-muted-foreground/50" />
       <h3 className="text-sm font-medium">No circuits yet</h3>
       <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-        Publish a circuit from a run to make it available in the library.
+        Publish a circuit from Lab → New Run (“Publish circuit to VAULT”), then
+        open it here by CID.
       </p>
     </div>
   );
