@@ -25,8 +25,7 @@ from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
-from services.marketplace_service import MarketplaceService
-from services.agentkit_service import AgentKitService
+from quantum_backend_v2.api.deps.marketplace import MarketplaceServiceDep
 
 logger = logging.getLogger(__name__)
 
@@ -174,10 +173,6 @@ class WorkerEarningsResponse(BaseModel):
 
 router = APIRouter(prefix="/api/v1/marketplace", tags=["marketplace"])
 
-# Initialize services
-agentkit_service = AgentKitService()
-marketplace_service = MarketplaceService(agentkit_service=agentkit_service)
-
 
 @router.post(
     "/register-pricing",
@@ -190,6 +185,7 @@ marketplace_service = MarketplaceService(agentkit_service=agentkit_service)
 async def register_worker_pricing(
     body: RegisterPricingRequest,
     current_user: CurrentUser,
+    marketplace_service: MarketplaceServiceDep,
 ) -> RegisterPricingResponse:
     """Register or update worker pricing in the marketplace.
 
@@ -251,6 +247,7 @@ async def register_worker_pricing(
 )
 async def list_workers(
     current_user: CurrentUser,
+    marketplace_service: MarketplaceServiceDep,
     min_reputation: float = Query(
         default=40.0,
         ge=0.0,
@@ -330,6 +327,7 @@ async def list_workers(
 async def estimate_job_cost(
     body: EstimateCostRequest,
     current_user: CurrentUser,
+    marketplace_service: MarketplaceServiceDep,
 ) -> EstimateCostResponse:
     """Estimate cost of executing a quantum circuit.
 
@@ -397,8 +395,9 @@ async def estimate_job_cost(
                 "total earnings, jobs completed, reputation, and pricing.",
 )
 async def get_worker_earnings(
+    current_user: CurrentUser,
+    marketplace_service: MarketplaceServiceDep,
     worker_id: str = Path(..., description="Worker identifier"),
-    current_user: CurrentUser = None,
 ) -> WorkerEarningsResponse:
     """Get earnings and statistics for a specific worker.
 

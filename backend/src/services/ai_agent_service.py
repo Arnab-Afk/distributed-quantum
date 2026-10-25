@@ -12,13 +12,18 @@ AI Model: Groq (GROQ_MODEL)
 MongoDB: ai_agents collection
 """
 
+from __future__ import annotations
+
 from decimal import Decimal
 from datetime import datetime, date, timezone
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 import logging
 import os
 import uuid
 import json
+
+if TYPE_CHECKING:
+    from services.agentkit_service import AgentKitService
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +55,7 @@ class AIAgentService:
     - Track spending history and enforce budget limits
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, agentkit_service: AgentKitService | None = None) -> None:
         """
         Initialize AI Agent service with Groq and MongoDB.
 
@@ -60,6 +65,7 @@ class AIAgentService:
         - MONGODB_URI
         - MONGODB_DATABASE
         """
+        self._agentkit_service = agentkit_service
         logger.info("Initializing AIAgentService")
 
         # Initialize MongoDB connection
@@ -75,6 +81,14 @@ class AIAgentService:
         )
 
         logger.info("AIAgentService initialized")
+
+    @property
+    def agentkit(self) -> AgentKitService:
+        if self._agentkit_service is None:
+            from services.agentkit_service import AgentKitService
+
+            self._agentkit_service = AgentKitService()
+        return self._agentkit_service
 
     async def create_agent(
         self,
@@ -151,11 +165,8 @@ class AIAgentService:
                     "created_at": existing["created_at"],
                 }
 
-            # Import AgentKitService here to avoid circular imports
-            from services.agentkit_service import AgentKitService
-
             # Create wallet for agent
-            agentkit_service = AgentKitService()
+            agentkit_service = self.agentkit
             agent_id = str(uuid.uuid4())
             wallet_info = await agentkit_service.create_wallet(
                 entity_id=agent_id,
@@ -580,9 +591,7 @@ class AIAgentService:
             if not proposal_doc:
                 raise ValueError(f"Proposal not found: {proposal_id}")
 
-            # Execute USDC transfer via AgentKitService
-            from services.agentkit_service import AgentKitService
-            agentkit_service = AgentKitService()
+            agentkit_service = self.agentkit
 
             transfer_result = await agentkit_service.transfer_usdc(
                 from_address=agent_doc["wallet_address"],

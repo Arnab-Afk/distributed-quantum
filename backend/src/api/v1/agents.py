@@ -24,7 +24,7 @@ from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
 import uuid
 from db.agentkit_collections import AIAgentDocument, ResearchProposalDocument, ChatSessionDocument, _decimal128_to_decimal
-from services.ai_agent_service import AIAgentService
+from quantum_backend_v2.api.deps.research import AIAgentServiceDep
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +142,6 @@ class SpendingHistoryResponse(BaseModel):
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
-# Initialize AI Agent service
-ai_agent_service = AIAgentService()
-
 
 @router.post(
     "",
@@ -156,6 +153,7 @@ ai_agent_service = AIAgentService()
 async def create_agent(
     body: AgentCreateRequest,
     current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
 ) -> AgentResponse:
     """Create a new AI agent for autonomous research funding.
 
@@ -503,6 +501,7 @@ async def analyze_proposal(
     agent_id: str,
     body: AnalyzeProposalRequest,
     current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
 ) -> AnalysisResult:
     """Manually trigger analysis of a research proposal.
 
@@ -737,6 +736,7 @@ async def chat_with_agent(
     agent_id: str,
     body: ChatRequest,
     current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
 ) -> ChatResponse:
     """Send a message to an AI agent and get a response from the configured provider (`AGENT_LLM_PROVIDER`).
 
@@ -792,7 +792,7 @@ class ExportDecision(BaseModel):
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
-def export_service(current_user):
+def export_service(current_user, ai_agent_service):
     if not current_user.external_subject.startswith("betterauth|"):
         raise PlatformException(status_code=401, error=ErrorCode.UNAUTHORIZED,
                                 message="Sign in to approve public storage exports.")
@@ -801,16 +801,27 @@ def export_service(current_user):
 
 
 @router.get("/{agent_id}/exports")
-async def list_storage_exports(agent_id: str, session_id: str, current_user: CurrentUser):
+async def list_storage_exports(
+    agent_id: str, session_id: str, current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
+):
     try:
-        return await export_service(current_user).list(current_user.user_id, agent_id, session_id)
+        return await export_service(current_user, ai_agent_service).list(
+            current_user.user_id, agent_id, session_id
+        )
     except ValueError as exc:
         raise PlatformException(status_code=400, error=ErrorCode.VALIDATION_ERROR, message=str(exc)) from None
 
 
 @router.post("/{agent_id}/exports/{proposal_id}")
-async def decide_storage_export(agent_id: str, proposal_id: str, body: ExportDecision, current_user: CurrentUser):
+async def decide_storage_export(
+    agent_id: str, proposal_id: str, body: ExportDecision, current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
+):
     try:
-        return await export_service(current_user).decide(current_user.user_id, agent_id, body.session_id, proposal_id, body.decision, body.sha256)
+        return await export_service(current_user, ai_agent_service).decide(
+            current_user.user_id, agent_id, body.session_id,
+            proposal_id, body.decision, body.sha256,
+        )
     except ValueError as exc:
         raise PlatformException(status_code=400, error=ErrorCode.VALIDATION_ERROR, message=str(exc)) from None
