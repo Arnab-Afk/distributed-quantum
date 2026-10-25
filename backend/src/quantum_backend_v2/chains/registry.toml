@@ -10,9 +10,10 @@ testnet = true
 enabled = true
 aliases = ["base-sepolia"]
 rpc_env_var = "QB2_BASE_SEPOLIA_RPC_URL"
+public_rpc_url = "https://sepolia.base.org"
 capabilities = [
   "explorer_url", "create_wallet", "get_balance", "transfer_stablecoin",
-  "aave_supply", "aave_withdraw", "faucet_instructions",
+  "verify_transaction", "aave_supply", "aave_withdraw", "faucet_instructions",
 ]
 # Preserve the legacy escrow configuration; deployment verification is separate.
 aave_pool_address = "0x07eA79F68B2B3df564D0A34F8e19D9B1e339814b"
@@ -43,7 +44,8 @@ testnet = true
 enabled = true
 aliases = ["ethereum-sepolia"]
 rpc_env_var = "QB2_ETHEREUM_SEPOLIA_RPC_URL"
-capabilities = ["explorer_url"]
+public_rpc_url = "https://sepolia.drpc.org"
+capabilities = ["explorer_url", "verify_transaction"]
 
 [chains.provider_aliases]
 agentkit = "ethereum-sepolia"
