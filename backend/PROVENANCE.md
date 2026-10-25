@@ -111,6 +111,35 @@ is not a cross-document MongoDB transaction or an exactly-once execution guarant
 concurrent job processing and crash recovery still follow the existing job runtime.
 Automatic generation is scoped to circuit jobs, not finance/pharma jobs.
 
+### Publishing bundles to Kubo
+
+When `KUBO_RPC_SECRET` is set (see the Kubo section of the README), the app wires a
+`KuboBundlePublisher` into `CircuitJobService`. Once the completed run and its
+bundle are saved, the publisher adds the bundle's canonical JSON to the platform
+node, pins it, and appends `StorageReference(backend="kubo", cid=...)` to the stored
+bundle. Storage locations are excluded from `bundle_hash`, so attaching one does not
+change the commitment.
+
+- **Best effort.** Any failure (Kubo down, bad config, oversized bundle, a CID that
+  does not match the uploaded bytes) is logged by exception class only and never
+  fails or alters the run. The run records `output_snapshot["provenance_publication"]`
+  as `{"status": "published", "cid": ...}` or `{"status": "unpublished"}`. Without
+  a Kubo credential nothing is attempted and the key is absent. A failed
+  publication is not retried automatically.
+- **What the CID covers.** The uploaded JSON bytes, with `storage` and `anchors`
+  emptied so the bytes do not depend on later attachments. It is not the
+  commitment: a reader fetches the bytes, checks them against the CID, parses the
+  bundle and compares `bundle_hash`.
+- **Single block only.** Bundles up to 256 KiB are stored as one raw CIDv1/SHA-256
+  block, the shape the verified gateway client can fetch. The publisher computes
+  that CID locally and rejects a different answer from Kubo. Larger bundles are
+  left unpublished.
+- **Public content.** Pinned data is announced on the public IPFS network. Bundles
+  carry the run and owner IDs plus hashes of the input and result, not the circuit
+  or its counts, but publish them only where that is acceptable.
+- **Verification.** No Kubo storage adapter ships here, so verification reports the
+  new reference's `storage_content` check as `unavailable` rather than passed.
+
 ## Verification API and UI
 
 `GET /api/v1/provenance/{bundle_id}/verify` requires the existing backend auth
