@@ -830,8 +830,8 @@ class ProposalService:
         """
         logger.info(f"Broadcasting proposal {proposal['proposal_id']} to AI agents")
         try:
-            # Import AI agent service
             from services.ai_agent_service import AIAgentService
+
             if self._ai_agent_service is None:
                 self._ai_agent_service = AIAgentService(agentkit_service=self.agentkit)
             ai_agent_service = self._ai_agent_service

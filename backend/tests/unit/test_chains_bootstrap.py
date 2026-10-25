@@ -135,16 +135,18 @@ def test_application_selects_canonical_wallet_network_and_closes_client(applicat
 def test_application_closes_scoped_service_clients(application_factory, bedrock_available):
     create_application, _, _ = application_factory
     app = create_application(env={"NETWORK": "base-sepolia"})
-    services = [
-        SimpleNamespace(mongo_client=Mock(), bedrock=Mock() if bedrock_available else None)
-        for _ in range(3)
-    ]
-    del services[0].bedrock
-    del services[2].bedrock
-    app.state.ai_agent_service, app.state.proposal_service, app.state.marketplace_service = services
+    app.state.ai_agent_service = SimpleNamespace(mongo_client=Mock())
+    app.state.proposal_service = SimpleNamespace(
+        mongo_client=Mock(), bedrock=Mock() if bedrock_available else None
+    )
+    app.state.marketplace_service = SimpleNamespace(mongo_client=Mock())
     with TestClient(app):
         assert not hasattr(app.state, "wallet_service")
-    for service in services:
+    for service in (
+        app.state.ai_agent_service,
+        app.state.proposal_service,
+        app.state.marketplace_service,
+    ):
         service.mongo_client.close.assert_called_once_with()
         if getattr(service, "bedrock", None) is not None:
             service.bedrock.close.assert_called_once_with()

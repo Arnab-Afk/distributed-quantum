@@ -94,16 +94,16 @@ def test_dependencies_share_wallet_and_isolate_apps(research_boundary, monkeypat
     base = make_app("base-sepolia")
     ethereum = make_app("ethereum-sepolia")
     assert not hasattr(base.state, "proposal_service")
-    with TestClient(base) as a, TestClient(ethereum) as b:
-        assert a.get("/services").json() == {
+    with TestClient(base) as base_client, TestClient(ethereum) as ethereum_client:
+        assert base_client.get("/services").json() == {
             "chain": "eip155:84532",
             "shared": True,
             "shared_agents": True,
         }
         service = base.state.proposal_service
-        assert a.get("/services").status_code == 200
+        assert base_client.get("/services").status_code == 200
         assert base.state.proposal_service is service
-        assert b.get("/services").json()["chain"] == "eip155:11155111"
+        assert ethereum_client.get("/services").json()["chain"] == "eip155:11155111"
         assert ethereum.state.ai_agent_service is not base.state.ai_agent_service
         assert service.agentkit is base.state.wallet_service
 
@@ -217,7 +217,7 @@ async def test_standalone_proposal_reuses_wallet_across_broadcasts(research_boun
     assert analyze.await_count == 2
 
 
-def test_agent_route_uses_application_network(research_boundary, monkeypatch):
+def test_agent_route_uses_application_network(research_boundary):
     from api.v1.agents import router
     from quantum_backend_v2.api.deps.auth import require_authenticated
     from quantum_backend_v2.api.errors.models import register_exception_handlers

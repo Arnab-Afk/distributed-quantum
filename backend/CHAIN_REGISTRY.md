@@ -37,8 +37,8 @@ services are initialized lazily per application; their MongoDB clients and the p
 service’s Bedrock client close on application shutdown. Standalone proposal and
 agent callers can inject a wallet service; otherwise each lazily creates and
 reuses its own service. Standalone `AgentKitService` callers load these settings
-too, or accept an injected registry and explicit network. Injected registries use their own default, without reading
-process-wide network selection.
+too, or accept an injected registry and explicit network. Injected registries use
+their own default, without reading process-wide network selection.
 
 Mainnet entries must have `enabled = false`. Disabled entries cannot be resolved
 for operations and are omitted from the public list. Existing wallet records must

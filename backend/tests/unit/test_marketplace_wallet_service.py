@@ -23,7 +23,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def boundary(monkeypatch):
+def marketplace_boundary(monkeypatch):
     db = MagicMock()
     now = datetime.now(timezone.utc)
     worker = dict(
@@ -71,7 +71,7 @@ async def resolve_service(app):
     return await get_marketplace_service(request, wallet)
 
 
-def test_worker_routes_share_app_configuration(boundary, monkeypatch):
+def test_worker_routes_share_app_configuration(marketplace_boundary, monkeypatch):
     monkeypatch.setenv("NETWORK", "invalid-process-network")
     app = make_app()
     assert not hasattr(app.state, "marketplace_service")
@@ -107,10 +107,10 @@ def test_worker_routes_share_app_configuration(boundary, monkeypatch):
         assert app.state.marketplace_service is service
         assert service.agentkit is app.state.wallet_service
         assert service.agentkit.registry is app.state.chain_registry
-    boundary.provider.assert_not_called()
+    marketplace_boundary.provider.assert_not_called()
 
 
-async def test_marketplace_isolated_between_apps(boundary):
+async def test_marketplace_isolated_between_apps(marketplace_boundary):
     base = await resolve_service(make_app())
     ethereum = await resolve_service(make_app("ethereum-sepolia"))
     assert base is not ethereum
@@ -127,7 +127,7 @@ async def test_marketplace_isolated_between_apps(boundary):
         ("/estimate-cost", "POST", {"circuit": "OPENQASM 2.0; qreg q[1]; h q[0];"}),
     ],
 )
-def test_auth_failure_does_not_create_marketplace(boundary, path, method, body):
+def test_auth_failure_does_not_create_marketplace(marketplace_boundary, path, method, body):
     app = make_app()
 
     def deny():
@@ -140,7 +140,7 @@ def test_auth_failure_does_not_create_marketplace(boundary, path, method, body):
     assert not hasattr(app.state, "wallet_service")
 
 
-async def test_payout_uses_shared_wallet_and_updates_earnings(boundary):
+async def test_payout_uses_shared_wallet_and_updates_earnings(marketplace_boundary):
     app = make_app()
     service = await resolve_service(app)
     wallet = await get_wallet_service(Request({"type": "http", "app": app}))
@@ -159,7 +159,7 @@ async def test_payout_uses_shared_wallet_and_updates_earnings(boundary):
     )
     assert result["successful_payments"] == 1
     assert result["total_distributed"] == 1.25
-    update = boundary.db.worker_pricing.update_one.call_args.args[1]
+    update = marketplace_boundary.db.worker_pricing.update_one.call_args.args[1]
     assert update["$set"]["total_earned"] == Decimal128("3.25")
     assert update["$inc"]["jobs_completed"] == 1
     service._create_notification.assert_awaited_once()
@@ -168,8 +168,10 @@ async def test_payout_uses_shared_wallet_and_updates_earnings(boundary):
 @pytest.mark.parametrize(
     "network,stored", [("ethereum-sepolia", "base-sepolia"), ("base-sepolia", "ethereum-sepolia")]
 )
-async def test_payout_network_failure_keeps_earnings_unchanged(boundary, network, stored):
-    boundary.db.wallets.find_one.return_value["network"] = stored
+async def test_payout_network_failure_keeps_earnings_unchanged(
+    marketplace_boundary, network, stored
+):
+    marketplace_boundary.db.wallets.find_one.return_value["network"] = stored
     service = await resolve_service(make_app(network))
     service._create_notification = AsyncMock()
     result = await service.distribute_payment_to_workers(
@@ -179,6 +181,6 @@ async def test_payout_network_failure_keeps_earnings_unchanged(boundary, network
     assert result["successful_payments"] == 0
     error = result["payment_details"][0]["error"]
     assert "unavailable" in error or "does not match" in error
-    boundary.provider.assert_not_called()
-    boundary.db.worker_pricing.update_one.assert_not_awaited()
+    marketplace_boundary.provider.assert_not_called()
+    marketplace_boundary.db.worker_pricing.update_one.assert_not_awaited()
     service._create_notification.assert_not_awaited()

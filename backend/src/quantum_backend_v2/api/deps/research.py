@@ -21,11 +21,11 @@ AIAgentServiceDep = Annotated[AIAgentService, Depends(get_ai_agent_service)]
 
 
 async def get_proposal_service(
-    request: Request, wallet: WalletService, agents: AIAgentServiceDep
+    request: Request, wallet: WalletService, ai_agent_service: AIAgentServiceDep
 ) -> ProposalService:
     service = getattr(request.app.state, "proposal_service", None)
     if service is None:
-        service = ProposalService(agentkit_service=wallet, ai_agent_service=agents)
+        service = ProposalService(agentkit_service=wallet, ai_agent_service=ai_agent_service)
         request.app.state.proposal_service = service
     return service
 
