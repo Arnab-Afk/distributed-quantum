@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import TYPE_CHECKING, Literal
 
+from eth_typing import HexStr
+
 from quantum_backend_v2.chains.models import Capability, ChainSpec, DisabledNetworkError
 
 if TYPE_CHECKING:
@@ -104,7 +106,7 @@ class EvmRpcAdapter:
             raw = self.web3.eth.call(
                 {
                     "to": self.web3.to_checksum_address(self.chain.stablecoin.address),
-                    "data": _BALANCE_OF + owner[2:].lower().zfill(64),
+                    "data": HexStr(_BALANCE_OF + owner[2:].lower().zfill(64)),
                 }
             )
             stablecoin = _scaled(int.from_bytes(raw, "big"), self.chain.stablecoin.decimals)
@@ -125,7 +127,7 @@ class EvmRpcAdapter:
         self._require("verify_transaction")
         if min_confirmations < 1:
             raise ValueError("min_confirmations must be at least 1")
-        reference = _checked(_TX_HASH, tx_hash, "invalid transaction hash")
+        reference = HexStr(_checked(_TX_HASH, tx_hash, "invalid transaction hash"))
         if expected_transfer is not None and self.chain.stablecoin is None:
             raise UnsupportedOperationError("this network has no stablecoin to verify")
         self._check_chain()
