@@ -10,6 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ChainId = Annotated[str, Field(pattern=r"^eip155:[1-9][0-9]{0,31}$")]
 NetworkAlias = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")]
 EvmAddress = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
+# Keyless public endpoints only: HTTPS, no credentials, query string or fragment.
+PublicRpcUrl = Annotated[
+    str, Field(pattern=r"^https://[a-z0-9]+(?:[.-][a-z0-9]+)*(?:/[A-Za-z0-9._~-]+)*/?$")
+]
 Capability = Literal[
     "explorer_url",
     "create_wallet",
@@ -69,8 +73,10 @@ class ChainSpec(_RegistryModel):
     enabled: bool = Field(strict=True)
     aliases: tuple[NetworkAlias, ...] = ()
     provider_aliases: ProviderAliases = Field(default_factory=ProviderAliases)
-    # References only: this slice never reads, stores or resolves RPC credentials.
+    # The environment variable may hold a credential-bearing URL; it is never
+    # stored here, returned by the API or logged. public_rpc_url is the fallback.
     rpc_env_var: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
+    public_rpc_url: PublicRpcUrl | None = None
     explorers: ExplorerTemplates
     native_token: NativeToken
     stablecoin: Stablecoin | None = None
