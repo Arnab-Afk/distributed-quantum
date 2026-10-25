@@ -6,6 +6,7 @@ from collections.abc import Mapping
 
 from fastapi import FastAPI
 
+from quantum_backend_v2.application.provenance import KuboBundlePublisher
 from quantum_backend_v2.application.parity import CircuitJobService, FinancialJobService, OptionsJobService, RiskJobService
 from quantum_backend_v2.api.app import create_app
 from quantum_backend_v2.bootstrap.libp2p import create_libp2p_plan, create_libp2p_runtime
@@ -36,6 +37,10 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     circuit_job_service = CircuitJobService(
         discovery_service=discovery_service,
         libp2p_runtime=libp2p_runtime,
+        # Without a Kubo credential, bundles stay local and runs are unaffected.
+        bundle_publisher=(
+            KuboBundlePublisher(settings.kubo) if settings.kubo.rpc_secret is not None else None
+        ),
     )
     financial_job_service = FinancialJobService(
         discovery_service=discovery_service,
