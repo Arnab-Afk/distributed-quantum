@@ -46,12 +46,13 @@ def test_packaged_registry_and_provider_mappings():
                 "create_wallet",
                 "get_balance",
                 "transfer_stablecoin",
+                "verify_transaction",
                 "aave_supply",
                 "aave_withdraw",
                 "faucet_instructions",
             }
         else:
-            assert chain.capabilities == ("explorer_url",)
+            assert chain.capabilities == ("explorer_url", "verify_transaction")
 
 
 @pytest.mark.parametrize("network", ["", "BASE-SEPOLIA", "84532", "eip155:084532", "typo"])
@@ -105,7 +106,7 @@ def test_alias_cannot_shadow_another_provider_mapping(data):
         ("public_rpc_url", "https://rpc.example/#SECRET"),
         ("capabilities", ["transfer_stablecoin"]),
         ("capabilities", ["get_balance"]),
-        ("capabilities", ["verify_transaction"]),
+        ("capabilities", ["sign_transaction"]),
         ("capabilities", ["explorer_url", "explorer_url"]),
     ],
 )

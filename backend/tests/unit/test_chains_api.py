@@ -45,15 +45,18 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
                 "create_wallet",
                 "get_balance",
                 "transfer_stablecoin",
+                "verify_transaction",
                 "aave_supply",
                 "aave_withdraw",
                 "faucet_instructions",
             }
         else:
-            assert chain["capabilities"] == ["explorer_url"]
+            assert chain["capabilities"] == ["explorer_url", "verify_transaction"]
     for private in (
         "TOP_SECRET",
         "rpc_env_var",
+        "public_rpc_url",
+        "sepolia.base.org",
         "QB2_BASE_SEPOLIA_RPC_URL",
         "provider_aliases",
         "aave_pool_address",

@@ -19,6 +19,7 @@ Capability = Literal[
     "create_wallet",
     "get_balance",
     "transfer_stablecoin",
+    "verify_transaction",
     "aave_supply",
     "aave_withdraw",
     "faucet_instructions",
@@ -91,7 +92,8 @@ class ChainSpec(_RegistryModel):
             raise ValueError("duplicate network alias")
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("duplicate operation capability")
-        wallet_operations = set(self.capabilities) - {"explorer_url"}
+        # Read-only RPC checks need no wallet provider, so any EVM chain may offer them.
+        wallet_operations = set(self.capabilities) - {"explorer_url", "verify_transaction"}
         if wallet_operations:
             # Only the existing Base Sepolia wallet path is enabled in this migration.
             if (
