@@ -241,6 +241,20 @@ async def test_completed_job_publishes_bundle_to_kubo(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.anyio
+async def test_public_gateway_adds_an_evidence_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    publisher = provenance.KuboBundlePublisher(
+        KuboSettings(rpc_secret=KUBO_SECRET),
+        public_gateway_url="https://ipfs.example.com",
+        transport=kubo_transport(available=True, uploads=[]),
+    )
+    run = await run_job(monkeypatch, publisher)
+
+    stored = MemoryBundleDocument.stored[run.output_snapshot["provenance_bundle_id"]]
+    (reference,) = ProvenanceBundle.model_validate(stored.payload).storage
+    assert reference.url == f"https://ipfs.example.com/ipfs/{reference.cid}?filename=bundle.json"
+
+
+@pytest.mark.anyio
 async def test_kubo_down_keeps_completed_run_and_marks_bundle_unpublished(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

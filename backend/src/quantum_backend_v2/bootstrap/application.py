@@ -39,7 +39,9 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
         libp2p_runtime=libp2p_runtime,
         # Without a Kubo credential, bundles stay local and runs are unaffected.
         bundle_publisher=(
-            KuboBundlePublisher(settings.kubo) if settings.kubo.rpc_secret is not None else None
+            KuboBundlePublisher(settings.kubo, public_gateway_url=settings.gateway.public_url)
+            if settings.kubo.rpc_secret is not None
+            else None
         ),
     )
     financial_job_service = FinancialJobService(

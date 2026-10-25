@@ -124,9 +124,14 @@ class KuboBundlePublisher:
     """
 
     def __init__(
-        self, settings: KuboSettings, *, transport: httpx.AsyncBaseTransport | None = None
+        self,
+        settings: KuboSettings,
+        *,
+        public_gateway_url: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self._settings = settings
+        self._public_gateway_url = public_gateway_url
         self._transport = transport
 
     async def publish(self, payload: dict[str, Any]) -> StorageReference:
@@ -138,7 +143,12 @@ class KuboBundlePublisher:
         # A reference the gateway cannot verify is worse than none.
         if added.cid != _raw_cid(data):
             raise ValueError("Kubo returned a CID that does not match the uploaded bytes")
-        return StorageReference(backend=KUBO_BACKEND, cid=added.cid)
+        url = (
+            f"{self._public_gateway_url}/ipfs/{added.cid}?filename=bundle.json"
+            if self._public_gateway_url
+            else None
+        )
+        return StorageReference(backend=KUBO_BACKEND, cid=added.cid, url=url)
 
 
 async def publish_run_provenance(bundle_id: str, publisher: BundlePublisher) -> dict[str, str]:

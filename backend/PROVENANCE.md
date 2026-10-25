@@ -137,6 +137,11 @@ change the commitment.
 - **Public content.** Pinned data is announced on the public IPFS network. Bundles
   carry the run and owner IDs plus hashes of the input and result, not the circuit
   or its counts, but publish them only where that is acceptable.
+- **Evidence link.** Set `IPFS_PUBLIC_GATEWAY_URL` to the gateway's browser-facing
+  origin (a bare `http(s)` origin, no path, query or credentials) and each reference
+  gets a `url`, which the run page shows as an "Open evidence" link. Leave it blank
+  when the gateway has no public address: bundles are still published, without a
+  link. The private `IPFS_GATEWAY_URL` is never used for links.
 - **Verification.** No Kubo storage adapter ships here, so verification reports the
   new reference's `storage_content` check as `unavailable` rather than passed.
 

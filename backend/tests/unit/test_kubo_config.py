@@ -57,3 +57,27 @@ def test_kubo_response_budget_rejects_invalid_values_without_echoing_input(value
 
 def test_empty_secret_is_unconfigured_not_a_backend_startup_failure() -> None:
     assert AppSettings.from_env({"KUBO_RPC_SECRET": ""}).kubo.rpc_secret is None
+
+
+def test_public_gateway_is_optional_and_normalised_to_an_origin() -> None:
+    assert AppSettings.from_env({}).gateway.public_url is None
+    assert AppSettings.from_env({"IPFS_PUBLIC_GATEWAY_URL": ""}).gateway.public_url is None
+    settings = AppSettings.from_env({"IPFS_PUBLIC_GATEWAY_URL": "https://ipfs.example.com/"})
+    assert settings.gateway.public_url == "https://ipfs.example.com"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "ftp://ipfs.example.com",
+        "https://user:pass@ipfs.example.com",
+        "https://ipfs.example.com/ipfs",
+        "https://ipfs.example.com?token=1",
+        "https://ipfs.example.com#frag",
+        "https://ipfs.example.com\nHost: evil",
+        "not-a-url",
+    ],
+)
+def test_public_gateway_rejects_anything_but_a_bare_origin(value: str) -> None:
+    with pytest.raises(ValidationError):
+        AppSettings.from_env({"IPFS_PUBLIC_GATEWAY_URL": value})
