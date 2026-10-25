@@ -113,6 +113,16 @@ class KuboSettings(BaseModel):
     max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
 
 
+class GatewaySettings(BaseModel):
+    """Bounded, read-only access to an operator-configured IPFS gateway."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    url: str = Field(default="http://kubo:8080", repr=False)
+    timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
+
+
 class AppSettings(BaseModel):
     """Top-level application settings."""
 
@@ -153,6 +163,7 @@ class AppSettings(BaseModel):
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
     kubo: KuboSettings = Field(default_factory=KuboSettings)
+    gateway: GatewaySettings = Field(default_factory=GatewaySettings)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AppSettings:
@@ -177,6 +188,13 @@ class AppSettings(BaseModel):
                     "rpc_secret": env.get("KUBO_RPC_SECRET") or None,
                     "timeout_seconds": env.get("KUBO_RPC_TIMEOUT_SECONDS", "30"),
                     "max_response_bytes": env.get("KUBO_RPC_MAX_RESPONSE_BYTES", "4194304"),
+                }
+            ),
+            gateway=GatewaySettings.model_validate(
+                {
+                    "url": env.get("IPFS_GATEWAY_URL", "http://kubo:8080"),
+                    "timeout_seconds": env.get("IPFS_GATEWAY_TIMEOUT_SECONDS", "30"),
+                    "max_response_bytes": env.get("IPFS_GATEWAY_MAX_RESPONSE_BYTES", "4194304"),
                 }
             ),
             logging=LoggingSettings(
