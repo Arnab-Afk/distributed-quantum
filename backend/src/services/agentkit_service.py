@@ -22,9 +22,14 @@ from cryptography.fernet import Fernet
 import base64
 import hashlib
 
-from quantum_backend_v2.chains.adapter import EvmExplorerAdapter, UnsupportedOperationError
+from quantum_backend_v2.chains.adapter import (
+    EvmExplorerAdapter,
+    EvmRpcAdapter,
+    UnsupportedOperationError,
+)
 from quantum_backend_v2.chains.loader import load_chain_registry
 from quantum_backend_v2.chains.models import Capability, ChainRegistry, ChainSpec
+from quantum_backend_v2.chains.rpc import resolve_rpc_url
 from quantum_backend_v2.config import load_settings
 
 logger = logging.getLogger(__name__)
@@ -146,6 +151,10 @@ class AgentKitService:
             raise UnsupportedOperationError("Aave pool is unavailable")
         return self.chain.aave_pool_address
 
+    def rpc_client(self) -> Web3:
+        """Web3 client for the wallet network. Its URL may carry an API key: never log it."""
+        return Web3(Web3.HTTPProvider(resolve_rpc_url(self.chain)))
+
     def require_operation(self, operation: Capability) -> None:
         if operation not in self.chain.capabilities:
             raise UnsupportedOperationError("wallet operation is unavailable on this network")
@@ -230,10 +239,7 @@ class AgentKitService:
 
             # Record current block number so we can scan from here in transaction history
             try:
-                from coinbase_agentkit.network import NETWORK_ID_TO_CHAIN
-                _chain = NETWORK_ID_TO_CHAIN[self.network_id]
-                _rpc = _chain.rpc_urls["default"].http[0]
-                creation_block: int | None = Web3(Web3.HTTPProvider(_rpc)).eth.block_number
+                creation_block: int | None = self.rpc_client().eth.block_number
             except Exception:
                 creation_block = None
 
@@ -299,37 +305,12 @@ class AgentKitService:
             validate_address(wallet_address)
             await self._validate_stored_wallet(wallet_address)
 
-            # Use plain web3 — no CDP credentials needed for read-only balance queries
-            from coinbase_agentkit.network import NETWORK_ID_TO_CHAIN
-            chain = NETWORK_ID_TO_CHAIN[self.network_id]
-            rpc_url = chain.rpc_urls["default"].http[0]
-            web3 = Web3(Web3.HTTPProvider(rpc_url))
-
-            # Query ETH balance (native token)
-            eth_balance_wei = web3.eth.get_balance(Web3.to_checksum_address(wallet_address))
-            eth_balance = Decimal(eth_balance_wei) / Decimal(
-                10 ** self.chain.native_token.decimals
-            )
-
-            # Query USDC balance (ERC-20 token)
-            erc20_abi = [
-                {
-                    "constant": True,
-                    "inputs": [{"name": "_owner", "type": "address"}],
-                    "name": "balanceOf",
-                    "outputs": [{"name": "balance", "type": "uint256"}],
-                    "type": "function",
-                }
-            ]
-
-            usdc_contract = web3.eth.contract(
-                address=Web3.to_checksum_address(self.usdc_address),
-                abi=erc20_abi
-            )
-            usdc_balance_raw = usdc_contract.functions.balanceOf(
-                Web3.to_checksum_address(wallet_address)
-            ).call()
-            usdc_balance = Decimal(usdc_balance_raw) / self.token_scale
+            # Read-only, through the registry RPC; no CDP credentials needed.
+            balance = EvmRpcAdapter(self.chain, self.rpc_client()).get_balance(wallet_address)
+            if balance.stablecoin is None:
+                raise UnsupportedOperationError("USDC metadata is unavailable")
+            eth_balance = balance.native
+            usdc_balance = balance.stablecoin
 
             timestamp = datetime.utcnow()
 
@@ -358,7 +339,8 @@ class AgentKitService:
             }
 
         except Exception as e:
-            logger.error(f"Failed to get balance for {wallet_address}: {e}")
+            # RPC errors can embed the endpoint URL, which may carry an API key.
+            logger.error(f"Failed to get balance for {wallet_address}: {type(e).__name__}")
             raise
 
     async def transfer_usdc(

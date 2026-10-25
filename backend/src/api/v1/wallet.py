@@ -498,13 +498,11 @@ async def get_transactions(
         try:
             import asyncio as _asyncio
             from web3 import Web3 as _Web3
-            from coinbase_agentkit.network import NETWORK_ID_TO_CHAIN as _CHAIN_MAP
+            from quantum_backend_v2.chains.adapter import TRANSFER_TOPIC
+            from quantum_backend_v2.chains.rpc import resolve_rpc_url
 
-            _chain = _CHAIN_MAP[agentkit_service.network_id]
-            _rpc = _chain.rpc_urls["default"].http[0]
-            _w3 = _Web3(_Web3.HTTPProvider(_rpc))
+            _w3 = _Web3(_Web3.HTTPProvider(resolve_rpc_url(agentkit_service.chain)))
 
-            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
             usdc_address = agentkit_service.usdc_address
 
             addr = wallet_doc.default_address
@@ -571,7 +569,8 @@ async def get_transactions(
                 ))
 
         except Exception as rpc_err:
-            logger.warning(f"On-chain log scan failed: {rpc_err}")
+            # Log the type only: RPC errors can embed an API-keyed endpoint URL.
+            logger.warning(f"On-chain log scan failed: {type(rpc_err).__name__}")
 
         # Sort all by timestamp descending
         transaction_items.sort(key=lambda t: t.timestamp, reverse=True)

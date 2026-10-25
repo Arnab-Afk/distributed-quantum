@@ -46,6 +46,9 @@ def wallet_boundary(monkeypatch):
     web3.return_value.eth.block_number = 123
     contract = web3.return_value.eth.contract.return_value
     contract.functions.balanceOf.return_value.call.return_value = 100 * 10**6
+    web3.return_value.to_checksum_address.side_effect = lambda value: value
+    web3.return_value.eth.chain_id = 84532
+    web3.return_value.eth.call.return_value = (100 * 10**6).to_bytes(32, "big")
     monkeypatch.setattr(module, "Web3", web3)
     provider = MagicMock()
     provider.return_value.get_address.return_value = ADDRESS
@@ -79,6 +82,23 @@ def wallet_boundary(monkeypatch):
     )
 
 
+async def test_balance_uses_the_rpc_override(wallet_boundary, monkeypatch):
+    monkeypatch.setenv("QB2_BASE_SEPOLIA_RPC_URL", "https://base-sepolia.example/v2/KEY")
+    service = module.AgentKitService(registry=load_chain_registry())
+    await service.get_balance(ADDRESS)
+    assert wallet_boundary.web3.HTTPProvider.call_args.args == (
+        "https://base-sepolia.example/v2/KEY",
+    )
+
+
+async def test_balance_refuses_an_rpc_for_another_chain(wallet_boundary):
+    wallet_boundary.web3.return_value.eth.chain_id = 1
+    service = module.AgentKitService(registry=load_chain_registry())
+    with pytest.raises(ValueError, match="different chain"):
+        await service.get_balance(ADDRESS)
+    wallet_boundary.db.wallets.update_one.assert_not_awaited()
+
+
 @pytest.mark.parametrize("network", [None, "base-sepolia", "eip155:84532"])
 async def test_base_network_aliases_keep_provider_and_token_metadata(wallet_boundary, network):
     service = module.AgentKitService(registry=load_chain_registry(), network=network)
@@ -88,9 +108,10 @@ async def test_base_network_aliases_keep_provider_and_token_metadata(wallet_boun
     assert result["eth_balance"] == Decimal("1")
     assert result["usdc_balance"] == Decimal("100")
     assert (
-        wallet_boundary.web3.return_value.eth.contract.call_args.kwargs["address"]
+        wallet_boundary.web3.return_value.eth.call.call_args.args[0]["to"]
         == service.chain.stablecoin.address
     )
+    assert wallet_boundary.web3.HTTPProvider.call_args.args == ("https://sepolia.base.org",)
     wallet_boundary.db.wallets.update_one.assert_awaited_once()
 
 
