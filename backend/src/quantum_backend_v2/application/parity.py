@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
@@ -17,7 +18,11 @@ from quantum_backend_v2.application.financial_portfolio import (
 from quantum_backend_v2.application.financial_comparison import (
     build_financial_comparison_report,
 )
-from quantum_backend_v2.application.provenance import record_run_provenance
+from quantum_backend_v2.application.provenance import (
+    BundlePublisher,
+    publish_run_provenance,
+    record_run_provenance,
+)
 from quantum_backend_v2.application.quantum_bridge import QuantumExecutionBridge
 from quantum_backend_v2.identity.models import UserTokenClaims
 from quantum_backend_v2.persistence.mongodb import (
@@ -30,6 +35,8 @@ from quantum_backend_v2.persistence.mongodb import (
 )
 from quantum_backend_v2.reservations.service import ReservationService
 from quantum_backend_v2.runtime.service import ExecutionService
+
+logger = logging.getLogger(__name__)
 
 _CIRCUIT_WORKFLOW_DEFINITION_ID = "circuit-execution"
 _WORKFLOW_TYPE_CIRCUIT = "quantum_circuit"
@@ -65,12 +72,16 @@ def new_circuit_job_id() -> str:
 class CircuitJobService:
     """Durable circuit job submission, planning, and execution bridge."""
 
+    _bundle_publisher: BundlePublisher | None = None
+
     def __init__(
         self,
         *,
         discovery_service: Any,
         libp2p_runtime: Any,
+        bundle_publisher: BundlePublisher | None = None,
     ) -> None:
+        self._bundle_publisher = bundle_publisher
         reservation_service = ReservationService()
         execution_service = ExecutionService()
         self._quantum_bridge = QuantumExecutionBridge(
@@ -196,6 +207,7 @@ class CircuitJobService:
             doc.output_snapshot["provenance_bundle_id"] = await record_run_provenance(doc)
             doc.updated_at = _utc_now()
             await doc.save()
+            await self._publish_provenance(doc)
 
         except Exception as exc:
             doc = await WorkflowRunDocument.get(job_id)
@@ -211,6 +223,19 @@ class CircuitJobService:
             }
             doc.updated_at = _utc_now()
             await doc.save()
+
+    async def _publish_provenance(self, doc: WorkflowRunDocument) -> None:
+        """Best effort: the completed run is already saved and must stay completed."""
+        if self._bundle_publisher is None:
+            return
+        try:
+            doc.output_snapshot["provenance_publication"] = await publish_run_provenance(
+                doc.output_snapshot["provenance_bundle_id"], self._bundle_publisher
+            )
+            doc.updated_at = _utc_now()
+            await doc.save()
+        except Exception as exc:
+            logger.warning("run %s publication state not saved: %s", doc.id, type(exc).__name__)
 
     async def list_jobs(
         self,
