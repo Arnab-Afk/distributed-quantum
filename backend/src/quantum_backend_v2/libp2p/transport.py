@@ -21,7 +21,7 @@ import trio
 from libp2p.peer.id import ID
 from libp2p.peer.peerinfo import info_from_p2p_addr
 from libp2p.peer.peerstore import create_signed_peer_record
-from libp2p.tools.async_service import background_trio_service
+from libp2p.tools.async_service.trio_service import background_trio_service
 from multiaddr import Multiaddr
 
 from quantum_backend_v2.config.models import Libp2pSettings

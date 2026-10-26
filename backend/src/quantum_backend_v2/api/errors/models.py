@@ -23,6 +23,7 @@ class ErrorCode(str, Enum):
     SERVICE_UNAVAILABLE = "service_unavailable"
     RESOURCE_EXHAUSTED = "resource_exhausted"
     IDEMPOTENCY_CONFLICT = "idempotency_conflict"
+    INSUFFICIENT_CREDITS = "insufficient_credits"
 
 
 class ErrorDetail(BaseModel):

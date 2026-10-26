@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import type { NextConfig } from "next";
 import bundleAnalyzer from "@next/bundle-analyzer";
 
@@ -7,7 +9,7 @@ const withBundleAnalyzer = bundleAnalyzer({
 
 const nextConfig: NextConfig = {
   turbopack: {
-    root: ".",
+    root: path.join(__dirname, ".."),
   },
   transpilePackages: ["ngl", "openchemlib"],
   experimental: {

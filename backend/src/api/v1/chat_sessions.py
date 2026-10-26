@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
-from db.agentkit_collections import ChatSessionDocument
+from db.agentkit_collections import ChatSessionDocument, AIAgentDocument
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +27,7 @@ class SessionMessageIn(BaseModel):
     role: str = Field(description="user or agent")
     content: str = Field(description="Message text")
     rich_content: dict | None = Field(default=None, description="Optional rich content payload")
+    attestation: dict | None = Field(default=None, description="Optional private inference attestation summary")
 
 
 class SessionAppendRequest(BaseModel):
@@ -56,6 +57,8 @@ async def create_chat_session(
 ) -> SessionResponse:
     """Create a persisted chat session in MongoDB."""
     from datetime import datetime, timezone
+    if not await AIAgentDocument.find_one({"agent_id": body.agent_id, "owner_id": current_user.user_id}):
+        raise PlatformException(status_code=404, error=ErrorCode.NOT_FOUND, message="Agent not found.")
     session_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     doc = ChatSessionDocument(
@@ -162,9 +165,11 @@ async def append_session_message(
             error=ErrorCode.FORBIDDEN,
             message="Not your session",
         )
-    msg = {"role": body.message.role, "content": body.message.content}
+    msg: dict = {"role": body.message.role, "content": body.message.content}
     if body.message.rich_content:
         msg["richContent"] = body.message.rich_content
+    if body.message.attestation:
+        msg["attestation"] = body.message.attestation
     doc.messages.append(msg)
     doc.updated_at = datetime.now(timezone.utc)
     await doc.save()

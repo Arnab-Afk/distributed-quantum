@@ -6,9 +6,11 @@ from collections.abc import Mapping
 
 from fastapi import FastAPI
 
+from quantum_backend_v2.application.provenance import KuboBundlePublisher
 from quantum_backend_v2.application.parity import CircuitJobService, FinancialJobService, OptionsJobService, RiskJobService
 from quantum_backend_v2.api.app import create_app
 from quantum_backend_v2.bootstrap.libp2p import create_libp2p_plan, create_libp2p_runtime
+from quantum_backend_v2.chains.loader import load_chain_registry
 from quantum_backend_v2.config import load_settings
 from quantum_backend_v2.bootstrap.persistence import create_persistence_runtime
 from quantum_backend_v2.discovery.service import build_discovery_service
@@ -20,6 +22,8 @@ from quantum_backend_v2.runtime.recovery import RuntimeRecoveryService
 def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     """Build a configured FastAPI application."""
     settings = load_settings(env=env)
+    chain_registry = load_chain_registry(settings.chain_registry_path)
+    chain_registry.resolve(settings.wallet_network)
     configure_logging(settings.logging)
     persistence_runtime = create_persistence_runtime(settings.persistence)
     libp2p_plan = create_libp2p_plan(settings.libp2p)
@@ -33,6 +37,12 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     circuit_job_service = CircuitJobService(
         discovery_service=discovery_service,
         libp2p_runtime=libp2p_runtime,
+        # Without a Kubo credential, bundles stay local and runs are unaffected.
+        bundle_publisher=(
+            KuboBundlePublisher(settings.kubo, public_gateway_url=settings.gateway.public_url)
+            if settings.kubo.rpc_secret is not None
+            else None
+        ),
     )
     financial_job_service = FinancialJobService(
         discovery_service=discovery_service,
@@ -44,6 +54,7 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     runtime_recovery_service = RuntimeRecoveryService()
     return create_app(
         settings,
+        chain_registry=chain_registry,
         persistence_runtime=persistence_runtime,
         libp2p_plan=libp2p_plan,
         libp2p_runtime=libp2p_runtime,

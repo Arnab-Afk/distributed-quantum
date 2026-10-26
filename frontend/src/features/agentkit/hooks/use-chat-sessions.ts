@@ -2,11 +2,24 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { RichContent } from "@/features/agentkit/components/rich-message-renderer";
+import { parseApiTimestamp } from "@/features/agentkit/hooks/use-agents";
+
+export type AttestationStatus = "model_tee_verified" | "gateway_verified" | "unverified";
+
+export type AttestationSummary = {
+  provider: "near";
+  status: AttestationStatus;
+  signature_kind: string;
+  model: string;
+  request_id?: string | null;
+  rounds: number;
+};
 
 export type ChatMessage = {
   role: "user" | "agent";
   content: string;
   richContent?: RichContent;
+  attestation?: AttestationSummary | null;
 };
 
 export type ChatSession = {
@@ -21,7 +34,12 @@ export type ChatSession = {
 function toLocalSession(raw: {
   session_id: string;
   title: string;
-  messages: Array<{ role: string; content: string; richContent?: RichContent }>;
+  messages: Array<{
+    role: string;
+    content: string;
+    richContent?: RichContent;
+    attestation?: AttestationSummary | null;
+  }>;
   agent_id: string;
   created_at: string;
   updated_at: string;
@@ -34,28 +52,39 @@ function toLocalSession(raw: {
       role: m.role === "user" ? "user" : "agent",
       content: m.content,
       richContent: m.richContent,
+      attestation: m.attestation ?? null,
     })),
-    createdAt: new Date(raw.created_at).getTime(),
-    updatedAt: new Date(raw.updated_at).getTime(),
+    createdAt: parseApiTimestamp(raw.created_at)?.getTime() ?? 0,
+    updatedAt: parseApiTimestamp(raw.updated_at)?.getTime() ?? 0,
   };
 }
 
 export function useChatSessions() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [sessionsReady, setSessionsReady] = useState(false);
 
   // Load all sessions from backend on mount
   useEffect(() => {
+    let cancelled = false;
     fetch("/api/agentkit/chat-sessions")
       .then((r) => r.json())
       .then((data: unknown[]) => {
-        if (!Array.isArray(data)) return;
-        setSessions(
-          data
-            .map((d) => toLocalSession(d as Parameters<typeof toLocalSession>[0]))
-            .sort((a, b) => b.updatedAt - a.updatedAt)
-        );
+        if (cancelled) return;
+        if (Array.isArray(data)) {
+          setSessions(
+            data
+              .map((d) => toLocalSession(d as Parameters<typeof toLocalSession>[0]))
+              .sort((a, b) => b.updatedAt - a.updatedAt)
+          );
+        }
+        setSessionsReady(true);
       })
-      .catch(() => {/* backend down - graceful degradation */});
+      .catch(() => {
+        if (!cancelled) setSessionsReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const createSession = useCallback(
@@ -70,6 +99,7 @@ export function useChatSessions() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ agent_id: agentId, title }),
         });
+        if (!res.ok) throw new Error("Failed to create persisted session");
         const raw = await res.json();
         const session = toLocalSession(raw);
         setSessions((prev) => [session, ...prev]);
@@ -112,6 +142,7 @@ export function useChatSessions() {
               role: message.role,
               content: message.content,
               rich_content: message.richContent ?? null,
+              attestation: message.attestation ?? null,
             },
           }),
         });
@@ -151,5 +182,5 @@ export function useChatSessions() {
     [sessions]
   );
 
-  return { sessions, createSession, appendMessage, loadSession, deleteSession, getSession };
+  return { sessions, sessionsReady, createSession, appendMessage, loadSession, deleteSession, getSession };
 }

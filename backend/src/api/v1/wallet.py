@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field, ConfigDict
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
 from db.agentkit_collections import WalletDocument, PaymentDocument
-from services.agentkit_service import AgentKitService
+from quantum_backend_v2.api.deps.wallet import WalletService
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,10 @@ class FundTestnetResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    transaction_hash: str = Field(description="Transaction hash from faucet")
+    eth_transaction_hash: str | None = Field(description="ETH faucet transaction hash")
+    eth_basescan_url: str | None = Field(description="Explorer URL for the ETH faucet transaction")
+    usdc_transaction_hash: str | None = Field(description="USDC faucet transaction hash")
+    usdc_basescan_url: str | None = Field(description="Explorer URL for the USDC faucet transaction")
     message: str = Field(description="Status message")
 
 
@@ -109,9 +112,6 @@ class ExportWalletResponse(BaseModel):
 
 router = APIRouter(prefix="/api/v1/wallet", tags=["wallet"])
 
-# Initialize AgentKit service
-agentkit_service = AgentKitService()
-
 
 @router.post(
     "/create",
@@ -122,6 +122,7 @@ agentkit_service = AgentKitService()
 )
 async def create_wallet(
     current_user: CurrentUser,
+    agentkit_service: WalletService,
 ) -> WalletCreateResponse:
     """Create a new wallet for the current user.
 
@@ -158,7 +159,7 @@ async def create_wallet(
         return WalletCreateResponse(
             wallet_id=wallet_data.get("wallet_id") or wallet_data["wallet_address"][:8],
             address=wallet_data["wallet_address"],
-            network=wallet_data.get("network_id", "base-sepolia")
+            network=wallet_data["network_id"]
         )
 
     except PlatformException:
@@ -188,6 +189,7 @@ async def create_wallet(
 )
 async def get_balance(
     current_user: CurrentUser,
+    agentkit_service: WalletService,
 ) -> WalletBalanceResponse:
     """Get the current wallet balance.
 
@@ -215,7 +217,7 @@ async def get_balance(
                 message="Wallet not found. Please create a wallet first.",
             )
 
-        # Query CDP for current balances
+        agentkit_service.validate_wallet_network(wallet_doc.network)
         balance_data = await agentkit_service.get_balance(wallet_doc.default_address)
 
         return WalletBalanceResponse(
@@ -253,6 +255,7 @@ async def get_balance(
 async def transfer_usdc(
     body: TransferRequest,
     current_user: CurrentUser,
+    agentkit_service: WalletService,
 ) -> TransferResponse:
     """Transfer USDC to another wallet address.
 
@@ -282,6 +285,7 @@ async def transfer_usdc(
                 message="Wallet not found. Please create a wallet first.",
             )
 
+        agentkit_service.validate_wallet_network(wallet_doc.network)
         # Convert amount string to Decimal for precision
         amount = Decimal(body.amount)
 
@@ -299,9 +303,9 @@ async def transfer_usdc(
             metadata=metadata
         )
 
-        # Generate Basescan URL for the transaction
-        network_prefix = "sepolia." if "sepolia" in wallet_doc.network else ""
-        basescan_url = f"https://{network_prefix}basescan.org/tx/{transfer_result['transaction_hash']}"
+        basescan_url = agentkit_service.explorer.explorer_url(
+            "transaction", transfer_result["transaction_hash"]
+        )
 
         return TransferResponse(
             payment_id=transfer_result.get("payment_id", transfer_result["transaction_hash"]),
@@ -340,15 +344,17 @@ async def transfer_usdc(
     response_model=FundTestnetResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Request testnet faucet funds",
-    description="Requests ETH and USDC from the Base Sepolia testnet faucet.",
+    description="Requests test ETH and USDC from the Base Sepolia CDP faucet.",
 )
 async def fund_testnet_wallet(
     current_user: CurrentUser,
+    agentkit_service: WalletService,
 ) -> FundTestnetResponse:
     """Request funds from the Base Sepolia testnet faucet.
 
-    Requests test ETH and USDC from the faucet for the authenticated user's
-    wallet. This endpoint is only available on testnet networks.
+    Requests test ETH and USDC from the CDP faucet for the authenticated user's
+    wallet. A token the faucet rejects is omitted. This endpoint is only
+    available on testnet networks.
 
     Args:
         current_user: Authenticated user from dependency injection
@@ -371,20 +377,17 @@ async def fund_testnet_wallet(
                 message="Wallet not found. Please create a wallet first.",
             )
 
-        # Verify this is a testnet network
-        if "sepolia" not in wallet_doc.network.lower() and "testnet" not in wallet_doc.network.lower():
-            raise PlatformException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                error=ErrorCode.VALIDATION_ERROR,
-                message="Faucet is only available on testnet networks",
-            )
+        agentkit_service.validate_wallet_network(wallet_doc.network)
 
         # Request testnet funds via AgentKit service
         faucet_result = await agentkit_service.request_testnet_funds(wallet_doc.default_address)
 
         return FundTestnetResponse(
-            transaction_hash=faucet_result.get("transaction_hash", "pending"),
-            message=f"Successfully requested testnet funds for {wallet_doc.default_address}"
+            eth_transaction_hash=faucet_result["eth_transaction_hash"],
+            eth_basescan_url=faucet_result["eth_basescan_url"],
+            usdc_transaction_hash=faucet_result["usdc_transaction_hash"],
+            usdc_basescan_url=faucet_result["usdc_basescan_url"],
+            message=faucet_result["message"],
         )
 
     except PlatformException:
@@ -414,6 +417,7 @@ async def fund_testnet_wallet(
 )
 async def get_transactions(
     current_user: CurrentUser,
+    agentkit_service: WalletService,
     limit: int = Query(default=50, ge=1, le=200, description="Maximum number of transactions to return"),
 ) -> TransactionListResponse:
     """Get transaction history for the user's wallet.
@@ -443,6 +447,10 @@ async def get_transactions(
                 message="Wallet not found. Please create a wallet first.",
             )
 
+        agentkit_service.validate_wallet_network(wallet_doc.network)
+        agentkit_service.require_operation("get_balance")
+        explorer = agentkit_service.explorer
+
         # Query transactions where user's wallet is either sender or recipient
         transactions = await PaymentDocument.find(
             {
@@ -464,13 +472,13 @@ async def get_transactions(
         ).count()
 
         # Format internal transactions
-        network_prefix = "sepolia." if "sepolia" in wallet_doc.network else ""
         seen_hashes: set[str] = set()
         transaction_items = []
         for payment in transactions:
-            basescan_url = payment.basescan_url
-            if not basescan_url and payment.transaction_hash:
-                basescan_url = f"https://{network_prefix}basescan.org/tx/{payment.transaction_hash}"
+            basescan_url = (
+                explorer.explorer_url("transaction", payment.transaction_hash)
+                if payment.transaction_hash else ""
+            )
             transaction_items.append(
                 TransactionItem(
                     transaction_hash=payment.transaction_hash or "pending",
@@ -490,17 +498,12 @@ async def get_transactions(
         try:
             import asyncio as _asyncio
             from web3 import Web3 as _Web3
-            from coinbase_agentkit.network import NETWORK_ID_TO_CHAIN as _CHAIN_MAP
+            from quantum_backend_v2.chains.adapter import TRANSFER_TOPIC
+            from quantum_backend_v2.chains.rpc import resolve_rpc_url
 
-            _chain = _CHAIN_MAP[wallet_doc.network]
-            _rpc = _chain.rpc_urls["default"].http[0]
-            _w3 = _Web3(_Web3.HTTPProvider(_rpc))
+            _w3 = _Web3(_Web3.HTTPProvider(resolve_rpc_url(agentkit_service.chain)))
 
-            TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
-            USDC_ADDRESS = {
-                "base-sepolia": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-                "base-mainnet": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-            }.get(wallet_doc.network, "0x036CbD53842c5426634e7929541eC2318f3dCF7e")
+            usdc_address = agentkit_service.usdc_address
 
             addr = wallet_doc.default_address
             addr_padded = "0x" + addr[2:].lower().zfill(64)
@@ -520,7 +523,7 @@ async def get_transactions(
                     params = {
                         "fromBlock": chunk_start,
                         "toBlock": chunk_end,
-                        "address": _Web3.to_checksum_address(USDC_ADDRESS),
+                        "address": _Web3.to_checksum_address(usdc_address),
                     }
                     # Outgoing
                     logs += _w3.eth.get_logs({**params, "topics": [TRANSFER_TOPIC, addr_padded]})
@@ -533,10 +536,9 @@ async def get_transactions(
             all_logs = await loop.run_in_executor(None, _fetch_chunks, start_block, latest_block)
 
             seen_hashes = {t.transaction_hash for t in transaction_items}
-            network_prefix = "sepolia." if "sepolia" in wallet_doc.network else ""
 
             for log in all_logs:
-                tx_hash = log["transactionHash"].hex()
+                tx_hash = _Web3.to_hex(log["transactionHash"])
                 if tx_hash in seen_hashes:
                     continue
                 seen_hashes.add(tx_hash)
@@ -545,7 +547,7 @@ async def get_transactions(
                 from_addr = "0x" + log["topics"][1].hex()[-40:]
                 to_addr   = "0x" + log["topics"][2].hex()[-40:]
                 raw_value = int(log["data"].hex(), 16)
-                usdc_amount = str(raw_value / 10**6)
+                usdc_amount = str(Decimal(raw_value) / agentkit_service.token_scale)
 
                 # Get block timestamp
                 try:
@@ -563,11 +565,12 @@ async def get_transactions(
                     currency="USDC",
                     status="confirmed",
                     timestamp=ts,
-                    basescan_url=f"https://{network_prefix}basescan.org/tx/{tx_hash}",
+                    basescan_url=explorer.explorer_url("transaction", tx_hash),
                 ))
 
         except Exception as rpc_err:
-            logger.warning(f"On-chain log scan failed: {rpc_err}")
+            # Log the type only: RPC errors can embed an API-keyed endpoint URL.
+            logger.warning(f"On-chain log scan failed: {type(rpc_err).__name__}")
 
         # Sort all by timestamp descending
         transaction_items.sort(key=lambda t: t.timestamp, reverse=True)
@@ -580,6 +583,12 @@ async def get_transactions(
 
     except PlatformException:
         raise
+    except ValueError as e:
+        raise PlatformException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            error=ErrorCode.VALIDATION_ERROR,
+            message=str(e),
+        ) from e
     except Exception as e:
         logger.error(f"Failed to get transactions for user {current_user.user_id}: {e}")
         raise PlatformException(

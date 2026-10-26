@@ -1,7 +1,7 @@
 """AI Agents router for autonomous research funding.
 
 This module provides REST API endpoints for managing AI agents that autonomously
-analyze and fund quantum research proposals using Claude 3.5 Sonnet via AWS Bedrock.
+analyze and fund quantum research proposals using the configured provider (`AGENT_LLM_PROVIDER`).
 
 Features:
 - Create/manage AI agents with spending controls
@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field, ConfigDict
@@ -24,7 +24,7 @@ from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import PlatformException, ErrorCode
 import uuid
 from db.agentkit_collections import AIAgentDocument, ResearchProposalDocument, ChatSessionDocument, _decimal128_to_decimal
-from services.ai_agent_service import AIAgentService
+from quantum_backend_v2.api.deps.research import AIAgentServiceDep
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +142,6 @@ class SpendingHistoryResponse(BaseModel):
 
 router = APIRouter(prefix="/api/v1/agents", tags=["agents"])
 
-# Initialize AI Agent service
-ai_agent_service = AIAgentService()
-
 
 @router.post(
     "",
@@ -156,11 +153,12 @@ ai_agent_service = AIAgentService()
 async def create_agent(
     body: AgentCreateRequest,
     current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
 ) -> AgentResponse:
     """Create a new AI agent for autonomous research funding.
 
     The agent will have its own crypto wallet and can analyze proposals using
-    Claude 3.5 Sonnet. Spending limits and research interests are configurable.
+    the configured provider (`AGENT_LLM_PROVIDER`). Spending limits and research interests are configurable.
 
     Args:
         body: Agent creation request with name and configuration
@@ -503,10 +501,11 @@ async def analyze_proposal(
     agent_id: str,
     body: AnalyzeProposalRequest,
     current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
 ) -> AnalysisResult:
     """Manually trigger analysis of a research proposal.
 
-    Uses Claude 3.5 Sonnet via AWS Bedrock to analyze the proposal against the
+    Uses the configured provider (`AGENT_LLM_PROVIDER`) to analyze the proposal against the
     agent's research interests and budget constraints. If auto_fund is enabled
     and the analysis is positive, funding will be executed automatically.
 
@@ -702,11 +701,28 @@ class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     message: str = Field(description="Latest user message")
     history: list[ChatMessageIn] = Field(default_factory=list, description="Prior turns (oldest first)")
+    session_id: str | None = None
+
+
+class AttestationSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["near"] = "near"
+    status: Literal["model_tee_verified", "gateway_verified", "unverified"] = Field(
+        description="Attestation verification status"
+    )
+    signature_kind: str = Field(description="Signature kind (provider_tee, gateway, or none)")
+    model: str = Field(description="Canonical model ID")
+    request_id: str | None = Field(default=None, description="X-Request-Id or completion ID")
+    rounds: int = Field(default=1, ge=1, description="Number of verified completion rounds")
 
 
 class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reply: str = Field(description="Agent's reply")
+    attestation: AttestationSummary | None = Field(
+        default=None,
+        description="NEAR AI Cloud private inference attestation summary when provider=near",
+    )
 
 
 @router.post(
@@ -714,14 +730,15 @@ class ChatResponse(BaseModel):
     response_model=ChatResponse,
     status_code=status.HTTP_200_OK,
     summary="Chat with an AI agent",
-    description="Send a free-form message to an agent backed by Claude 3.5 Sonnet via AWS Bedrock.",
+    description="Send a free-form message to an agent backed by the configured LLM provider.",
 )
 async def chat_with_agent(
     agent_id: str,
     body: ChatRequest,
     current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
 ) -> ChatResponse:
-    """Send a message to an AI agent and get a response from Claude.
+    """Send a message to an AI agent and get a response from the configured provider (`AGENT_LLM_PROVIDER`).
 
     Maintains conversation context by accepting prior history. The agent is
     aware of its wallet, the platform's proposals, and can take actions.
@@ -741,17 +758,23 @@ async def chat_with_agent(
                 message="You do not have permission to use this agent",
             )
 
+        meta: dict[str, Any] = {}
         reply = await ai_agent_service.chat(
             agent_id=agent_id,
             agent_name=agent_doc.agent_name,
             message=body.message,
             history=[{"role": m.role, "content": m.content} for m in body.history],
             owner_id=current_user.user_id,
+            session_id=body.session_id if current_user.external_subject.startswith("betterauth|") else None,
+            meta=meta,
         )
-        return ChatResponse(reply=reply)
+        attestation = AttestationSummary(**meta) if meta.get("provider") == "near" else None
+        return ChatResponse(reply=reply, attestation=attestation)
 
     except PlatformException:
         raise
+    except ValueError as e:
+        raise PlatformException(status_code=503, error=ErrorCode.INTERNAL_ERROR, message=str(e))
     except Exception as e:
         logger.error(f"Chat failed for agent {agent_id}: {e}")
         raise PlatformException(
@@ -760,3 +783,45 @@ async def chat_with_agent(
             message="Chat request failed",
         )
 
+
+
+class ExportDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    session_id: str
+    decision: Literal["approve", "cancel", "reconcile"]
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def export_service(current_user, ai_agent_service):
+    if not current_user.external_subject.startswith("betterauth|"):
+        raise PlatformException(status_code=401, error=ErrorCode.UNAUTHORIZED,
+                                message="Sign in to approve public storage exports.")
+    from services.toju_storage import TojuStorage
+    return TojuStorage(ai_agent_service.db)
+
+
+@router.get("/{agent_id}/exports")
+async def list_storage_exports(
+    agent_id: str, session_id: str, current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
+):
+    try:
+        return await export_service(current_user, ai_agent_service).list(
+            current_user.user_id, agent_id, session_id
+        )
+    except ValueError as exc:
+        raise PlatformException(status_code=400, error=ErrorCode.VALIDATION_ERROR, message=str(exc)) from None
+
+
+@router.post("/{agent_id}/exports/{proposal_id}")
+async def decide_storage_export(
+    agent_id: str, proposal_id: str, body: ExportDecision, current_user: CurrentUser,
+    ai_agent_service: AIAgentServiceDep,
+):
+    try:
+        return await export_service(current_user, ai_agent_service).decide(
+            current_user.user_id, agent_id, body.session_id,
+            proposal_id, body.decision, body.sha256,
+        )
+    except ValueError as exc:
+        raise PlatformException(status_code=400, error=ErrorCode.VALIDATION_ERROR, message=str(exc)) from None

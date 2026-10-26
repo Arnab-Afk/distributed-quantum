@@ -1,4 +1,4 @@
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS builder
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
@@ -17,7 +17,7 @@ COPY backend/src ./src
 RUN uv sync --frozen --no-dev
 
 
-FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim AS runner
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim AS runner
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends bash libgmp10 lsof make curl \

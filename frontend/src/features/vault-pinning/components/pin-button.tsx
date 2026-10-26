@@ -13,7 +13,7 @@ import {
 import { usePin } from "../hooks/use-pin";
 import { usePinMetadata } from "../hooks/use-pin-metadata";
 import { UnpinModal } from "./unpin-modal";
-import { DEFAULT_SERVICE } from "../services";
+import { DEFAULT_SERVICE, SERVICE_LABELS } from "../services";
 import type { PinningService } from "../types";
 
 interface PinButtonProps {
@@ -22,11 +22,7 @@ interface PinButtonProps {
   metadata: Record<string, unknown>;
 }
 
-const SERVICE_LABELS: Record<PinningService, string> = {
-  lighthouse: "Lighthouse",
-  pinata: "Pinata",
-  "nft.storage": "NFT.Storage",
-};
+const ALTERNATIVE_SERVICES: PinningService[] = ["lighthouse"];
 
 export function PinButton({ cid, type, metadata }: PinButtonProps) {
   const { pin, unpin, pinning } = usePin();
@@ -37,8 +33,19 @@ export function PinButton({ cid, type, metadata }: PinButtonProps) {
 
   const handlePin = async (service: PinningService = DEFAULT_SERVICE) => {
     try {
-      await pin(cid, type, metadata, service);
-      toast.success(`Pinned to ${SERVICE_LABELS[service]}`);
+      const { gatewayCid } = await pin(cid, type, metadata, service);
+      const sharePath = `/vault/cid/${gatewayCid}`;
+      try {
+        await navigator.clipboard.writeText(
+          `${window.location.origin}${sharePath}`,
+        );
+      } catch {
+        // Clipboard may be blocked; toast still shows the CID.
+      }
+      toast.success(`Pinned to ${SERVICE_LABELS[service]} — share link copied`, {
+        description: gatewayCid,
+        duration: 12_000,
+      });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Pin failed");
     }
@@ -94,12 +101,10 @@ export function PinButton({ cid, type, metadata }: PinButtonProps) {
     );
   }
 
-  // Split button: primary action (Pinata — fast) + dropdown for Lighthouse
   return (
     <div className="inline-flex items-center self-center">
-      {/* Primary: Pin to Pinata */}
       <button
-        onClick={() => handlePin("pinata")}
+        onClick={() => handlePin(DEFAULT_SERVICE)}
         className={cn(
           "group relative inline-flex cursor-pointer items-center gap-1.5 overflow-hidden",
           "rounded-l-md border border-r-0 border-violet-500/25 bg-violet-500/8 px-3 py-1.5",
@@ -109,10 +114,9 @@ export function PinButton({ cid, type, metadata }: PinButtonProps) {
       >
         <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-violet-400/12 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
         <Pin className="h-3 w-3 shrink-0 animate-pulse" />
-        <span>Pin to Pinata</span>
+        <span>Pin to {SERVICE_LABELS[DEFAULT_SERVICE]}</span>
       </button>
 
-      {/* Dropdown divider + Lighthouse option */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -127,9 +131,11 @@ export function PinButton({ cid, type, metadata }: PinButtonProps) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="min-w-[140px]">
-          <DropdownMenuItem onClick={() => handlePin("lighthouse")}>
-            Pin to Lighthouse
-          </DropdownMenuItem>
+          {ALTERNATIVE_SERVICES.map((service) => (
+            <DropdownMenuItem key={service} onClick={() => handlePin(service)}>
+              Pin to {SERVICE_LABELS[service]}
+            </DropdownMenuItem>
+          ))}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

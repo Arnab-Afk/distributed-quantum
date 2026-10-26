@@ -3,6 +3,9 @@ export const QUERY_KEYS = {
     all: () => ["auth"] as const,
     session: () => ["auth", "session"] as const,
   },
+  billing: {
+    credits: () => ["billing", "credits"] as const,
+  },
   dashboard: {
     all: () => ["dashboard"] as const,
     overview: () => ["dashboard", "overview"] as const,
@@ -15,6 +18,7 @@ export const QUERY_KEYS = {
     list: () => ["runs", "list"] as const,
     detail: (id: string) => ["runs", "detail", id] as const,
     quantumDetail: (id: string) => ["runs", "quantum-detail", id] as const,
+    provenance: (bundleId: string | null) => ["runs", "provenance", bundleId] as const,
   },
   options: {
     all: () => ["options"] as const,

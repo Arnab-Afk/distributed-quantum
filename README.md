@@ -1,8 +1,8 @@
 <div align="center">
 
-# Distributed Quantum Services
+# QMeshPy: Distributed Quantum Services with Algorand x402
 
-**Quantum operations as discoverable peer-to-peer network services, orchestrated over py-libp2p and analyzed with Qiskit.**
+**Quantum computation as discoverable, machine-payable peer-to-peer services powered by py-libp2p, Qiskit, and Algorand x402.**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
@@ -54,9 +54,229 @@ The same infrastructure powers a QAOA portfolio optimizer that benchmarks quantu
 
 ---
 
+## Algorand x402: machine-payable quantum services
+
+QMeshPy exposes two paid services through the x402 `402 Payment Required` flow, settled in Algorand USDC. A client requests a service, receives the payment requirement, pays on-chain, and the coordinator then runs the job across the libp2p mesh.
+
+| Service | Route | Execution |
+|---|---|---|
+| Quantum circuit execution | `POST /api/x402/quantum/runs` | Distributed across worker peers |
+| QAE options pricing | `POST /api/x402/options/runs` | Quantum-finance pipeline |
+
+The routes are disabled unless `X402_ENABLED=true`. Both have completed paid calls on Algorand TestNet; the transaction evidence is in the overview.
+
+- [Overview, request flow and TestNet verification](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/overview.md)
+- [Design](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/algorand-x402-design.md)
+- [TestNet runbook](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/algorand-x402-runbook.md)
+- [Implementation](https://github.com/QMeshPy/distributed-quantum/tree/main/frontend/src/features/x402) (`frontend/src/features/x402`, plus the internal routes in `backend/src/quantum_backend_v2/api/routers/`)
+
+---
+
+## Toju agent storage — testnet integration
+
+Agents can draft a report in chat and propose storing it on public IPFS through
+the **full Toju server**. Ask naturally: **“Let's store this proposal so we can
+access it later.”** The agent prepares an immutable approval card; only the
+signed-in owner can approve publication and its capped testnet payment.
+
+The card stays beside its original response. Later messages continue below it,
+and saved conversations survive reloads. Use **Agents → Agent Chat** in the
+navigation bar to try the flow.
+
+### Links and deployment boundaries
+
+| Resource | Location |
+| --- | --- |
+| Integration branch | `feat/toju-agent-storage` in both [QMeshPy](https://github.com/QMeshPy/distributed-quantum/tree/feat/toju-agent-storage) and [Winter-Soren](https://github.com/Winter-Soren/distributed-quantum-services/tree/feat/toju-agent-storage) |
+| Toju API readiness | [Render health](https://toju-devcon-testnet.onrender.com/health) |
+| Toju API liveness | [Render liveness](https://toju-devcon-testnet.onrender.com/health/live) |
+| Full Toju server source | [Winter-Soren/afara, devcon/testnet](https://github.com/Winter-Soren/afara/tree/devcon/testnet), forked from the official Toju server |
+| Hosting instructions | [Full Render / Neon / QStash guide](https://github.com/QMeshPy/documentations/blob/main/toju/toju-render-testnet-guide.md) |
+| Video demo | [Watch the Toju agent storage demo on Google Drive](https://drive.google.com/file/d/1PZ6MHxBd5_XOqMTGnrS6OEB_tGlL6uGX/view?usp=drive_link) |
+
+**QuantumNodes runs locally for this demo. Render hosts the separate full Toju
+Node/Express server**, including its storage, payment, database and lifecycle-job
+routes. `backend/toju-client` is a payment/verification worker, not a replacement
+storage server. The retired `services/toju-demo` prototype must not be deployed.
+
+Agent storage payments use **Base Sepolia** (`eip155:84532`) and faucet USDC.
+The server's separate Solana route uses **Solana testnet**, with program
+`CSXnfQsFWxdPB5pnS73TQDA6ivK6kcFnRwtt6TgFquxH`. This agent demo does not execute
+a Solana payment. Neither route automatically falls back to mainnet.
+
+### Run the integration locally
+
+Use Python 3.12 (the tested runtime), `uv`, **Node 22**, Bun, and a running local
+MongoDB. Start with the backend/frontend setup below. The frontend uses Bun;
+the isolated payment worker has its own npm lockfile.
+
+```sh
+# From the repository root
+cd backend
+uv sync --extra dev
+cd toju-client
+npm ci
+cd ../../frontend
+bun install
+```
+
+Create ignored `backend/.env` and `frontend/.env.local` files from their example
+settings. Merge the values below into your local files; do not overwrite existing
+credentials. Generate **one** bridge secret with `openssl rand -hex 32` and use
+that same value on both sides. Generate a separate Better Auth secret.
+
+Backend configuration (`backend/.env`):
+
+```dotenv
+QB2_MONGODB_TARGET=local
+QB2_MONGODB_LOCAL_URI=mongodb://127.0.0.1:27017
+QB2_MONGODB_DATABASE=qds
+AGENT_AUTH_BRIDGE_SECRET=<same-generated-bridge-secret-as-frontend>
+
+AGENT_LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=<your-own-openrouter-key>
+OPENROUTER_MODEL=nvidia/nemotron-3.5-lightning:free
+
+CDP_API_KEY_ID=<your-own-cdp-key-id>
+CDP_API_KEY_SECRET=<your-own-cdp-key-secret>
+CDP_WALLET_SECRET=<your-own-cdp-wallet-secret>
+NETWORK=base-sepolia
+
+TOJU_API_URL=https://toju-devcon-testnet.onrender.com
+TOJU_PAYMENT_RECIPIENT=0xbB2Fc1cc295b53a75217319eA421256dABB3eacb
+TOJU_NODE_BINARY=node
+```
+
+`TOJU_NODE_BINARY` must resolve to Node 22; use its absolute path if your shell's
+default differs. The current agent services use `QB2_MONGODB_LOCAL_URI` directly;
+set that URI explicitly even if connecting to a remote MongoDB installation.
+
+For Groq instead, set `AGENT_LLM_PROVIDER=groq`, `GROQ_API_KEY`, and
+`GROQ_MODEL=openai/gpt-oss-20b`. OpenRouter accepts only free model names and sends
+zero-price provider limits. For NEAR AI Cloud private inference in a Confidential TEE,
+set `AGENT_LLM_PROVIDER=near`, `NEARAI_API_KEY`, and `NEAR_MODEL` (canonical Confidential TEE
+model ID from `https://cloud-api.near.ai/v1/model/list` with `attestationSupported=true`);
+configure a per-key spend limit in the NEAR dashboard. Each completion round is verified
+with `nearai-inference-sdk` and surfaced as an attestation badge (`Model TEE verified`,
+`Gateway verified`, or `Unverified`) on the chat message. Provider switching is manual;
+there is no paid fallback or automatic rate-limit retry. Free model availability can change.
+
+Frontend configuration (`frontend/.env.local`):
+
+```dotenv
+NEXT_PUBLIC_BACKEND_URL=http://127.0.0.1:8081
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DB_NAME=quantum_platform
+BETTER_AUTH_URL=http://localhost:3000
+BETTER_AUTH_SECRET=<separate-generated-auth-secret>
+AGENT_AUTH_BRIDGE_SECRET=<same-generated-bridge-secret-as-backend>
+RESEND_API_KEY=<your-own-resend-key>
+OTP_EMAIL_FROM=<sender-verified-in-your-resend-account>
+NEXT_PUBLIC_TRIAL_DISABLED=true
+```
+
+The trial flag is for local development; it does **not** bypass sign-in or export
+ownership checks. Email OTP authentication requires a working Resend sender.
+MongoDB stores chat/agent state and authentication; **Neon belongs to the Toju
+server**, not these MongoDB settings. Provider keys, the auth bridge and CDP
+signing credentials are server-only; never prefix them with `NEXT_PUBLIC_`.
+
+Start the two processes in separate terminals:
+
+```sh
+cd backend
+uv run quantum-backend --host 127.0.0.1 --port 8081
+```
+
+```sh
+cd frontend
+bun run dev
+```
+
+Sign in at [localhost:3000](http://localhost:3000), open **Agents → Agent Chat**,
+and use your own agent and its CDP Base Sepolia wallet. Fund that wallet with
+test USDC using the [Circle faucet](https://faucet.circle.com/) before approving
+an export. Do not use mainnet funds or another user's wallet.
+
+### Try a draft, approval and receipt
+
+1. Ask: `Draft a short Bell-pair experiment proposal. Clearly label it as a proposed experiment that has not been run. Show only the draft for now.`
+2. Then ask: `Let's store this proposal so we can access it later.`
+3. Review the exact content, public-IPFS notice, recipient, SHA-256, 30-day
+   retention and price. Click **Cancel** to decline or **Approve & store** once
+   to publish. A direct `yes` applies only to the current pending approval.
+4. Wait for **Stored and retrieved. SHA-256 verified.** Open the artifact and
+   testnet payment links. The worker checks the on-chain USDC Transfer and the
+   downloaded bytes; an upload response alone is not treated as proof.
+5. Reload the saved chat to see the persisted receipt. For an uncertain outcome,
+   use **Check receipt (no new payment)**; never repay automatically.
+
+The model can also propose exporting an owned workflow run ID. The backend reads
+that user's stored run snapshots and exports selected metadata/results rather
+than trusting model-invented results. Exports are limited to 256 KiB, approval
+expires after 15 minutes, and the current payment policy caps each export at
+24 micro-USDC (`0.000024` test USDC). Changing server pricing requires reviewing
+the client's matching policy; mismatched quotes fail closed.
+
+### Host your own full Toju server on Render
+
+Follow the [complete hosting guide](https://github.com/QMeshPy/documentations/blob/main/toju/toju-render-testnet-guide.md), which
+includes every environment variable, pricing initialization, migrations and
+signed QStash schedule. The reproduced installation uses Render Free, Neon Free
+and QStash Free; check your account's quotas before inviting additional users.
+
+- Deploy the **afara server fork**, branch `devcon/testnet`, with Render's
+  root directory blank. Do not deploy this entire QuantumNodes repository as Toju.
+- Use Node 22, `NODE_ENV=staging`, `X402_NETWORK=sepolia`,
+  `FILECOIN_NETWORK=calibration`, and a Solana testnet RPC/IDL.
+- Provide your own Neon `DATABASE_URL`, Pinata JWT/gateway, Resend sender/key,
+  QStash current/next signing keys, admin API secret and Base Sepolia recipient.
+  Keep all secrets in Render's environment settings.
+- Build: `corepack pnpm --filter server... install --frozen-lockfile --prod=false && corepack pnpm --dir server run build`
+- Start: `corepack pnpm --dir server exec tsx scripts/migrate.ts staging && node server/dist/index.js`
+- Set Render's health-check path to `/health/live`. Check `/health` separately
+  for database readiness and initialize pricing as documented in the guide.
+- Configure the five signed lifecycle/usage jobs described in the guide.
+  Do not schedule `/jobs/destroy`.
+- Point your QuantumNodes backend's `TOJU_API_URL` at your new service and set
+  `TOJU_PAYMENT_RECIPIENT` to its exact `BASE_USDC_WALLET` public address.
+
+The demo endpoint above is a shared test service, not a production availability
+guarantee. Its hosted `/health` returning healthy does not by itself verify
+payment settlement, IPFS retrieval or lifecycle cleanup.
+
+### Verification and known limits
+
+The earlier **DevCon Demo** draft completed a testnet payment and verified
+retrieval: [public report](https://gateway.pinata.cloud/ipfs/bafybeiaw3wgnhn5yort3hvvzohvyd6ms43xmjat4qhj4jaazr3e2rnuvie/report.md)
+and [Base Sepolia transaction](https://sepolia.basescan.org/tx/0x4b9e24bb741676455f1b5aa611d7459bd2b6fbf8666bf8353a2eca84602fa1fe).
+A later approved draft was pinned but settlement failed; its uncertain receipt
+is preserved. The exact historical settlement failure was not captured.
+
+Run the focused checks without consuming model quota or making payments:
+
+```sh
+cd backend
+uv run pytest tests/services/test_agent_bridge.py tests/services/test_groq_agent.py tests/services/test_toju_storage.py
+cd toju-client
+npm test
+cd ../../frontend
+bun run tsc --noEmit
+```
+
+The storage test uses a temporary local MongoDB database and removes only that
+test database. The provider/payment calls in these checks are mocked. Live
+coverage includes one completed export, receipt recovery and a signed QStash
+usage snapshot. A full quantum experiment, Solana/Filecoin payments, renewal
+email flow and time-based deletion have not been verified end to end. Public
+IPFS copies may remain after pin retention ends. Free-tier cold starts, quotas
+and external settlement failures remain demo limitations.
+
+---
+
 ## Quick start
 
-**Prerequisites:** Python 3.11+ with [uv](https://github.com/astral-sh/uv), Node.js 20+, and Docker (full stack only).
+**Prerequisites:** Python 3.12+ with [uv](https://github.com/astral-sh/uv), Node.js 22 (Bun for the frontend, npm for the isolated Toju payment worker), and Docker (full stack only).
 
 **Backend** (http://localhost:8081, Swagger at `/docs`):
 
@@ -70,17 +290,33 @@ make run          # or `make run-clean` to reset runtime state
 
 ```bash
 cd frontend
-npm install
-npm run dev
+bun install
+bun run dev      # Next.js on http://localhost:3000
 ```
 
 Create `frontend/.env.local` first:
 
-```
-QUANTUM_BACKEND_URL=http://localhost:8081
+```dotenv
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8081
 NEXT_PUBLIC_TRIAL_DISABLED=true
 ```
 
+### Configure Algorand x402 (TestNet)
+
+Set these in `frontend/.env`, and set the same secret as `QB2_X402_GATEWAY_SECRET` in `.env` and `backend/.env`. Never place a mnemonic or private key in this repository.
+
+```dotenv
+X402_ENABLED=true
+X402_NETWORK=testnet
+X402_AVM_ADDRESS=<58-character Algorand receiver address>
+X402_FACILITATOR_URL=https://facilitator.goplausible.xyz
+X402_QUANTUM_RUN_PRICE=$0.01
+X402_GATEWAY_SECRET=<openssl rand -hex 32>
+```
+
+Receiver setup (funding, USDC opt-in), paid and unpaid verification, and the MainNet switch are in the [TestNet runbook](https://github.com/QMeshPy/documentations/blob/main/algorand-x402/algorand-x402-runbook.md).
+
+### Full Stack with Docker
 **Full stack with Docker:**
 
 ```bash
@@ -90,9 +326,123 @@ docker compose up --build
 
 ---
 
+## Platform content node (Kubo)
+
+The Compose stack includes **Kubo v0.43.1**, pinned by release tag and multi-platform
+image digest. **Before starting or upgrading**, set `KUBO_RPC_SECRET` privately in
+`.env`: a random 32–128 character token containing only letters, digits, `_` or `-`
+(for example, generate one with `openssl rand -hex 32`). Use the raw token, without
+`bearer:`. Protect `.env` with mode `0600`; never commit or paste its contents.
+Missing/invalid secrets prevent the Kubo daemon from starting, not backend compute.
+With current Docker Engine/Compose, start only the content node:
+
+```bash
+docker compose up -d --wait kubo
+docker compose exec kubo sh /opt/qmesh/kubo-rpc.sh diag healthy
+docker compose stop kubo
+```
+
+No wallet/provider credentials or backend startup are required. Compose may warn about
+unset variables for the existing backend, even when starting only Kubo. If port
+8080 is in use, run `KUBO_GATEWAY_PORT=18080 docker compose up -d --wait kubo`
+(or set that variable in `.env`). The gateway remains loopback-only.
+
+| Interface | Exposure |
+|---|---|
+| Swarm `4001/tcp` and `4001/udp` | Published for IPFS peers, separate from quantum-worker libp2p |
+| Gateway `8080/tcp` | `127.0.0.1:8080` only; read locally stored content at `/ipfs/<CID>`; no writes |
+| RPC `5001/tcp` | **Not published** or proxied by Caddy; authenticated backend access at `http://kubo:5001` on `content_network` |
+
+The named `kubo_data` volume persists `/data/ipfs` across container recreation.
+Stopping/removing a container does not remove it. Volume deletion permanently
+removes this node's data and identity; do not use `docker compose down --volumes`
+on a deployment unless you intend to delete **all** that project's named volumes.
+The backend has no Kubo health dependency: content failures must not block compute.
+
+`IPFS_PROFILE=server` applies **only when a new repository is initialized**. It
+turns off mDNS and NAT port mapping and filters private swarm addresses. The
+image sets `Addresses.API=/ip4/0.0.0.0/tcp/5001` and
+`Addresses.Gateway=/ip4/0.0.0.0/tcp/8080` **inside the container**. Host exposure is
+controlled by the mappings above. The server profile does not retrofit existing
+repositories; back up the volume and review migrations before changing versions.
+The security hook below, unlike the profile, runs on **every container start**.
+See the pinned [release](https://github.com/ipfs/kubo/releases/tag/v0.43.1),
+[profile/configuration reference](https://github.com/ipfs/kubo/blob/v0.43.1/docs/config.md#server-profile),
+[image entrypoint](https://github.com/ipfs/kubo/blob/v0.43.1/bin/container_daemon),
+and [healthcheck](https://github.com/ipfs/kubo/blob/v0.43.1/Dockerfile).
+
+### RPC authorization and managed controls
+
+Compose mounts `deploy/kubo-init.sh` read-only into the official image's init
+hooks. It reapplies native `API.Authorizations` before the daemon starts, including
+on existing volumes. Missing hook files fail the mount rather than silently
+starting an unprotected node. The backend and Kubo share `KUBO_RPC_SECRET`;
+Caddy does not receive it or join their dedicated `content_network`.
+
+Clients send `Authorization: Bearer <raw token>`. The backend scope permits only
+`id`, `diag/healthy`, `add`, `cat`, `pin/add`, `pin/rm`, `pin/ls`, `dag/import`, and
+`block/stat`. Configuration, shutdown and other admin commands are denied even
+with that token. Native `/version` also requires authentication, but is implicitly
+allowed for valid tokens regardless of `AllowedPaths`. The healthcheck reads its
+token inside the container and suppresses command output.
+
+The hook also manages:
+
+- Local-only gateway fetching (`Gateway.NoFetch=true`), no DNSLink and no exposed
+  routing API. Kubo removed `Gateway.Writable` in v0.20: do not set that obsolete
+  key; the supported gateway is read-only.
+- Basic swarm connection-manager watermarks **32/96** (trimming targets, not a
+  hard connection count), resource management enabled with a **1024** networking
+  file-descriptor budget, and unused relay/AutoNAT server duties disabled.
+- Repository config permissions `0600`. `Swarm.ResourceMgr.MaxMemory` is left at
+  its default: it is not a process-memory cap. Production memory/disk sizing and
+  quotas need workload-specific tuning, separately from these swarm controls.
+
+These managed keys, including the entire `API.Authorizations` map, are overwritten
+on restart; do not rely on manual edits to them. To rotate the token, update the
+private `.env` then run `docker compose up -d --force-recreate kubo backend`.
+This briefly interrupts clients but retains content/pins/identity; the old token
+is revoked. Do not delete the volume or rerun `ipfs init` to rotate credentials.
+Docker administrators and repo readers remain trusted: the token is present in
+container environments and native config, and expanded Docker/Compose config or
+process inspection can reveal it. Never expose it through browser variables,
+logs or public proxies. See the pinned [native authorization implementation](https://github.com/ipfs/kubo/blob/v0.43.1/core/corehttp/commands.go#L176)
+and [resource-management guidance](https://github.com/ipfs/kubo/blob/v0.43.1/docs/production/low-memory.md).
+
+Checks require Python 3.10+ (via uv) and Docker Compose with `up --wait` support:
+
+```bash
+uv run --no-project python -m unittest discover -s scripts -p 'test_kubo*.py' -v
+uv run --no-project python scripts/smoke_kubo.py
+```
+
+The first command checks deployment configuration without starting containers.
+The optional live smoke test extracts only Kubo into a uniquely named temporary
+project, ignores project `.env` values, uses random host ports and runs **offline**.
+It generates temporary test-only RPC credentials and checks health/profile,
+protected RPC denial (anonymous, wrong token, forbidden admin commands), successful
+authorized add/cat, loopback read-only gateway, matching bytes/CIDs, persistence,
+real token rotation/revocation, secret-free node/health logs and fail-closed startup
+without a secret. It inspects only its disposable config in memory, never prints
+it, and attempts to remove only its own containers/network/volume, including on failure.
+If cleanup also fails, it reports the disposable project label without replacing
+the original error. Command failures identify the operation without dumping
+possibly sensitive output. It needs no backend dependencies or private data;
+its fixture is harmless public text.
+
+The normal service is **online**: IPFS is public content-addressed networking,
+not confidential storage. Never add private data expecting the CID to be secret.
+Native authentication adds defense beyond unpublished RPC; it does not make
+Docker administration or public IPFS content confidential. The typed async
+[Python RPC client](backend/README.md#kubo-rpc-client) supports content writes,
+pin management and CAR imports with bounded requests and safe errors (#61).
+Automatic uploads, gateway reads and production hosting remain separate work.
+
 ## Documentation
 
 Long-form documentation lives in the **[QMeshPy/documentations](https://github.com/QMeshPy/documentations)** repository. Start with its [START_HERE](https://github.com/QMeshPy/documentations/blob/main/START_HERE.md) page.
+
+The repository is also checked out as a git submodule at [`documentations/`](documentations). After cloning, run `git submodule update --init` to fetch it; the submodule is a pointer to a specific commit, not a copy of the docs.
 
 | I want to... | Read |
 |---|---|

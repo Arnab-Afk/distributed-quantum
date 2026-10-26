@@ -5,10 +5,52 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ThinkingBlock } from "./thinking-block";
-import type { Message } from "../types";
+import type { AttestationSummary, Message } from "../types";
 
 interface MessageItemProps {
   message: Message;
+}
+
+export function AttestationBadge({ attestation }: { attestation: AttestationSummary }) {
+  const detail = `Model: ${attestation.model} | Signature: ${attestation.signature_kind} | Rounds: ${attestation.rounds}${
+    attestation.request_id ? ` | Request ID: ${attestation.request_id}` : ""
+  }`;
+  switch (attestation.status) {
+    case "model_tee_verified":
+      return (
+        <Badge
+          variant="outline"
+          title={detail}
+          className="border-emerald-400/30 bg-emerald-500/10 text-emerald-300 text-[11px]"
+        >
+          Model TEE verified · {attestation.model}
+        </Badge>
+      );
+    case "gateway_verified":
+      return (
+        <Badge
+          variant="outline"
+          title={detail}
+          className="border-amber-400/30 bg-amber-500/10 text-amber-300 text-[11px]"
+        >
+          Gateway verified · {attestation.model}
+        </Badge>
+      );
+    case "unverified":
+      return (
+        <Badge
+          variant="outline"
+          title={detail}
+          className="border-rose-400/30 bg-rose-500/10 text-rose-300 text-[11px]"
+        >
+          Unverified · {attestation.model}
+        </Badge>
+      );
+    default: {
+      const _exhaustive: never = attestation.status;
+      return _exhaustive;
+    }
+  }
 }
 
 export function MessageItem({ message }: MessageItemProps) {
@@ -55,6 +97,13 @@ export function MessageItem({ message }: MessageItemProps) {
                 Ran: {action}
               </Badge>
             ))}
+          </div>
+        )}
+
+        {/* Private Inference Attestation */}
+        {(message.attestation ?? message.metadata?.attestation) && (
+          <div className="flex flex-wrap gap-1 pt-0.5">
+            <AttestationBadge attestation={(message.attestation ?? message.metadata?.attestation)!} />
           </div>
         )}
       </div>

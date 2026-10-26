@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,19 +9,42 @@ import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/shared/components/layout/page-header";
 import {
   Send, DollarSign, Store, BarChart3, Search,
-  MessageSquare, Bot, PenLine, FlaskConical,
+  MessageSquare, Bot, PenLine, FlaskConical, Plus,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { useAgents, useCreateAgent } from "@/features/agentkit";
+import { collapseDuplicatePersonalAgents, humanSpan, type AgentItem } from "@/features/agentkit/hooks/use-agents";
+import { WalletAddressCopy } from "@/features/agentkit/components/wallet-address-copy";
 import {
   RichMessageRenderer,
   type RichContent,
 } from "@/features/agentkit/components/rich-message-renderer";
 import {
   useChatSessions,
+  type AttestationSummary,
   type ChatMessage,
+  type ChatSession,
 } from "@/features/agentkit/hooks/use-chat-sessions";
+import { AttestationBadge } from "@/features/agent/components/conversation-panel";
+
+import { useStorageExports, type StorageExport } from "@/features/agentkit/hooks/use-storage-exports";
+import { StorageExports } from "@/features/agentkit/components/storage-exports";
+
+function AgentChatIdentity({ agent, session }: { agent: AgentItem; session: ChatSession | null }) {
+  const span = humanSpan(session?.createdAt, session?.updatedAt);
+  if (!agent.wallet_address && !span) return null;
+  return (
+    <div className="flex flex-col items-end gap-0.5 text-right">
+      {agent.wallet_address && <WalletAddressCopy address={agent.wallet_address} className="text-[11px]" />}
+      {span && (
+        <p className="text-[11px] leading-relaxed text-white/35" title={span.title}>
+          {span.text}
+        </p>
+      )}
+    </div>
+  );
+}
 
 const STARTERS: {
   label: string; prompt: string; icon: LucideIcon; iconClass: string; hoverGradient: string;
@@ -35,6 +58,7 @@ const STARTERS: {
 ];
 
 function AgentsChatInner() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const urlAgentId      = searchParams.get("agentId");
   const urlAgentName    = searchParams.get("name");
@@ -50,9 +74,18 @@ function AgentsChatInner() {
   const [introShown, setIntroShown]           = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const { data: agents = [], isLoading: agentsLoading } = useAgents();
+  const { data: ownedAgents = [], isLoading: agentsLoading } = useAgents();
   const createAgent = useCreateAgent();
-  const { createSession, appendMessage, loadSession } = useChatSessions();
+  const { sessions, sessionsReady, createSession, appendMessage, loadSession } = useChatSessions();
+  const agents = collapseDuplicatePersonalAgents(ownedAgents, sessions);
+
+  const activateSession = (id: string) => {
+    setActiveSessionId(id);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("new");
+    url.searchParams.set("sessionId", id);
+    window.history.replaceState(null, "", url);
+  };
 
   // Auto-create agent if user has none
   useEffect(() => {
@@ -72,13 +105,22 @@ function AgentsChatInner() {
 
   // Restore an existing session when navigating from history
   useEffect(() => {
-    if (!urlSessionId) return;
+    if (!urlSessionId || urlSessionId === activeSessionId) return;
     loadSession(urlSessionId).then((session) => {
       if (!session) return;
       setActiveSessionId(session.id);
       setMessages(session.messages);
     });
   }, [urlSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // /agents/chat has no sessionId. The list fetch already returned messages; select the newest.
+  useEffect(() => {
+    if (urlNew || urlAgentName || urlSessionId || activeSessionId || !sessionsReady || sessions.length === 0) return;
+    const latest = sessions[0];
+    setActiveSessionId(latest.id);
+    setMessages(latest.messages);
+    activateSession(latest.id);
+  }, [urlNew, urlAgentName, urlSessionId, activeSessionId, sessionsReady, sessions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Show persona intro once when arriving from marketplace
   useEffect(() => {
@@ -89,7 +131,7 @@ function AgentsChatInner() {
       ? (agents.find((a) => a.agent_id === urlAgentId) ?? agents[0])
       : agents[0];
     createSession(`Chat with ${urlAgentName}`, activeAgent?.agent_id ?? "").then((session) => {
-      setActiveSessionId(session.id);
+      activateSession(session.id);
       const caps = urlCapabilities.length > 0
         ? `My expertise includes: **${urlCapabilities.join(", ")}**.`
         : "";
@@ -113,6 +155,9 @@ function AgentsChatInner() {
   const activeAgent = urlAgentId
     ? (agents.find((a) => a.agent_id === urlAgentId) ?? agents[0])
     : agents[0];
+  const activeSession = sessions.find((session) => session.id === activeSessionId) ?? null;
+
+  const storage = useStorageExports(activeAgent?.agent_id, activeSessionId);
 
   const pushMessage = useCallback((msg: ChatMessage, sessionId: string) => {
     setMessages((prev) => [...prev, msg]);
@@ -124,15 +169,48 @@ function AgentsChatInner() {
       .filter((m) => m.content.trim())
       .map((m) => ({ role: m.role === "agent" ? "assistant" : "user", content: m.content }));
 
+  const decideStorage = async (proposal: StorageExport, action: "approve" | "cancel" | "reconcile") => {
+    try {
+      const result = await storage.decision.mutateAsync({ proposal, action });
+      if (activeSessionId) pushMessage({ role: "agent", content: result.status === "stored" ? "Your export is stored on Toju. The testnet payment and retrieved content hash are verified below." : result.status === "cancelled" ? "Export cancelled. Nothing was uploaded or paid." : result.error ?? `Export status: ${result.status}.` }, activeSessionId);
+    } catch { /* The approval card shows the mutation error. */ }
+  };
+
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
+    if (!urlNew && !urlAgentName && !urlSessionId && !activeSessionId && (!sessionsReady || sessions.length > 0)) return;
+    storage.decision.reset();
 
+    const pending = storage.data?.find(p => p.status === "pending");
+    if (pending && activeSessionId && /^(yes|yes please|approve|store it)[.!]?$/i.test(text.trim())) {
+      pushMessage({ role: "user", content: text }, activeSessionId);
+      setInput("");
+      await decideStorage(pending, "approve");
+      return;
+    }
+    if (!activeAgent) {
+      let created: { agent_id: string; agent_name: string } | undefined;
+      try {
+        created = await createAgent.mutateAsync(undefined);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Agent setup failed";
+        setMessages((prev) => [...prev, { role: "user", content: text }, { role: "agent", content: `Error setting up agent: ${msg}` }]);
+        setInput("");
+        return;
+      }
+      if (!created?.agent_id) {
+        setMessages((prev) => [...prev, { role: "user", content: text }, { role: "agent", content: "Your personal agent is still being set up — please wait a moment and try again!" }]);
+        setInput("");
+        return;
+      }
+    }
+    const resolvedAgent = activeAgent ?? createAgent.data;
+    const agentId = resolvedAgent?.agent_id ?? "";
     let sessionId = activeSessionId;
     if (!sessionId) {
-      const agentId = activeAgent?.agent_id ?? "";
       const session = await createSession(text, agentId);
       sessionId = session.id;
-      setActiveSessionId(session.id);
+      activateSession(session.id);
     }
 
     pushMessage({ role: "user", content: text }, sessionId);
@@ -140,30 +218,37 @@ function AgentsChatInner() {
     setLoading(true);
 
     try {
-      if (!activeAgent) {
-        pushMessage({ role: "agent", content: "Your personal agent is still being set up — please wait a moment and try again!" }, sessionId);
-        return;
-      }
-
-      const agentId = activeAgent.agent_id;
       const historyMsgs = buildHistory(messages);
 
       const res = await fetch(`/api/agentkit/agents/${agentId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: historyMsgs }),
+        body: JSON.stringify({ message: text, history: historyMsgs, session_id: sessionId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ?? data.error ?? "AI request failed");
-      pushMessage({ role: "agent", content: data.reply as string }, sessionId);
+      if (!res.ok) throw new Error(data.message ?? data.detail ?? data.error ?? "AI request failed");
+      pushMessage(
+        {
+          role: "agent",
+          content: data.reply as string,
+          attestation: (data.attestation as AttestationSummary | null | undefined) ?? null,
+        },
+        sessionId
+      );
+      await storage.refresh(sessionId);
     } catch (err) {
       pushMessage({ role: "agent", content: `Error: ${err instanceof Error ? err.message : "Unknown error"}` }, sessionId!);
     } finally {
+      await storage.refresh(sessionId);
       setLoading(false);
     }
   };
 
   const displayName = urlAgentName ?? activeAgent?.agent_name;
+  const showStarters =
+    messages.length === 0 &&
+    !loading &&
+    (Boolean(urlNew) || (sessionsReady && !urlSessionId && !urlAgentName && !activeSessionId && sessions.length === 0));
 
   return (
     <div className="relative flex flex-col">
@@ -174,34 +259,54 @@ function AgentsChatInner() {
       </div>
 
       <PageHeader icon={MessageSquare} label="AgentKit" title="Chat" description="Natural language interface with your AI agent." glow="amber">
-        {displayName ? (
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="border-emerald-400/30 text-emerald-400">
-              <Bot className="mr-1 h-3 w-3" />{displayName}
-            </Badge>
-            {urlSpecialty && (
-              <Badge variant="outline" className="border-cyan-400/30 text-cyan-400 text-[10px]">
-                {urlSpecialty}
-              </Badge>
-            )}
-            {urlCapabilities.slice(0, 2).map((cap) => (
-              <Badge key={cap} variant="outline" className="border-white/20 text-white/50 text-[10px]">
-                {cap}
-              </Badge>
-            ))}
-          </div>
-        ) : createAgent.isPending || agentsLoading ? (
-          <Badge variant="outline" className="border-white/20 text-white/40">Setting up agent…</Badge>
-        ) : null}
+        <div className="flex min-w-[220px] flex-col items-end gap-2">
+          {displayName ? (
+            <div className="flex flex-col items-end gap-1.5">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Badge variant="outline" className="border-emerald-400/30 text-emerald-400">
+                  <Bot className="mr-1 h-3 w-3" />{displayName}
+                </Badge>
+                {urlSpecialty && (
+                  <Badge variant="outline" className="border-cyan-400/30 text-cyan-400 text-[10px]">
+                    {urlSpecialty}
+                  </Badge>
+                )}
+                {urlCapabilities.slice(0, 2).map((cap) => (
+                  <Badge key={cap} variant="outline" className="border-white/20 text-white/50 text-[10px]">
+                    {cap}
+                  </Badge>
+                ))}
+              </div>
+              {activeAgent && <AgentChatIdentity agent={activeAgent} session={activeSession} />}
+            </div>
+          ) : createAgent.isPending || agentsLoading ? (
+            <Badge variant="outline" className="border-white/20 text-white/40">Setting up agent…</Badge>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="mt-1 h-8 w-fit cursor-pointer px-3 text-white/75 ring-1 ring-white/10 hover:bg-white/6 hover:text-white"
+            disabled={messages.length === 0 && !loading}
+            onClick={() => {
+              const params = new URLSearchParams({ new: String(Date.now()) });
+              if (activeAgent?.agent_id) params.set("agentId", activeAgent.agent_id);
+              router.push(`/agents/chat?${params.toString()}`);
+            }}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New Chat
+          </Button>
+        </div>
       </PageHeader>
 
-      <div className="relative z-10 flex flex-col gap-4 p-6" style={{ height: "calc(100vh - 280px)" }}>
+      <div className="relative z-10 flex flex-col gap-4 p-6" style={{ height: "calc(100vh - 328px)" }}>
         <ScrollArea
           className="flex-1 rounded-2xl p-4 ring-1 ring-white/8"
           style={{ background: "rgba(255,255,255,0.03)", backdropFilter: "blur(12px)" }}
         >
           <AnimatePresence initial={false}>
-            {messages.length === 0 ? (
+            {showStarters ? (
               <motion.div
                 key="starters"
                 initial={{ opacity: 0 }}
@@ -215,7 +320,7 @@ function AgentsChatInner() {
                     <button
                       key={s.label}
                       onClick={() => send(s.prompt)}
-                      className="group relative overflow-hidden rounded-2xl p-4 text-left ring-1 ring-white/8 transition-all duration-200 hover:scale-[1.02] hover:ring-white/20"
+                      className="group relative cursor-pointer overflow-hidden rounded-2xl p-4 text-left ring-1 ring-white/8 transition-all duration-200 hover:scale-[1.02] hover:ring-white/20"
                       style={{ background: "rgba(255,255,255,0.04)", backdropFilter: "blur(12px)" }}
                     >
                       <div className={`absolute inset-0 bg-gradient-to-br ${s.hoverGradient} opacity-0 transition-opacity duration-300 group-hover:opacity-100`} />
@@ -250,7 +355,13 @@ function AgentsChatInner() {
                     >
                       <div className="rounded-2xl px-4 py-3 ring-1 ring-white/6" style={{ background: "rgba(255,255,255,0.05)" }}>
                         <RichMessageRenderer content={msg.content} richContent={msg.richContent} />
+                        {msg.attestation && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-white/8 pt-2">
+                            <AttestationBadge attestation={msg.attestation} />
+                          </div>
+                        )}
                       </div>
+                      <StorageExports items={(storage.data ?? []).filter(item => item.message_index === i)} busy={storage.decision.isPending} decide={decideStorage} />
                     </motion.div>
                   )
                 )}
@@ -275,7 +386,8 @@ function AgentsChatInner() {
                     </div>
                   </motion.div>
                 )}
-                <div ref={bottomRef} />
+                <StorageExports items={(storage.data ?? []).filter(item => item.message_index == null || item.message_index >= messages.length)} busy={storage.decision.isPending} error={(storage.decision.error ?? storage.error)?.message} decide={decideStorage} />
+            <div ref={bottomRef} />
               </div>
             )}
           </AnimatePresence>
@@ -293,7 +405,7 @@ function AgentsChatInner() {
           <Button
             onClick={() => send(input)}
             disabled={!input.trim() || loading}
-            className="shrink-0 bg-amber-600 hover:bg-amber-700"
+            className="shrink-0 cursor-pointer bg-amber-600 hover:bg-amber-700"
           >
             <Send className="h-4 w-4" />
           </Button>

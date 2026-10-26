@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 def _default_peer_log_directory() -> Path:
@@ -101,6 +103,48 @@ class Libp2pSettings(BaseModel):
         return f"{self.rendezvous_namespace}.peer-heartbeat.v1"
 
 
+class KuboSettings(BaseModel):
+    """Optional content RPC configuration; readiness is checked only by its client."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    rpc_url: str = Field(default="http://kubo:5001", repr=False)
+    rpc_secret: SecretStr | None = Field(default=None, repr=False)
+    timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
+
+
+class GatewaySettings(BaseModel):
+    """Bounded, read-only access to an operator-configured IPFS gateway."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    url: str = Field(default="http://kubo:8080", repr=False)
+    # Where browsers reach the gateway; evidence links on the run page use it.
+    public_url: str | None = None
+    timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
+
+    @field_validator("public_url")
+    @classmethod
+    def _public_origin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.hostname
+            or parts.username
+            or parts.password
+            or parts.query
+            or parts.fragment
+            or parts.path not in {"", "/"}
+            or any(character.isspace() for character in value)
+        ):
+            raise ValueError("Public gateway URL must be a bare http(s) origin")
+        return f"{parts.scheme}://{parts.netloc}"
+
+
 class AppSettings(BaseModel):
     """Top-level application settings."""
 
@@ -110,6 +154,8 @@ class AppSettings(BaseModel):
     service_name: str = Field(default="quantum-backend", min_length=1)
     api_host: str = Field(default="0.0.0.0", min_length=1)
     api_port: int = Field(default=8081, ge=1, le=65535)
+    chain_registry_path: Path | None = None
+    wallet_network: str | None = None
     auth_required: bool = Field(
         default=True,
         description=(
@@ -124,21 +170,55 @@ class AppSettings(BaseModel):
             "in the form 'Bearer dev-<user_id>'. Keep disabled outside controlled local testing."
         ),
     )
+    x402_gateway_secret: str | None = Field(default=None, min_length=16)
+    billing_internal_secret: str | None = Field(
+        default=None,
+        min_length=32,
+        description="Shared with the frontend's Stripe webhook to record credit purchases.",
+    )
+    circuit_job_credit_cost: Decimal = Field(
+        default=Decimal("0"),
+        ge=0,
+        description="Credits charged per circuit job. 0 turns credit metering off.",
+    )
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
+    kubo: KuboSettings = Field(default_factory=KuboSettings)
+    gateway: GatewaySettings = Field(default_factory=GatewaySettings)
 
     @classmethod
-    def from_env(cls, env: Mapping[str, str]) -> "AppSettings":
+    def from_env(cls, env: Mapping[str, str]) -> AppSettings:
         """Construct settings from a flat environment mapping."""
+        registry_path = _optional(env.get("QB2_CHAIN_REGISTRY_PATH"))
         return cls(
             environment=env.get("QB2_ENVIRONMENT", "development"),
             service_name=env.get("QB2_SERVICE_NAME", "quantum-backend"),
             api_host=env.get("QB2_API_HOST", "0.0.0.0"),
             api_port=int(env.get("QB2_API_PORT", "8081")),
+            chain_registry_path=Path(registry_path) if registry_path is not None else None,
+            wallet_network=env.get("NETWORK"),
             auth_required=_parse_bool(env.get("QB2_AUTH_REQUIRED", "true")),
-            allow_dev_bearer_tokens=_parse_bool(
-                env.get("QB2_ALLOW_DEV_BEARER_TOKENS", "false")
+            allow_dev_bearer_tokens=_parse_bool(env.get("QB2_ALLOW_DEV_BEARER_TOKENS", "false")),
+            x402_gateway_secret=_optional(env.get("QB2_X402_GATEWAY_SECRET")),
+            billing_internal_secret=_optional(env.get("QB2_BILLING_INTERNAL_SECRET")),
+            circuit_job_credit_cost=Decimal(env.get("QB2_CIRCUIT_JOB_CREDIT_COST", "0")),
+            # Reuse the deployment's KUBO_* names rather than a second credential alias.
+            kubo=KuboSettings.model_validate(
+                {
+                    "rpc_url": env.get("KUBO_RPC_URL") or "http://kubo:5001",
+                    "rpc_secret": env.get("KUBO_RPC_SECRET") or None,
+                    "timeout_seconds": env.get("KUBO_RPC_TIMEOUT_SECONDS", "30"),
+                    "max_response_bytes": env.get("KUBO_RPC_MAX_RESPONSE_BYTES", "4194304"),
+                }
+            ),
+            gateway=GatewaySettings.model_validate(
+                {
+                    "url": env.get("IPFS_GATEWAY_URL", "http://kubo:8080"),
+                    "public_url": env.get("IPFS_PUBLIC_GATEWAY_URL") or None,
+                    "timeout_seconds": env.get("IPFS_GATEWAY_TIMEOUT_SECONDS", "30"),
+                    "max_response_bytes": env.get("IPFS_GATEWAY_MAX_RESPONSE_BYTES", "4194304"),
+                }
             ),
             logging=LoggingSettings(
                 level=env.get("QB2_LOG_LEVEL", "INFO"),

@@ -1,4 +1,5 @@
 import { BACKEND } from "@/constants";
+import { submitCircuitRun } from "@/features/runs/server/runs-service";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -15,13 +16,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body: unknown = await req.json();
-    const res = await fetch(BACKEND.CIRCUITS.SUBMIT, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const data = await res.json();
-    return NextResponse.json(data, { status: res.status });
+    return await submitCircuitRun(body);
   } catch {
     return NextResponse.json({ error: "Backend unreachable" }, { status: 502 });
   }

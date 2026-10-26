@@ -3,17 +3,25 @@
 from __future__ import annotations
 
 import copy
-import time
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from quantum_backend_v2.application.financial_comparison import (
+    build_financial_comparison_report,
+)
 from quantum_backend_v2.application.financial_portfolio import (
     PortfolioOptimizationConfig,
     build_portfolio_optimization_artifacts,
 )
 from quantum_backend_v2.application.financial_comparison import (
     build_financial_comparison_report,
+)
+from quantum_backend_v2.application.provenance import (
+    BundlePublisher,
+    publish_run_provenance,
+    record_run_provenance,
 )
 from quantum_backend_v2.application.quantum_bridge import QuantumExecutionBridge
 from quantum_backend_v2.identity.models import UserTokenClaims
@@ -28,6 +36,7 @@ from quantum_backend_v2.persistence.mongodb import (
 from quantum_backend_v2.reservations.service import ReservationService
 from quantum_backend_v2.runtime.service import ExecutionService
 
+logger = logging.getLogger(__name__)
 
 _CIRCUIT_WORKFLOW_DEFINITION_ID = "circuit-execution"
 _WORKFLOW_TYPE_CIRCUIT = "quantum_circuit"
@@ -56,15 +65,23 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def new_circuit_job_id() -> str:
+    return f"job-{uuid.uuid4()}"
+
+
 class CircuitJobService:
     """Durable circuit job submission, planning, and execution bridge."""
+
+    _bundle_publisher: BundlePublisher | None = None
 
     def __init__(
         self,
         *,
         discovery_service: Any,
         libp2p_runtime: Any,
+        bundle_publisher: BundlePublisher | None = None,
     ) -> None:
+        self._bundle_publisher = bundle_publisher
         reservation_service = ReservationService()
         execution_service = ExecutionService()
         self._quantum_bridge = QuantumExecutionBridge(
@@ -79,8 +96,9 @@ class CircuitJobService:
         *,
         circuit_text: str,
         owner_user_id: str,
+        job_id: str | None = None,
     ) -> WorkflowRunDocument:
-        job_id = f"job-{uuid.uuid4()}"
+        job_id = job_id or new_circuit_job_id()
         now = _utc_now()
         await _ensure_platform_user(owner_user_id)
         doc = WorkflowRunDocument(
@@ -186,8 +204,10 @@ class CircuitJobService:
                     "quantum_result": quantum_result,
                 },
             }
+            doc.output_snapshot["provenance_bundle_id"] = await record_run_provenance(doc)
             doc.updated_at = _utc_now()
             await doc.save()
+            await self._publish_provenance(doc)
 
         except Exception as exc:
             doc = await WorkflowRunDocument.get(job_id)
@@ -203,6 +223,19 @@ class CircuitJobService:
             }
             doc.updated_at = _utc_now()
             await doc.save()
+
+    async def _publish_provenance(self, doc: WorkflowRunDocument) -> None:
+        """Best effort: the completed run is already saved and must stay completed."""
+        if self._bundle_publisher is None:
+            return
+        try:
+            doc.output_snapshot["provenance_publication"] = await publish_run_provenance(
+                doc.output_snapshot["provenance_bundle_id"], self._bundle_publisher
+            )
+            doc.updated_at = _utc_now()
+            await doc.save()
+        except Exception as exc:
+            logger.warning("run %s publication state not saved: %s", doc.id, type(exc).__name__)
 
     async def list_jobs(
         self,
@@ -226,10 +259,19 @@ class CircuitJobService:
         *,
         current_user: UserTokenClaims,
     ) -> WorkflowRunDocument | None:
+        if not current_user.is_admin():
+            return await self.get_job_for_owner(job_id, owner_user_id=current_user.user_id)
         doc = await WorkflowRunDocument.get(job_id)
-        if doc is None:
-            return None
-        if not current_user.is_admin() and doc.owner_user_id != current_user.user_id:
+        return doc
+
+    async def get_job_for_owner(
+        self,
+        job_id: str,
+        *,
+        owner_user_id: str,
+    ) -> WorkflowRunDocument | None:
+        doc = await WorkflowRunDocument.get(job_id)
+        if doc is None or doc.owner_user_id != owner_user_id:
             return None
         return doc
 
@@ -274,12 +316,13 @@ class CircuitJobService:
     def get_result_payload(self, doc: WorkflowRunDocument) -> dict[str, Any] | None:
         if doc.status != _STATUS_COMPLETED:
             return None
-        return doc.output_snapshot.get("result") if doc.output_snapshot else None  # type: ignore[return-value]
+        return doc.output_snapshot.get("result") if doc.output_snapshot else None
 
 
 # ---------------------------------------------------------------------------
 # Financial analysis service
 # ---------------------------------------------------------------------------
+
 
 class FinancialJobService:
     """Durable Track A financial analysis service."""
@@ -394,16 +437,13 @@ class FinancialJobService:
             return None
         payload = _attach_financial_comparison_report(doc.result_payload)
         comparison_report = payload.get("comparison_report")
-        return (
-            copy.deepcopy(comparison_report)
-            if isinstance(comparison_report, dict)
-            else None
-        )
+        return copy.deepcopy(comparison_report) if isinstance(comparison_report, dict) else None
 
 
 # ---------------------------------------------------------------------------
 # Options pricing service
 # ---------------------------------------------------------------------------
+
 
 class OptionsJobService:
     """Durable Track C real options pricing service (QAE vs Black-Scholes)."""
@@ -468,6 +508,17 @@ class OptionsJobService:
         if doc is None:
             return None
         if not current_user.is_admin() and doc.owner_user_id != current_user.user_id:
+            return None
+        return doc
+
+    async def get_job_for_owner(
+        self,
+        job_id: str,
+        *,
+        owner_user_id: str,
+    ) -> OptionsJobDocument | None:
+        doc = await OptionsJobDocument.get(job_id)
+        if doc is None or doc.owner_user_id != owner_user_id:
             return None
         return doc
 
@@ -577,6 +628,7 @@ class RiskJobService:
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------
+
 
 async def _ensure_platform_user(user_id: str) -> None:
     existing = await PlatformUserDocument.get(user_id)

@@ -14,16 +14,6 @@ All tests use mocks for CDP API and MongoDB to ensure isolation.
 
 from __future__ import annotations
 
-import sys
-from unittest.mock import MagicMock
-from pydantic import BaseModel
-
-# Mock beanie before service import to avoid CollectionWasNotInitialized errors
-if 'beanie' not in sys.modules:
-    _mock_beanie = MagicMock()
-    _mock_beanie.Document = BaseModel
-    sys.modules['beanie'] = _mock_beanie
-
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -43,8 +33,11 @@ from services.agentkit_service import AgentKitService
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Mock environment variables for AgentKit service."""
-    monkeypatch.setenv("CDP_API_KEY_NAME", "test-key-id")
-    monkeypatch.setenv("CDP_API_KEY_PRIVATE_KEY", "test-secret-key")
+    monkeypatch.setenv("CDP_API_KEY_ID", "test-key-id")
+    monkeypatch.setenv("CDP_API_KEY_SECRET", "test-secret-key")
+    monkeypatch.delenv("CDP_API_KEY_NAME", raising=False)
+    monkeypatch.delenv("CDP_API_KEY_PRIVATE_KEY", raising=False)
+    monkeypatch.setenv("CDP_WALLET_SECRET", "test-wallet-secret-not-a-live-credential")
     monkeypatch.setenv("NETWORK", "base-sepolia")
     monkeypatch.setenv("QB2_MONGODB_LOCAL_URI", "mongodb://localhost:27017")
     monkeypatch.setenv("QB2_MONGODB_DATABASE", "test_db")
@@ -60,6 +53,10 @@ def mock_mongo_client():
     # Create mock collections
     mock_db.wallets = AsyncMock()
     mock_db.payments = AsyncMock()
+    mock_db.wallets.find_one.return_value = {
+        "default_address": "0x1234567890123456789012345678901234567890",
+        "network": "base-sepolia",
+    }
 
     return mock_client, mock_db
 
@@ -95,7 +92,14 @@ def agentkit_service(mock_env_vars, mock_mongo_client):
         doc.model_dump.return_value = dict(kwargs)
         return doc
 
-    with patch("services.agentkit_service.AsyncIOMotorClient", return_value=mock_client),          patch("services.agentkit_service.WalletDocument", side_effect=_make_wallet_doc),          patch("services.agentkit_service.PaymentDocument", side_effect=_make_payment_doc),          patch("services.agentkit_service.CdpEvmWalletProvider") as mock_cdp_class:
+    with (
+        patch("services.agentkit_service.AsyncIOMotorClient", return_value=mock_client),
+        patch("services.agentkit_service.WalletDocument", side_effect=_make_wallet_doc),
+        patch("services.agentkit_service.PaymentDocument", side_effect=_make_payment_doc),
+        patch("services.agentkit_service.Web3") as web3_class,
+        patch("services.agentkit_service.CdpEvmWalletProvider") as mock_cdp_class,
+    ):
+        web3_class.return_value.eth.block_number = 123
         mock_cdp_instance = MagicMock()
         mock_cdp_instance.get_address.return_value = "0x1234567890123456789012345678901234567890"
         mock_cdp_instance.get_balance.return_value = 100000000000000000
@@ -115,7 +119,7 @@ def agentkit_service(mock_env_vars, mock_mongo_client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_wallet_success(agentkit_service, mock_wallet_provider):
     """Test successful wallet creation for a new entity."""
     # Arrange
@@ -150,7 +154,7 @@ async def test_create_wallet_success(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_wallet_duplicate(agentkit_service):
     """Test wallet creation when entity already has a wallet."""
     # Arrange
@@ -186,21 +190,21 @@ async def test_create_wallet_duplicate(agentkit_service):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_balance_success(agentkit_service, mock_wallet_provider):
     """Test successful balance query for USDC and ETH."""
     # Arrange
     wallet_address = "0x1234567890123456789012345678901234567890"
 
-    # Mock wallet loading
-    with patch.object(
-        agentkit_service, "_load_wallet", new_callable=AsyncMock, return_value=mock_wallet_provider
-    ):
+    with patch("services.agentkit_service.Web3") as web3_class:
         # Mock USDC contract balanceOf call
         mock_contract = MagicMock()
         mock_contract.functions.balanceOf.return_value.call.return_value = 1000000  # 1 USDC (6 decimals)
 
         mock_web3 = mock_wallet_provider._web3
+        web3_class.return_value = mock_web3
+        web3_class.to_checksum_address.side_effect = lambda address: address
+        mock_web3.eth.get_balance.return_value = 100000000000000000
         mock_web3.eth.contract.return_value = mock_contract
         mock_web3.to_checksum_address = lambda addr: addr
 
@@ -226,7 +230,7 @@ async def test_get_balance_success(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_transfer_usdc_success(agentkit_service, mock_wallet_provider):
     """Test successful USDC transfer between wallets."""
     # Arrange
@@ -285,7 +289,7 @@ async def test_transfer_usdc_success(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_transfer_insufficient_balance(agentkit_service, mock_wallet_provider):
     """Test USDC transfer fails when sender has insufficient balance."""
     # Arrange
@@ -317,7 +321,7 @@ async def test_transfer_insufficient_balance(agentkit_service, mock_wallet_provi
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_aave_supply_escrow(agentkit_service, mock_wallet_provider):
     """Test supplying USDC to Aave protocol for escrow."""
     # Arrange
@@ -385,7 +389,7 @@ async def test_aave_supply_escrow(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_aave_withdraw(agentkit_service, mock_wallet_provider):
     """Test withdrawing USDC from Aave protocol (escrow release)."""
     # Arrange
@@ -437,21 +441,71 @@ async def test_aave_withdraw(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_request_testnet_funds(agentkit_service):
-    """Test requesting testnet funds from faucet."""
-    # Arrange
+    """Test requesting testnet funds from the CDP faucet."""
     wallet_address = "0x1234567890123456789012345678901234567890"
+    hashes = {"eth": "0x" + "ab" * 32, "usdc": "0x" + "cd" * 32}
+    seen: list[str] = []
 
-    # Act
-    result = await agentkit_service.request_testnet_funds(wallet_address)
+    class _Faucet:
+        async def request_faucet(self, **kwargs):
+            assert kwargs["address"] == wallet_address
+            assert kwargs["network"] == "base-sepolia"
+            seen.append(kwargs["token"])
+            return hashes[kwargs["token"]]
 
-    # Assert
-    assert result["wallet_address"] == wallet_address
-    assert "faucet_url" in result
-    assert result["status"] == "manual_request_required"
-    assert "message" in result
-    assert "timestamp" in result
+    class _Client:
+        def __init__(self, **kwargs):
+            assert kwargs["api_key_id"] == "test-key-id"
+            self.evm = _Faucet()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    with patch("services.agentkit_service.CdpClient", _Client):
+        result = await agentkit_service.request_testnet_funds(wallet_address)
+
+    assert seen == ["eth", "usdc"]
+    assert result["eth_transaction_hash"] == hashes["eth"]
+    assert result["usdc_transaction_hash"] == hashes["usdc"]
+    assert result["eth_basescan_url"] == "https://sepolia.basescan.org/tx/" + hashes["eth"]
+    assert result["usdc_basescan_url"] == "https://sepolia.basescan.org/tx/" + hashes["usdc"]
+    assert result["status"] == "submitted"
+
+
+@pytest.mark.anyio
+async def test_request_testnet_funds_keeps_successful_token(agentkit_service):
+    """A failed faucet token does not discard the token that succeeded."""
+    wallet_address = "0x1234567890123456789012345678901234567890"
+    eth_hash = "0x" + "ab" * 32
+
+    class _Faucet:
+        async def request_faucet(self, **kwargs):
+            if kwargs["token"] == "usdc":
+                raise RuntimeError("faucet rate limit")
+            return eth_hash
+
+    class _Client:
+        def __init__(self, **_kwargs):
+            self.evm = _Faucet()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    with patch("services.agentkit_service.CdpClient", _Client):
+        result = await agentkit_service.request_testnet_funds(wallet_address)
+
+    assert result["status"] == "partial"
+    assert result["eth_transaction_hash"] == eth_hash
+    assert result["usdc_transaction_hash"] is None
+    assert "usdc failed" in result["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -459,7 +513,7 @@ async def test_request_testnet_funds(agentkit_service):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_load_wallet_not_found(agentkit_service):
     """Test loading a non-existent wallet raises ValueError."""
     # Arrange
@@ -478,9 +532,9 @@ async def test_load_wallet_not_found(agentkit_service):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_wallet_seed_encryption(agentkit_service, mock_wallet_provider):
-    """Test that wallet seeds are properly encrypted during creation."""
+@pytest.mark.anyio
+async def test_wallet_secret_marker_is_encrypted(agentkit_service, mock_wallet_provider):
+    """The stored marker round-trips without persisting the wallet secret in plaintext."""
     # Arrange
     entity_id = "user-crypto-test"
     entity_type = "user"
@@ -501,8 +555,8 @@ async def test_wallet_seed_encryption(agentkit_service, mock_wallet_provider):
     encrypted_seed = inserted_doc["seed_encrypted"]
     decrypted_seed = agentkit_service.fernet.decrypt(encrypted_seed.encode()).decode()
 
-    # Decrypted seed should be a valid UUID-like string (36 chars with dashes)
-    assert len(decrypted_seed) >= 32  # At minimum, a UUID without dashes
+    assert decrypted_seed == agentkit_service.wallet_secret
+    assert encrypted_seed != agentkit_service.wallet_secret
 
 
 # ---------------------------------------------------------------------------
@@ -510,7 +564,7 @@ async def test_wallet_seed_encryption(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_create_wallet_invalid_entity_type(agentkit_service):
     """Test wallet creation fails with invalid entity type."""
     # Arrange
@@ -527,7 +581,7 @@ async def test_create_wallet_invalid_entity_type(agentkit_service):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_transfer_invalid_address(agentkit_service):
     """Test USDC transfer fails with invalid address format."""
     # Arrange
@@ -545,7 +599,7 @@ async def test_transfer_invalid_address(agentkit_service):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_transfer_negative_amount(agentkit_service, mock_wallet_provider):
     """Test USDC transfer fails with negative amount."""
     # Arrange
@@ -567,7 +621,7 @@ async def test_transfer_negative_amount(agentkit_service, mock_wallet_provider):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
+@pytest.mark.anyio
 async def test_get_balance_invalid_address(agentkit_service):
     """Test balance query fails with invalid address format."""
     # Arrange

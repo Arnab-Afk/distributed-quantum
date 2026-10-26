@@ -1,6 +1,43 @@
 # Production deployment configuration for AWS Lightsail
 # Frontend is hosted separately on Vercel
 services:
+  kubo:
+    image: ipfs/kubo:v0.43.1@sha256:b293923d66e490e70ced64df42ea7a6cf7eac2740e3fb29101df18070fa7be48
+    environment:
+      IPFS_PROFILE: server
+      KUBO_RPC_SECRET: "${KUBO_RPC_SECRET:-}"
+    volumes:
+      - kubo_data:/data/ipfs
+      - type: bind
+        source: ./deploy/kubo-init.sh
+        target: /container-init.d/010-security.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/kubo-rpc.sh
+        target: /opt/qmesh/kubo-rpc.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    ports:
+      - "4001:4001/tcp"
+      - "4001:4001/udp"
+      - target: 8080
+        published: "${KUBO_GATEWAY_PORT:-8080}"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    # The image binds RPC on port 5001 inside the container; never publish it.
+    healthcheck:
+      test: ["CMD-SHELL", "sh /opt/qmesh/kubo-rpc.sh diag healthy >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - content_network
+
   backend:
     build:
       context: .
@@ -13,6 +50,12 @@ services:
       QB2_JSON_LOGS: "${QB2_JSON_LOGS:-true}"
       QB2_LOG_LEVEL: "${QB2_LOG_LEVEL:-INFO}"
       QB2_AUTH_REQUIRED: "${QB2_AUTH_REQUIRED:-true}"
+      QB2_X402_GATEWAY_SECRET: "${QB2_X402_GATEWAY_SECRET}"
+      KUBO_RPC_SECRET: "${KUBO_RPC_SECRET:-}"
+      KUBO_RPC_URL: "${KUBO_RPC_URL:-http://kubo:5001}"
+      KUBO_RPC_TIMEOUT_SECONDS: "${KUBO_RPC_TIMEOUT_SECONDS:-30}"
+      KUBO_RPC_MAX_RESPONSE_BYTES: "${KUBO_RPC_MAX_RESPONSE_BYTES:-4194304}"
+      IPFS_PUBLIC_GATEWAY_URL: "${IPFS_PUBLIC_GATEWAY_URL:-}"
       QB2_MONGODB_TARGET: "${QB2_MONGODB_TARGET:-remote}"
       QB2_MONGODB_REMOTE_URI: "${QB2_MONGODB_REMOTE_URI}"
       QB2_MONGODB_DATABASE: "${QB2_MONGODB_DATABASE:-qds}"
@@ -36,8 +79,6 @@ services:
       AWS_BEDROCK_DEFAULT_MODEL: "${AWS_BEDROCK_DEFAULT_MODEL:-us.anthropic.claude-sonnet-4-6}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
       # Coinbase AgentKit / CDP
-      CDP_API_KEY_NAME: "${CDP_API_KEY_NAME}"
-      CDP_API_KEY_PRIVATE_KEY: "${CDP_API_KEY_PRIVATE_KEY}"
       CDP_API_KEY_ID: "${CDP_API_KEY_ID}"
       CDP_API_KEY_SECRET: "${CDP_API_KEY_SECRET}"
       CDP_WALLET_SECRET: "${CDP_WALLET_SECRET}"
@@ -50,6 +91,18 @@ services:
       PINATA_JWT: "${PINATA_JWT}"
       PINATA_API_KEY: "${PINATA_API_KEY}"
       PINATA_API_SECRET: "${PINATA_API_SECRET}"
+      # Agent chat, LLM providers, and Toju storage
+      AGENT_AUTH_BRIDGE_SECRET: "${AGENT_AUTH_BRIDGE_SECRET:-}"
+      AGENT_LLM_PROVIDER: "${AGENT_LLM_PROVIDER:-groq}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      GROQ_MODEL: "${GROQ_MODEL:-openai/gpt-oss-20b}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      OPENROUTER_MODEL: "${OPENROUTER_MODEL:-nvidia/nemotron-3.5-lightning:free}"
+      NEARAI_API_KEY: "${NEARAI_API_KEY:-}"
+      NEAR_MODEL: "${NEAR_MODEL:-z-ai/glm-5.3-flash}"
+      TOJU_API_URL: "${TOJU_API_URL:-https://toju-devcon-testnet.onrender.com}"
+      TOJU_PAYMENT_RECIPIENT: "${TOJU_PAYMENT_RECIPIENT:-0xbB2Fc1cc295b53a75217319eA421256dABB3eacb}"
+      TOJU_NODE_BINARY: "${TOJU_NODE_BINARY:-node}"
     volumes:
       - backend_runtime:/workspace/backend/quantum-backend
     healthcheck:
@@ -68,6 +121,7 @@ services:
     # Only expose to Caddy, not to host network
     networks:
       - backend_network
+      - content_network
 
   caddy:
     image: caddy:2.10-alpine
@@ -92,6 +146,8 @@ services:
       - backend_network
 
 volumes:
+  kubo_data:
+    driver: local
   backend_runtime:
     driver: local
   caddy_data:
@@ -101,4 +157,6 @@ volumes:
 
 networks:
   backend_network:
+    driver: bridge
+  content_network:
     driver: bridge

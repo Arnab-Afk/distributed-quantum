@@ -1,0 +1,4 @@
+[submodule "documentations"]
+	path = documentations
+	url = https://github.com/QMeshPy/documentations
+	branch = main

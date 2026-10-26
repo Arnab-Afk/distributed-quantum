@@ -2,6 +2,11 @@ export const API = {
   AUTH: {
     ALL: "/api/auth/*",
     CHECK_EMAIL: "/api/auth/check-email",
+    STRIPE_WEBHOOK: "/api/auth/stripe/webhook",
+  },
+  BILLING: {
+    CREDITS: "/api/billing/credits",
+    CREDITS_CHECKOUT: "/api/billing/credits/checkout",
   },
   DASHBOARD: {
     ROOT: "/api/dashboard",
@@ -13,6 +18,18 @@ export const API = {
     CREATE: "/api/runs",
     DETAIL: (id: string) => `/api/runs/${id}` as const,
     PLAN: (planId: string) => `/api/runs/plan/${planId}` as const,
+  },
+  X402: {
+    ROOT: "/api/x402",
+    QUANTUM_RUNS: "/api/x402/quantum/runs",
+    QUANTUM_RUN: (jobId: string) =>
+      `/api/x402/quantum/runs/${jobId}` as const,
+    OPTIONS_RUNS: "/api/x402/options/runs",
+    OPTIONS_RUN: (jobId: string) =>
+      `/api/x402/options/runs/${jobId}` as const,
+  },
+  PROVENANCE: {
+    VERIFY: (bundleId: string) => `/api/provenance/${encodeURIComponent(bundleId)}/verify` as const,
   },
   OPTIONS: {
     LIST: "/api/options",

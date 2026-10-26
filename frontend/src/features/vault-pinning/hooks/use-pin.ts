@@ -17,13 +17,21 @@ export function usePin() {
     type: "circuit" | "run",
     metadata: Record<string, unknown>,
     service: PinningService = "nft.storage",
-  ): Promise<void> => {
+  ): Promise<{ gatewayCid: string }> => {
     setPinning(true);
     setError(null);
 
     const size = estimateSize(metadata);
 
     try {
+      // Upload first so a failed upload is never recorded as pinned.
+      // Pinata/Lighthouse re-encode JSON and return a gateway-reachable CID
+      // that may differ from the local Helia CID — that gateway CID is what
+      // another browser must open on /vault/cid/[cid].
+      const { getProvider } = await import("../services");
+      const result = await getProvider(service).pin(cid, metadata);
+      const gatewayCid = result.cid || cid;
+
       const res = await fetch(API.VAULT.PIN, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -31,8 +39,8 @@ export function usePin() {
           cid,
           service,
           action: "pin",
-          size,
-          sizeSource: "estimated",
+          size: result.size,
+          sizeSource: "actual",
           type,
           metadata,
         }),
@@ -43,24 +51,11 @@ export function usePin() {
         throw new Error(msg || "Failed to record pin");
       }
 
-      const { getProvider } = await import("../services");
-      const provider = getProvider(service);
-      const result = await provider.pin(cid, metadata);
-
-      await fetch(API.VAULT.UNPIN(cid), {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          service,
-          size: result.size,
-          sizeSource: "actual",
-          syncStatus: "synced",
-        }),
-      });
-
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.vault.quota(service) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.vault.pinMetadata(cid) });
       queryClient.invalidateQueries({ queryKey: QUERY_KEYS.vault.pins() });
+
+      return { gatewayCid };
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       setError(e);

@@ -1,8 +1,8 @@
 import {
-  Bot,
   Home,
   Globe,
   FlaskConical,
+  Bot,
   HardDrive,
   Settings,
 } from "lucide-react";
@@ -135,6 +135,26 @@ export const NAV_CONFIG: RailItem[] = [
     matchPrefixes: ["/runs", "/options", "/risk", "/finance", "/pharma"],
   },
   {
+    id: "agents",
+    label: "Agents",
+    icon: Bot,
+    href: "/agents",
+    hasSidebar: true,
+    sidebar: {
+      type: "static",
+      groups: [
+        {
+          heading: "Agents",
+          links: [
+            { label: "Agents", href: "/agents" },
+            { label: "Agent Chat", href: "/agents/chat" },
+          ],
+        },
+      ],
+    },
+    matchPrefixes: ["/agents"],
+  },
+  {
     id: "vault",
     label: "Vault",
     icon: HardDrive,
@@ -148,6 +168,7 @@ export const NAV_CONFIG: RailItem[] = [
           links: [
             { label: "Circuit Library", href: "/vault/circuits" },
             { label: "Shared Runs", href: "/vault/runs" },
+            { label: "Open CID", href: "/vault/cid" },
           ],
         },
         {
@@ -160,59 +181,6 @@ export const NAV_CONFIG: RailItem[] = [
       ],
     },
     matchPrefixes: ["/vault"],
-  },
-  {
-    id: "agents",
-    label: "Agents",
-    icon: Bot,
-    href: "/agents",
-    hasSidebar: true,
-    sidebar: {
-      type: "dynamic",
-      tools: [
-        {
-          group: "Chat",
-          tool: "chat",
-          href: "/agents/chat",
-          newLabel: "New Chat",
-          newHref: "/agents/chat",
-          historyHref: "/agents/chat",
-        },
-        {
-          group: "Overview",
-          tool: "agents-overview",
-          href: "/agents",
-          newLabel: "",
-          newHref: "/agents",
-          historyHref: "/agents",
-        },
-        {
-          group: "Marketplace",
-          tool: "agents-marketplace",
-          href: "/agents/marketplace",
-          newLabel: "",
-          newHref: "/agents/marketplace",
-          historyHref: "/agents/marketplace",
-        },
-        {
-          group: "Proposals",
-          tool: "agents-proposals",
-          href: "/agents/proposals",
-          newLabel: "",
-          newHref: "/agents/proposals",
-          historyHref: "/agents/proposals",
-        },
-        {
-          group: "Wallet",
-          tool: "agents-wallet",
-          href: "/agents/wallet",
-          newLabel: "",
-          newHref: "/agents/wallet",
-          historyHref: "/agents/wallet",
-        },
-      ],
-    },
-    matchPrefixes: ["/agents"],
   },
   {
     id: "settings",
