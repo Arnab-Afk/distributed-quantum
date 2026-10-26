@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import secrets
 import subprocess
 import sys
@@ -134,8 +135,64 @@ def require_read_only_gateway(url: str) -> None:
                 require(error.code in (404, 405), f"Unexpected gateway status for {method}")
 
 
+def require_gc_preserves_pins(cli: list[str], gateway: str, pinned_cid: str) -> None:
+    """Cross the disposable node's watermark, then let automatic GC reclaim an unpin."""
+    payload = random.Random(66).randbytes(2 * 1024 * 1024)
+    candidate = run([*cli, "add", "-Q", "--cid-version=1"], payload).decode().strip()
+    require(bool(candidate) and "\n" not in candidate, "Expected one GC fixture CID")
+    # The fixture exceeds StorageMax but must stay readable while recursively pinned.
+    time.sleep(3)
+    require(run([*cli, "cat", candidate]) == payload, "GC removed pinned DAG content")
+    run([*cli, "pin", "rm", candidate])
+    deadline = time.monotonic() + 30
+    while True:
+        try:
+            with urllib.request.urlopen(f"{gateway}/ipfs/{candidate}", timeout=5) as response:
+                require(response.read() == payload, "GC fixture changed unexpectedly")
+        except urllib.error.HTTPError as error:
+            with error:
+                require(error.code == 404, "Expected local-only gateway miss after GC")
+            break
+        require(time.monotonic() < deadline, "Automatic GC did not collect unpinned content")
+        time.sleep(0.5)
+    require(run([*cli, "cat", pinned_cid]) == FIXTURE, "GC removed the retained pin")
+    run([*cli, "pin", "ls", "--type=recursive", pinned_cid])
+    print("Automatic GC preserved pinned DAG blocks and reclaimed unpinned content.", flush=True)
+
+
+def require_scrape(compose: list[str], expected: str = "1") -> None:
+    query = "http://127.0.0.1:9090/api/v1/query?query=up%7Bjob%3D%22kubo%22%7D"
+    deadline = time.monotonic() + 60
+    while True:
+        reply = json.loads(
+            run([*compose, "exec", "-T", "prometheus", "wget", "-qO-", "-T", "5", query])
+        )
+        results = reply.get("data", {}).get("result", [])
+        if (
+            reply.get("status") == "success"
+            and len(results) == 1
+            and results[0]["value"][1] == expected
+        ):
+            break
+        require(time.monotonic() < deadline, "Prometheus did not observe the expected Kubo state")
+        time.sleep(1)
+    container = run([*compose, "ps", "-q", "prometheus"]).decode().strip()
+    ports = json.loads(
+        run(["docker", "inspect", "--format", "{{json .NetworkSettings.Ports}}", container])
+    )
+    require(not any((ports or {}).values()), "Prometheus must not have published ports")
+    print(
+        f'Private Prometheus check passed: up{{job="kubo"}}={expected}; no published UI.',
+        flush=True,
+    )
+
+
 def main() -> None:
-    argparse.ArgumentParser(description=__doc__).parse_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--monitoring", action="store_true", help="Also verify the private Prometheus scrape"
+    )
+    args = parser.parse_args()
     # No interpolation or project .env loading: discard every non-Kubo service.
     model: dict[str, Any] = json.loads(
         run(
@@ -155,8 +212,10 @@ def main() -> None:
     )
     service = model["services"]["kubo"]
     secret = secrets.token_urlsafe(32)
-    service.setdefault("environment", {})["KUBO_RPC_SECRET"] = secret
-    service["command"] = ["daemon", "--offline", "--migrate=false"]
+    service.setdefault("environment", {}).update(
+        KUBO_RPC_SECRET=secret, KUBO_STORAGE_MAX="1MB", KUBO_GC_PERIOD="1s"
+    )
+    service["command"] = ["daemon", "--offline", "--migrate=false", "--enable-gc"]
     for port in service["ports"]:
         port.pop("published", None)
     # Omit normalized resource names so cleanup cannot touch an existing stack.
@@ -165,6 +224,12 @@ def main() -> None:
         "volumes": {"kubo_data": {"driver": "local"}},
         "networks": {"content_network": {"driver": "bridge"}},
     }
+    if args.monitoring:
+        monitor = model["services"]["prometheus"]
+        # Explicit `up` activates a profile only for that invocation, not for `down`.
+        monitor.pop("profiles", None)
+        manifest["services"]["prometheus"] = monitor
+        manifest["volumes"]["prometheus_data"] = {"driver": "local"}
     project = f"qmesh-kubo-smoke-{uuid.uuid4().hex[:12]}"
     with tempfile.TemporaryDirectory(prefix="qmesh-kubo-") as directory:
         config = Path(directory) / "compose.json"
@@ -187,7 +252,10 @@ def main() -> None:
             print(
                 "Starting isolated offline Kubo (no backend, Caddy or public peers)...", flush=True
             )
-            run([*compose, "up", "-d", "--wait", "--wait-timeout", "90", "kubo"])
+            services = ["kubo", "prometheus"] if args.monitoring else ["kubo"]
+            run([*compose, "up", "-d", "--wait", "--wait-timeout", "90", *services])
+            if args.monitoring:
+                require_scrape(compose)
             # This is our disposable node only. Inspect in memory; never print/store its config.
             settings = json.loads(run([*execute, "cat", "/data/ipfs/config"]))
             require(settings["Discovery"]["MDNS"]["Enabled"] is False, "mDNS must be disabled")
@@ -198,6 +266,9 @@ def main() -> None:
                 settings["Gateway"]["ExposeRoutingAPI"] is False, "Routing API must be disabled"
             )
             require(settings["Swarm"]["ConnMgr"]["HighWater"] == 96, "Connection limit missing")
+            require(settings["Datastore"]["StorageMax"] == "1MB", "Storage target missing")
+            require(settings["Datastore"]["StorageGCWatermark"] == 90, "GC watermark missing")
+            require(settings["Datastore"]["GCPeriod"] == "1s", "GC period missing")
             require(
                 settings["Swarm"]["ResourceMgr"]["MaxFileDescriptors"] == 1024,
                 "Swarm FD limit missing",
@@ -212,6 +283,7 @@ def main() -> None:
             require(bool(json.loads(run([*cli, "id"])).get("ID")), "Authorized RPC failed")
             require_rpc_denied([*anonymous, "add", "-Q"], data=b"must-not-publish")
             require_rpc_denied([*cli, "config", "show"])
+            require_rpc_denied([*cli, "repo", "gc"])
             require_rpc_denied([*cli, "config", "--json", "Gateway.NoFetch", "false"])
             version = subprocess.run(
                 [*execute, "wget", "-SqO-", "--post-data=", "http://127.0.0.1:5001/api/v0/version"],
@@ -246,6 +318,7 @@ def main() -> None:
                 require(response.read() == FIXTURE, "Gateway returned different content")
             require_read_only_gateway(f"http://127.0.0.1:{gateway}/ipfs/{cid}")
             print(f"Retrieved CID: {checked}; bytes match; gateway writes rejected.", flush=True)
+            require_gc_preserves_pins(cli, f"http://127.0.0.1:{gateway}", cid)
             run(
                 [*compose, "up", "-d", "--force-recreate", "--wait", "--wait-timeout", "90", "kubo"]
             )
@@ -294,6 +367,8 @@ def main() -> None:
                 "Secret leaked in healthcheck logs",
             )
             run([*compose, "stop", "kubo"])
+            if args.monitoring:
+                require_scrape(compose, expected="0")
             missing = subprocess.run(
                 [
                     *compose,
