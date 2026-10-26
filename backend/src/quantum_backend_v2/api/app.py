@@ -37,6 +37,7 @@ from api.v1.notifications import router as notifications_router
 from api.v1.marketplace import router as marketplace_router
 from api.v1.chat_sessions import router as chat_sessions_router
 from api.v1.ens import router as ens_router
+from api.v1.ens_workers import router as ens_workers_router
 from quantum_backend_v2.config import AppSettings
 from quantum_backend_v2.discovery.service import DiscoveryService
 from quantum_backend_v2.libp2p import Libp2pBootstrapPlan, Libp2pRuntime
@@ -169,5 +170,6 @@ def create_app(
     app.include_router(marketplace_router)
     app.include_router(chat_sessions_router)
     app.include_router(ens_router)
+    app.include_router(ens_workers_router)
 
     return app

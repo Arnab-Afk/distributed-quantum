@@ -68,6 +68,10 @@ export const QUERY_KEYS = {
 
 export const QUERY_KEYS_AGENTKIT = {
   wallet: () => ["agentkit", "wallet"] as const,
+  ensResolve: (name: string, fresh: boolean) =>
+    ["agentkit", "ens", "resolve", name, fresh] as const,
+  ensReverse: (address: string) =>
+    ["agentkit", "ens", "reverse", address.toLowerCase()] as const,
   proposals: () => ["agentkit", "proposals"] as const,
   proposal: (id: string) => ["agentkit", "proposals", id] as const,
   marketplace: () => ["agentkit", "marketplace"] as const,

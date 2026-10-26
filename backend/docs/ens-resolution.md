@@ -39,8 +39,16 @@ uv run pytest tests/services/test_ens_service.py -q
 
 Unit tests inject a mock ENS client (no RPC). A Sepolia end-to-end check can be added later behind an opt-in env flag once we control a test name.
 
+## Frontend (PR 2)
+
+- BFF: `GET /api/agentkit/ens/resolve` and `/reverse`
+- Transfer tab: `AddressOrEnsInput` → review → confirm checksummed address → send **address only**
+- Display: `EnsAddress` in wallet strip, wallet overview, chat wallet card, proposal researcher/funders
+
+## Worker subnames (PR 3 design)
+
+See [ens-worker-subnames.md](./ens-worker-subnames.md).
+
 ## Out of scope here
 
-- Wiring `name.eth` into transfer / proposal / agent forms (PR 2).
-- Worker `*.qmesh.eth` subname schema (PR 3).
 - Contenthash / IPFS (depends on #4).
