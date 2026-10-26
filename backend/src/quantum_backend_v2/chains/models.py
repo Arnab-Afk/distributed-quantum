@@ -20,6 +20,7 @@ Capability = Literal[
     "get_balance",
     "transfer_stablecoin",
     "verify_transaction",
+    "get_price",
     "aave_supply",
     "aave_withdraw",
     "faucet_instructions",
@@ -66,6 +67,12 @@ class ExplorerTemplates(_RegistryModel):
         return self
 
 
+class PriceFeedSpec(_RegistryModel):
+    address: EvmAddress
+    max_age_seconds: int = Field(gt=0, le=86400, strict=True)
+    max_deviation_bps: int = Field(gt=0, le=10000, strict=True)
+
+
 class ChainSpec(_RegistryModel):
     chain_id: ChainId
     family: Literal["evm"]
@@ -83,6 +90,7 @@ class ChainSpec(_RegistryModel):
     stablecoin: Stablecoin | None = None
     aave_pool_address: EvmAddress | None = None
     capabilities: tuple[Capability, ...] = ()
+    price_feeds: dict[NetworkAlias, PriceFeedSpec] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_network(self) -> ChainSpec:
@@ -93,7 +101,13 @@ class ChainSpec(_RegistryModel):
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("duplicate operation capability")
         # Read-only RPC checks need no wallet provider, so any EVM chain may offer them.
-        wallet_operations = set(self.capabilities) - {"explorer_url", "verify_transaction"}
+        if "get_price" in self.capabilities and not self.price_feeds:
+            raise ValueError("price reads require configured feeds")
+        wallet_operations = set(self.capabilities) - {
+            "explorer_url",
+            "verify_transaction",
+            "get_price",
+        }
         if wallet_operations:
             # Only the existing Base Sepolia wallet path is enabled in this migration.
             if (

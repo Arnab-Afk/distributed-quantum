@@ -33,6 +33,10 @@ from quantum_backend_v2.api.models.options import (
 )
 from quantum_backend_v2.application.parity import OptionsJobService
 from quantum_backend_v2.application.real_options_pricing import price_options
+from quantum_backend_v2.chains.adapter import UnsupportedOperationError
+from quantum_backend_v2.chains.models import DisabledNetworkError, UnknownNetworkError
+from quantum_backend_v2.chains.prices import PriceRejectedError, PriceUnavailableError
+from quantum_backend_v2.chains.rpc import RpcConfigurationError
 
 _BATCH_MAX_ROWS = 25
 _BATCH_DEFAULT_QUBITS = 4
@@ -62,11 +66,21 @@ def build_options_router(
         current_user: CurrentUser,
     ) -> OptionsSubmitResponse:
         request_payload = request.model_dump()
-        record = await options_job_service.submit(
-            option_type=request.option_type,
-            owner_user_id=current_user.user_id,
-            request_payload=request_payload,
-        )
+        try:
+            record = await options_job_service.submit(
+                option_type=request.option_type,
+                owner_user_id=current_user.user_id,
+                request_payload=request_payload,
+            )
+        except (PriceUnavailableError, RpcConfigurationError):
+            raise HTTPException(status_code=503, detail="price feed is unavailable") from None
+        except (
+            PriceRejectedError,
+            UnknownNetworkError,
+            DisabledNetworkError,
+            UnsupportedOperationError,
+        ) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         background_tasks.add_task(
             options_job_service.process,
             job_id=record.id,
@@ -288,6 +302,8 @@ def build_options_router(
             background_tasks: BackgroundTasks,
             _: None = Depends(require_x402_gateway),
         ) -> OptionsSubmitResponse:
+            if request.chainlink_price is not None:
+                raise HTTPException(status_code=422, detail="oracle pricing is unavailable on x402")
             request_payload = request.model_dump()
             record = await options_job_service.submit(
                 option_type=request.option_type,

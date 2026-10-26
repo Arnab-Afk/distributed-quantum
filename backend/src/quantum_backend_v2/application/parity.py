@@ -15,9 +15,8 @@ from quantum_backend_v2.application.financial_portfolio import (
     PortfolioOptimizationConfig,
     build_portfolio_optimization_artifacts,
 )
-from quantum_backend_v2.application.financial_comparison import (
-    build_financial_comparison_report,
-)
+from quantum_backend_v2.application.options_provenance import build_options_provenance
+from quantum_backend_v2.application.price_sources import PriceSource, resolve_options_price
 from quantum_backend_v2.application.provenance import (
     BundlePublisher,
     publish_run_provenance,
@@ -448,6 +447,9 @@ class FinancialJobService:
 class OptionsJobService:
     """Durable Track C real options pricing service (QAE vs Black-Scholes)."""
 
+    def __init__(self, price_source: PriceSource | None = None) -> None:
+        self._price_source = price_source
+
     async def submit(
         self,
         *,
@@ -455,6 +457,7 @@ class OptionsJobService:
         owner_user_id: str,
         request_payload: dict[str, Any],
     ) -> OptionsJobDocument:
+        resolved = await resolve_options_price(request_payload, self._price_source)
         job_id = f"opt-{uuid.uuid4()}"
         await _ensure_platform_user(owner_user_id)
         doc = OptionsJobDocument(
@@ -462,6 +465,7 @@ class OptionsJobService:
             owner_user_id=owner_user_id,
             option_type=option_type,
             status=_OPT_STATUS_QUEUED,
+            request_payload=resolved,
         )
         await doc.insert()
         return doc
@@ -477,9 +481,16 @@ class OptionsJobService:
         await doc.save()
 
         try:
-            payload_with_id = dict(request_payload)
+            inputs = doc.request_payload if doc.request_payload is not None else request_payload
+            payload_with_id = dict(inputs)
             payload_with_id["job_id"] = job_id
             result = price_options(payload_with_id)
+            if inputs.get("price_observation") is not None:
+                if doc.owner_user_id is None:
+                    raise ValueError("oracle options jobs require an owner")
+                result["provenance"] = build_options_provenance(
+                    job_id, doc.owner_user_id, inputs, result
+                )
 
             doc = await OptionsJobDocument.get(job_id)
             if doc is None:

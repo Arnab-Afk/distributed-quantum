@@ -258,6 +258,7 @@ class OptionsJobDocument(Document):
     option_type: str
     status: str
     error: str | None = None
+    request_payload: dict[str, Any] | None = None
     result_payload: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)

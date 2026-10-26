@@ -51,6 +51,8 @@ def test_packaged_registry_and_provider_mappings():
                 "aave_withdraw",
                 "faucet_instructions",
             }
+        elif alias == "ethereum-sepolia":
+            assert chain.capabilities == ("explorer_url", "verify_transaction", "get_price")
         else:
             assert chain.capabilities == ("explorer_url", "verify_transaction")
 
