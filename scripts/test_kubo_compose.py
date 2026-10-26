@@ -105,6 +105,30 @@ class KuboComposeTests(unittest.TestCase):
             self.assertTrue(binds[target]["read_only"])
             self.assertFalse(binds[target]["bind"]["create_host_path"])
 
+    def test_storage_controls_and_automatic_gc_are_enabled(self) -> None:
+        self.assertIn("--enable-gc", self.kubo.get("command", []))
+        env = self.kubo["environment"]
+        self.assertEqual(env["KUBO_STORAGE_MAX"], "${KUBO_STORAGE_MAX:-10GB}")
+        self.assertEqual(env["KUBO_GC_PERIOD"], "${KUBO_GC_PERIOD:-1h}")
+        mounts = {m["target"]: m for m in self.kubo["volumes"]}
+        hook = mounts["/container-init.d/020-storage.sh"]
+        self.assertTrue(hook["read_only"])
+        self.assertFalse(hook["bind"]["create_host_path"])
+
+    def test_monitoring_is_optional_private_and_has_no_rpc_secret(self) -> None:
+        monitor = self.model["services"]["prometheus"]
+        self.assertRegex(monitor["image"], r"^prom/prometheus:v\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$")
+        self.assertEqual(monitor["profiles"], ["monitoring"])
+        self.assertFalse(monitor.get("ports"))
+        self.assertNotIn("network_mode", monitor)
+        self.assertEqual(set(monitor["networks"]), {"content_network"})
+        self.assertNotIn("KUBO_RPC_SECRET", monitor.get("environment", {}))
+        config = next(m for m in monitor["volumes"] if m["type"] == "bind")
+        self.assertTrue(config["read_only"])
+        self.assertFalse(config["bind"]["create_host_path"])
+        for service in ("backend", "caddy"):
+            self.assertNotIn("prometheus", self.model["services"][service].get("depends_on", {}))
+
     def test_compute_does_not_depend_on_content_health(self) -> None:
         for service in ("backend", "caddy"):
             self.assertNotIn("kubo", self.model["services"][service].get("depends_on", {}))
@@ -132,6 +156,38 @@ class SmokeIsolationTests(unittest.TestCase):
         for bindings in cases:
             with self.subTest(bindings=bindings), self.assertRaisesRegex(RuntimeError, "observed"):
                 smoke_kubo.gateway_port(bindings)
+
+    def test_monitoring_profile_is_removed_so_down_also_cleans_the_monitor(self) -> None:
+        model = {
+            "services": {
+                "kubo": {"ports": []},
+                "prometheus": {"profiles": ["monitoring"]},
+                "backend": {"environment": {"PRIVATE": "must-not-copy"}},
+            }
+        }
+        commands: list[list[str]] = []
+
+        def fake_run(command: list[str], data: bytes | None = None) -> bytes:
+            commands.append(command)
+            if "config" in command:
+                return json.dumps(model).encode()
+            if "up" in command:
+                manifest = json.loads(Path(command[command.index("-f") + 1]).read_text())
+                self.assertEqual(set(manifest["services"]), {"kubo", "prometheus"})
+                self.assertNotIn("profiles", manifest["services"]["prometheus"])
+                self.assertEqual(manifest["volumes"]["prometheus_data"], {"driver": "local"})
+                self.assertNotIn("must-not-copy", json.dumps(manifest))
+                raise RuntimeError("fixture startup failure")
+            return b""
+
+        with (
+            patch.object(sys, "argv", ["smoke_kubo.py", "--monitoring"]),
+            patch.object(smoke_kubo, "run", side_effect=fake_run),
+            contextlib.redirect_stdout(io.StringIO()),
+            self.assertRaisesRegex(RuntimeError, "fixture startup failure"),
+        ):
+            smoke_kubo.main()
+        self.assertEqual(commands[-1][-3:], ["down", "--volumes", "--remove-orphans"])
 
     def test_failed_start_cleans_only_disposable_resources(self) -> None:
         commands: list[list[str]] = []
