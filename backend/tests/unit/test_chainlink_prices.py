@@ -11,8 +11,8 @@ from eth_abi import encode
 from web3 import Web3
 from web3.providers import BaseProvider
 
-from quantum_backend_v2.application.options_provenance import build_options_provenance
-from quantum_backend_v2.application.price_sources import resolve_options_price
+from quantum_backend_v2.application.finance_provenance import build_finance_provenance
+from quantum_backend_v2.application.price_sources import resolve_price_input
 from quantum_backend_v2.chains.loader import load_chain_registry
 from quantum_backend_v2.chains.prices import (
     EvmPriceAdapter,
@@ -129,12 +129,14 @@ def test_resolved_inputs_and_provenance_bind_exact_round():
         "chainlink_price": {"network": "ethereum-sepolia", "feed": "eth-usd"},
         "price_observation": {"forged": True},
     }
-    resolved = asyncio.run(resolve_options_price(payload, source))
+    resolved = asyncio.run(resolve_price_input(payload, source))
     assert resolved["current_value"] == 2000
     assert resolved["reference_value"] == "2100"
     assert resolved["price_observation"] == observation.model_dump(mode="json")
     assert payload["current_value"] == 2100
-    evidence = build_options_provenance("opt-test", "owner", resolved, {"value": 123})
+    evidence = build_finance_provenance(
+        "opt-test", "owner", resolved, {"value": 123}, workflow="options-pricing"
+    )
     bundle = ProvenanceBundle.model_validate(evidence["bundle"])
     assert bundle.oracle_refs[0].round_id == "42"
     assert bundle.oracle_refs[0].value == observation.value
@@ -145,7 +147,7 @@ def test_resolved_inputs_and_provenance_bind_exact_round():
 def test_manual_input_never_reads_or_accepts_supplied_evidence():
     source = SimpleNamespace(get_price=AsyncMock())
     assert asyncio.run(
-        resolve_options_price({"current_value": 2000, "price_observation": {}}, source)
+        resolve_price_input({"current_value": 2000, "price_observation": {}}, source)
     ) == {"current_value": 2000}
     source.get_price.assert_not_called()
 
@@ -254,7 +256,7 @@ def test_api_reports_feed_errors_without_creating_background_work(error, expecte
     service.process.assert_not_called()
 
 
-def test_saved_observation_preserves_inputs_and_classical_prices():
+def test_saved_observation_reproduces_pricing_results():
     from quantum_backend_v2.api.models.options import OptionsAnalysisResult
     from quantum_backend_v2.application.real_options_pricing import price_options
 
@@ -271,15 +273,211 @@ def test_saved_observation_preserves_inputs_and_classical_prices():
         alpha=0.05,
         chainlink_price={"network": "ethereum-sepolia", "feed": "eth-usd"},
     )
-    saved = asyncio.run(resolve_options_price(payload, source))
+    saved = asyncio.run(resolve_price_input(payload, source))
     first = price_options(saved)
     second = price_options(saved)
-    for key in (
-        "classical_bs_price",
-        "classical_binomial_price",
-    ):
+    for key in first.keys() - {"analysis_duration_ms", "generated_at"}:
         assert first[key] == second[key]
     assert first["request"] == second["request"] == saved
-    first["provenance"] = build_options_provenance("opt-replay", "owner", saved, first)
+    first["provenance"] = build_finance_provenance(
+        "opt-replay", "owner", saved, first, workflow="options-pricing"
+    )
     assert OptionsAnalysisResult.model_validate(first).provenance is not None
     source.get_price.assert_awaited_once()
+
+
+def test_risk_feed_valuation_and_replay():
+    from quantum_backend_v2.api.models.risk import RiskJobRequest
+    from quantum_backend_v2.application.price_sources import resolve_risk_prices
+    from quantum_backend_v2.application.risk_engine import price_risk
+
+    request = RiskJobRequest.model_validate(
+        {
+            "holdings": [
+                {
+                    "ticker": "ETH-USD",
+                    "weight": 1,
+                    "quantity": 2,
+                    "current_value": 2000,
+                    "chainlink_price": {},
+                }
+            ],
+            "historical_returns": [[0.01], [-0.02], [0.03], [-0.01], [0.02]],
+            "num_uncertainty_qubits": 3,
+            "epsilon": 0.1,
+        }
+    )
+    source = SimpleNamespace(get_price=AsyncMock(return_value=read_price(FeedProvider())))
+    saved = asyncio.run(resolve_risk_prices(request.model_dump(), source))
+    assert saved["portfolio_value_usd"] == 4000
+    first, second = price_risk(saved), price_risk(saved)
+    for key in first.keys() - {"analysis_duration_ms", "generated_at"}:
+        assert first[key] == second[key]
+    assert first["quantum_cvar_99_usd"] == first["quantum_cvar_99"] * 4000
+    source.get_price.assert_awaited_once()
+
+
+def test_portfolio_valuation_preserves_selection_and_marks_unsupported():
+    from quantum_backend_v2.application.portfolio_valuation import calculate_portfolio_quantities
+
+    result = {
+        "benchmark": {
+            "classical": {"selected_assets": ["ETH-USD", "AAPL"]},
+            "quantum": {"selected_assets": ["AAPL"]},
+        }
+    }
+    inputs = {
+        "investment_usd": 1000,
+        "price_observation": read_price(FeedProvider()).model_dump(mode="json"),
+    }
+    valuation = calculate_portfolio_quantities(result, inputs)
+    eth, stock = valuation["allocations"]["classical"]
+    assert Decimal(eth["allocation_usd"]) == 500
+    assert Decimal(eth["quantity"]) == Decimal("0.25")
+    assert stock["quantity"] is None
+    assert stock["status"] == "unsupported_feed"
+    assert result["benchmark"]["quantum"]["selected_assets"] == ["AAPL"]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"historical_returns": None},
+        {"historical_returns": [[float("nan")]] * 4},
+        {"risk_model": "credit"},
+        {"historical_returns": [[0.1, 0.2]] * 4},
+    ],
+)
+def test_risk_requires_complete_historical_inputs(change):
+    from pydantic import ValidationError
+
+    from quantum_backend_v2.api.models.risk import RiskJobRequest
+
+    payload = {
+        "holdings": [
+            {
+                "ticker": "ETH-USD",
+                "weight": 1,
+                "quantity": 2,
+                "current_value": 2000,
+                "chainlink_price": {},
+            }
+        ],
+        "historical_returns": [[0.01], [-0.02], [0.03], [-0.01]],
+    }
+    with pytest.raises(ValidationError):
+        RiskJobRequest.model_validate({**payload, **change})
+
+
+def test_live_risk_csv_is_resolved_and_invalid_history_rejected():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from quantum_backend_v2.api.deps.auth import require_authenticated
+    from quantum_backend_v2.api.routers.risk import build_risk_router
+
+    service = SimpleNamespace(
+        submit=AsyncMock(
+            return_value=SimpleNamespace(
+                id="risk-test", status="queued", risk_model="equity", portfolio_size=1
+            )
+        ),
+        process=AsyncMock(),
+    )
+    app = FastAPI()
+    app.dependency_overrides[require_authenticated] = lambda: SimpleNamespace(user_id="owner")
+    app.include_router(build_risk_router(risk_job_service=service))
+    data = {"use_chainlink": "true", "quantity": "2", "current_value": "2000"}
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/risk/submit-csv",
+            data=data,
+            files={
+                "file": (
+                    "eth.csv",
+                    "date,close\n2026-01-01,2000\n2026-01-02,2010\n2026-01-03,2020\n2026-01-04,2005\n2026-01-05,2015\n",
+                )
+            },
+        )
+        assert response.status_code == 201, response.text
+        payload = service.submit.call_args.kwargs["request_payload"]
+        assert len(payload["historical_returns"]) == 4
+        assert payload["holdings"][0]["quantity"] == 2
+        response = client.post(
+            "/api/v1/risk/submit-csv",
+            data=data,
+            files={"file": ("eth.csv", "ticker,weight\nETH-USD,1\n")},
+        )
+        assert response.status_code == 422
+        response = client.post(
+            "/api/v1/risk/submit-csv",
+            data=data,
+            files={"file": ("eth.csv", "date,close\n2026-01-01,2000,unexpected\n")},
+        )
+        assert response.status_code == 422
+    service.submit.assert_awaited_once()
+
+
+@pytest.mark.parametrize("rows", [[], [[0.01]], [[0.01]] * 3])
+def test_manual_risk_rejects_insufficient_supplied_history(rows):
+    from pydantic import ValidationError
+
+    from quantum_backend_v2.api.models.risk import RiskJobRequest
+
+    with pytest.raises(ValidationError):
+        RiskJobRequest(holdings=[{"ticker": "ETH-USD", "weight": 1}], historical_returns=rows)
+
+
+@pytest.mark.parametrize(
+    "csv_text",
+    [
+        "date,close\n2026-01-01," + "1" * 131073,
+        "date,close,volume\n2026-01-01,2000,100",
+        "date,close,close\n2026-01-01,1000,2000",
+        "date,close, Close \n2026-01-01,1000,2000",
+        'date,close\n2026-01-01,"2000',
+        "date,close\n2026-01-01,2000\n2026-01-02,2010\n"
+        "2026-01-04,2020\n2026-01-05,2030\n2026-01-06,2040",
+    ],
+)
+def test_live_risk_csv_rejects_ambiguous_or_malformed_history(csv_text):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from quantum_backend_v2.api.deps.auth import require_authenticated
+    from quantum_backend_v2.api.routers.risk import build_risk_router
+
+    service = SimpleNamespace(submit=AsyncMock(), process=AsyncMock())
+    app = FastAPI()
+    app.dependency_overrides[require_authenticated] = lambda: SimpleNamespace(user_id="owner")
+    app.include_router(build_risk_router(risk_job_service=service))
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/risk/submit-csv",
+            data={"use_chainlink": "true", "quantity": "2", "current_value": "2000"},
+            files={"file": ("history.csv", csv_text)},
+        )
+    assert response.status_code == 422
+    service.submit.assert_not_called()
+
+
+def test_portfolio_summary_identifies_full_result_hash_and_retrieval():
+    from quantum_backend_v2.application.parity import _build_financial_summary_payload
+    from quantum_backend_v2.provenance.hashing import hash_json
+
+    inputs = {"price_observation": read_price(FeedProvider()).model_dump(mode="json")}
+    result = {"quantum_execution": {"quantum_result": {"probabilities": {"00": 1.0}}}}
+    evidence = build_finance_provenance(
+        "fin-review", "owner", inputs, result, workflow="portfolio-optimization"
+    )
+    full_hash = hash_json(result)
+    result["provenance"] = evidence
+    summary = _build_financial_summary_payload(result)
+    commitment = summary["provenance"]["bundle"]["summary"]
+    assert commitment["result_hash"] == full_hash
+    assert commitment["result_hash_scope"] == "full_result_excluding_provenance"
+    assert commitment["result_url"] == "/api/v1/finance/fin-review?result_detail=full"
+    assert summary["quantum_execution"]["quantum_result"]["probabilities"] is None
+    assert result["quantum_execution"]["quantum_result"]["probabilities"] == {"00": 1.0}
+    bundle = ProvenanceBundle.model_validate(evidence["bundle"])
+    assert bundle_hash(bundle) == evidence["bundle_hash"]

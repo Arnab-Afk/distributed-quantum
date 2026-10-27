@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
+
+from quantum_backend_v2.api.models.prices import ChainlinkPriceRequest
 
 
 OptionType = Literal[
@@ -18,13 +20,6 @@ OptionType = Literal[
     "natural_resource",
     "financial_flexibility",
 ]
-
-
-class ChainlinkPriceRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    network: str = Field(default="ethereum-sepolia", min_length=1, max_length=64)
-    feed: str = Field(default="eth-usd", min_length=1, max_length=64)
 
 
 class OptionsJobRequest(BaseModel):

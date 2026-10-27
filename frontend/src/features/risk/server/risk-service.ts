@@ -1,3 +1,4 @@
+import { financeBackendFetch } from "@/shared/server/finance-backend-fetch";
 import "server-only";
 import { cache } from "react";
 import { BACKEND } from "@/constants";
@@ -54,6 +55,10 @@ function transformDetail(raw: BackendRiskJobResponse): RiskJobDetail {
           circuitDepth: raw.result.circuit_depth,
           numIqaeCalls: raw.result.num_iqae_calls,
           analysisDurationMs: raw.result.analysis_duration_ms,
+          portfolioValueUsd: raw.result.portfolio_value_usd,
+          quantumVar99Usd: raw.result.quantum_var_99_usd,
+          quantumCvar99Usd: raw.result.quantum_cvar_99_usd,
+          provenance: raw.result.provenance,
           generatedAt: raw.result.generated_at,
         }
       : null,
@@ -64,7 +69,7 @@ function transformDetail(raw: BackendRiskJobResponse): RiskJobDetail {
 
 export const getRiskList = cache(async (): Promise<RiskJobSummary[] | null> => {
   try {
-    const res = await fetch(BACKEND.RISK.LIST, { next: { revalidate: 30 } });
+    const res = await financeBackendFetch(BACKEND.RISK.LIST, { cache: "no-store" });
     if (!res.ok) return null;
     const data = (await res.json()) as BackendRiskJobSummary[];
     return data.map(transformSummary);
@@ -76,8 +81,8 @@ export const getRiskList = cache(async (): Promise<RiskJobSummary[] | null> => {
 export const getRiskJob = cache(
   async (jobId: string): Promise<RiskJobDetail | null> => {
     try {
-      const res = await fetch(BACKEND.RISK.DETAIL(jobId), {
-        next: { revalidate: 5 },
+      const res = await financeBackendFetch(BACKEND.RISK.DETAIL(jobId), {
+        cache: "no-store",
       });
       if (!res.ok) return null;
       const data = (await res.json()) as BackendRiskJobResponse;

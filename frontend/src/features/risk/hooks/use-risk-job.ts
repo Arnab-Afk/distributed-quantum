@@ -37,6 +37,10 @@ function transform(raw: BackendRiskJobResponse): RiskJobDetail {
           circuitDepth: raw.result.circuit_depth,
           numIqaeCalls: raw.result.num_iqae_calls,
           analysisDurationMs: raw.result.analysis_duration_ms,
+          portfolioValueUsd: raw.result.portfolio_value_usd,
+          quantumVar99Usd: raw.result.quantum_var_99_usd,
+          quantumCvar99Usd: raw.result.quantum_cvar_99_usd,
+          provenance: raw.result.provenance,
           generatedAt: raw.result.generated_at,
         }
       : null,

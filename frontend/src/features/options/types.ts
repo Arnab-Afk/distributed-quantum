@@ -1,3 +1,4 @@
+import type { OracleProvenance } from "@/shared/types/oracle";
 export type OptionType =
   | "european_call_short"
   | "european_call_long"
@@ -44,6 +45,7 @@ export interface BackendOptionsGreeks {
 }
 
 export interface BackendOptionsResult {
+  provenance?: OracleProvenance | null;
   job_id: string;
   option_type: OptionType;
   request: Record<string, unknown>;
@@ -175,6 +177,7 @@ export interface OptionsJobDetail {
     analysisDurationMs: number;
     quadraticSpeedupFactor: number;
     request: Record<string, unknown>;
+    provenance?: OracleProvenance | null;
     generatedAt: string;
   } | null;
   createdAt: string;

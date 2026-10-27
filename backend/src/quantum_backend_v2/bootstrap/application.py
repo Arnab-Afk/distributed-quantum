@@ -53,11 +53,12 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
         ),
     )
     financial_job_service = FinancialJobService(
+        price_source=ChainlinkPriceSource(chain_registry, env),
         discovery_service=discovery_service,
         libp2p_runtime=libp2p_runtime,
     )
     options_job_service = OptionsJobService(price_source=ChainlinkPriceSource(chain_registry, env))
-    risk_job_service = RiskJobService()
+    risk_job_service = RiskJobService(price_source=ChainlinkPriceSource(chain_registry, env))
     reservation_service = ReservationService()
     runtime_recovery_service = RuntimeRecoveryService()
     return create_app(

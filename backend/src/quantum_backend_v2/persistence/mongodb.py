@@ -238,6 +238,7 @@ class FinancialJobDocument(Document):
     row_count: int | None = None
     col_count: int | None = None
     error: str | None = None
+    request_payload: dict[str, Any] | None = None
     result_payload: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
@@ -280,6 +281,7 @@ class RiskJobDocument(Document):
     portfolio_size: int = 0
     status: str
     error: str | None = None
+    request_payload: dict[str, Any] | None = None
     result_payload: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)

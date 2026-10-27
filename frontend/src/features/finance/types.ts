@@ -1,3 +1,17 @@
+import type { OracleProvenance } from "@/shared/types/oracle";
+
+export interface PortfolioAllocation {
+  ticker: string;
+  allocation_usd: string;
+  price_usd: string | null;
+  quantity: string | null;
+  status: "valued" | "unsupported_feed";
+}
+export type FinanceResult = Record<string, unknown> & {
+  provenance?: OracleProvenance;
+  valuation?: { investment_usd: string; allocations: { classical: PortfolioAllocation[]; quantum: PortfolioAllocation[] } };
+};
+
 // --- Backend (snake_case) types ---
 
 export interface BackendFinancialSubmitResponse {
@@ -26,7 +40,7 @@ export interface BackendFinancialJobResponse {
   row_count: number | null;
   col_count: number | null;
   error: string | null;
-  result: Record<string, unknown> | null;
+  result: FinanceResult | null;
   created_at: string;
   updated_at: string;
 }
@@ -67,7 +81,7 @@ export interface FinanceJobDetail {
   rowCount: number | null;
   colCount: number | null;
   error: string | null;
-  result: Record<string, unknown> | null;
+  result: FinanceResult | null;
   createdAt: string;
   updatedAt: string;
 }

@@ -44,7 +44,7 @@ testnet = true
 enabled = true
 aliases = ["ethereum-sepolia"]
 rpc_env_var = "QB2_ETHEREUM_SEPOLIA_RPC_URL"
-public_rpc_url = "https://sepolia.drpc.org"
+public_rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
 capabilities = ["explorer_url", "verify_transaction", "get_price"]
 
 [chains.provider_aliases]

@@ -1,4 +1,5 @@
 "use client";
+import { OracleEvidence } from "@/shared/components/oracle-evidence";
 import {
   ShieldAlert, Cpu, BarChart3, Database, TrendingDown,
 } from "lucide-react";
@@ -158,6 +159,14 @@ export function RiskResultDashboard({ job, className }: RiskResultDashboardProps
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
+      <OracleEvidence provenance={r.provenance} />
+      {r.portfolioValueUsd != null ? (
+        <div className="rounded border border-hairline p-4 text-sm">
+          <p>Holdings value: ${r.portfolioValueUsd.toFixed(2)}</p>
+          <p>99% quantum VaR: ${r.quantumVar99Usd?.toFixed(2)}</p>
+          <p>99% quantum CVaR: ${r.quantumCvar99Usd?.toFixed(2)}</p>
+        </div>
+      ) : null}
       <JobMetaStrip
         jobId={job.jobId}
         status={job.status}
