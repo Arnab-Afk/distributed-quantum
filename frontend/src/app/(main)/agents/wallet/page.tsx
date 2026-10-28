@@ -1,7 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useWallet, useCreateWallet, useTransferUSDC, useWalletTransactions } from "@/features/agentkit/hooks/use-wallet";
+import { resolveEnsFresh } from "@/features/agentkit/hooks/use-ens";
+import { AddressOrEnsInput } from "@/features/agentkit/components/address-or-ens-input";
+import { EnsAddress } from "@/features/agentkit/components/ens-address";
+import { isHexAddress, looksLikeEnsName, truncateAddress } from "@/features/agentkit/lib/ens";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -31,22 +35,74 @@ export default function WalletPage() {
 
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
+  const [previewResolved, setPreviewResolved] = useState<string | null>(null);
+  const [confirmAddress, setConfirmAddress] = useState<string | null>(null);
+  const [confirmName, setConfirmName] = useState<string | null>(null);
+  const [resolvingFresh, setResolvingFresh] = useState(false);
   const [txResult, setTxResult] = useState<{ transaction_hash: string; basescan_url: string } | null>(null);
   const [txError, setTxError] = useState<string | null>(null);
+
+  const onResolvedAddressChange = useCallback((address: string | null) => {
+    setPreviewResolved(address);
+    setConfirmAddress(null);
+    setConfirmName(null);
+  }, []);
 
   const copyAddress = () => {
     if (wallet?.address) void navigator.clipboard.writeText(wallet.address);
   };
 
-  const handleTransfer = async () => {
+  const resetConfirm = () => {
+    setConfirmAddress(null);
+    setConfirmName(null);
+  };
+
+  const handlePrepareTransfer = async () => {
     if (!toAddress.trim() || !amount.trim()) return;
     setTxError(null);
     setTxResult(null);
+    resetConfirm();
+
+    const input = toAddress.trim();
     try {
-      const result = await transfer.mutateAsync({ to_address: toAddress, amount });
+      if (isHexAddress(input)) {
+        setConfirmAddress(input);
+        setConfirmName(null);
+        return;
+      }
+      if (!looksLikeEnsName(input)) {
+        setTxError("Enter a 0x address or an ENS name (e.g. alice.eth)");
+        return;
+      }
+      setResolvingFresh(true);
+      const result = await resolveEnsFresh(input);
+      if (!result.address) {
+        setTxError("ENS resolution returned no address");
+        return;
+      }
+      setConfirmAddress(result.address);
+      setConfirmName(result.name);
+    } catch (err) {
+      setTxError(err instanceof Error ? err.message : "ENS resolution failed");
+    } finally {
+      setResolvingFresh(false);
+    }
+  };
+
+  const handleConfirmTransfer = async () => {
+    if (!confirmAddress || !amount.trim()) return;
+    setTxError(null);
+    setTxResult(null);
+    try {
+      const result = await transfer.mutateAsync({
+        to_address: confirmAddress,
+        amount,
+      });
       setTxResult(result);
       setToAddress("");
       setAmount("");
+      setPreviewResolved(null);
+      resetConfirm();
     } catch (err) {
       setTxError(err instanceof Error ? err.message : "Transfer failed");
     }
@@ -136,11 +192,15 @@ export default function WalletPage() {
               className="rounded-2xl p-4 ring-1 ring-white/8 space-y-4"
               style={{ background: "rgba(255,255,255,0.04)", backdropFilter: "blur(12px)" }}
             >
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-white/40 uppercase tracking-wider">Address</span>
-                <div className="flex items-center gap-2">
-                  <code className="text-sm text-white/80">{wallet.address ?? "—"}</code>
-                  <Button variant="ghost" size="icon" onClick={copyAddress} className="h-6 w-6 text-white/40 hover:text-white">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs text-white/40 uppercase tracking-wider shrink-0">Address</span>
+                <div className="flex items-center gap-2 min-w-0">
+                  <EnsAddress
+                    address={wallet.address}
+                    fullFallback
+                    className="text-sm text-white/80 truncate"
+                  />
+                  <Button variant="ghost" size="icon" onClick={copyAddress} className="h-6 w-6 text-white/40 hover:text-white shrink-0">
                     <Copy className="h-3 w-3" />
                   </Button>
                 </div>
@@ -217,11 +277,14 @@ export default function WalletPage() {
               style={{ background: "rgba(255,255,255,0.04)", backdropFilter: "blur(12px)" }}
             >
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-wider text-white/40">To Address</label>
-                <Input
-                  placeholder="0x…"
+                <label className="text-xs uppercase tracking-wider text-white/40">To address or ENS name</label>
+                <AddressOrEnsInput
                   value={toAddress}
-                  onChange={(e) => setToAddress(e.target.value)}
+                  onChange={(v) => {
+                    setToAddress(v);
+                    resetConfirm();
+                  }}
+                  onResolvedAddressChange={onResolvedAddressChange}
                   className="border-white/10 bg-white/[0.025] text-white placeholder:text-white/20"
                 />
               </div>
@@ -230,17 +293,68 @@ export default function WalletPage() {
                 <Input
                   placeholder="0.00"
                   value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
+                  onChange={(e) => {
+                    setAmount(e.target.value);
+                    resetConfirm();
+                  }}
                   className="border-white/10 bg-white/[0.025] text-white placeholder:text-white/20"
                 />
               </div>
-              <Button
-                onClick={handleTransfer}
-                disabled={transfer.isPending || !toAddress || !amount}
-                className="w-full bg-emerald-600 hover:bg-emerald-700"
-              >
-                {transfer.isPending ? "Sending…" : "Send USDC"}
-              </Button>
+
+              {!confirmAddress ? (
+                <Button
+                  onClick={handlePrepareTransfer}
+                  disabled={
+                    resolvingFresh ||
+                    transfer.isPending ||
+                    !toAddress.trim() ||
+                    !amount.trim() ||
+                    (looksLikeEnsName(toAddress.trim()) && !previewResolved && !isHexAddress(toAddress.trim()))
+                  }
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {resolvingFresh ? "Resolving…" : "Review transfer"}
+                </Button>
+              ) : (
+                <div className="space-y-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4">
+                  <p className="text-sm text-amber-100/90">
+                    Send <span className="font-medium">{amount}</span> USDC to
+                    {confirmName ? (
+                      <>
+                        {" "}
+                        <span className="font-medium">{confirmName}</span>
+                        {" → "}
+                      </>
+                    ) : (
+                      " "
+                    )}
+                    <span className="font-mono text-xs break-all">{confirmAddress}</span>
+                    ?
+                  </p>
+                  <p className="text-[11px] text-white/40">
+                    Confirm the checksummed address before sending. Payment records store the address, not the name.
+                    {confirmName ? ` (${truncateAddress(confirmAddress)})` : null}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="ghost"
+                      onClick={resetConfirm}
+                      disabled={transfer.isPending}
+                      className="flex-1 text-white/70"
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleConfirmTransfer}
+                      disabled={transfer.isPending}
+                      className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                    >
+                      {transfer.isPending ? "Sending…" : "Confirm & send"}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {txResult && (
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
                   Transfer submitted!{" "}

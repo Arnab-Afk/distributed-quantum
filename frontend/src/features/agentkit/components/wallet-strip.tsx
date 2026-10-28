@@ -6,14 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Bell, Wallet } from "lucide-react";
 import Link from "next/link";
-
-function truncateAddress(address: string) {
-  if (!address) return "";
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
+import { EnsAddress } from "./ens-address";
 
 type WalletStripProps = {
   onNotificationsClick: () => void;
@@ -51,14 +46,7 @@ export function WalletStrip({ onNotificationsClick }: WalletStripProps) {
 
   return (
     <div className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.025] px-4 py-2">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="font-mono text-sm text-white/80">
-            {truncateAddress(wallet.address)}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{wallet.address}</TooltipContent>
-      </Tooltip>
+      <EnsAddress address={wallet.address} className="text-sm text-white/80" />
 
       <Separator orientation="vertical" className="h-4" />
 

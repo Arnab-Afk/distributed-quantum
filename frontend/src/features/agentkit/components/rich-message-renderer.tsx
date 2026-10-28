@@ -37,6 +37,7 @@ import {
   Cpu,
 } from "lucide-react";
 import { useState } from "react";
+import { EnsAddress } from "./ens-address";
 
 // ── Typed rich-content payloads ──────────────────────────────────────────────
 
@@ -133,7 +134,6 @@ function CopyButton({ text }: { text: string }) {
 // ── Wallet card ──────────────────────────────────────────────────────────────
 
 function WalletCard({ data }: { data: WalletPayload }) {
-  const short = `${data.address.slice(0, 6)}…${data.address.slice(-4)}`;
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -153,7 +153,7 @@ function WalletCard({ data }: { data: WalletPayload }) {
           Wallet
         </span>
         <div className="ml-auto flex items-center gap-1 rounded-md bg-white/5 px-2 py-0.5">
-          <span className="font-mono text-[11px] text-white/50">{short}</span>
+          <EnsAddress address={data.address} className="text-[11px] text-white/50" />
           <CopyButton text={data.address} />
         </div>
       </div>
