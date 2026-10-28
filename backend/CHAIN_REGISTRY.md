@@ -52,9 +52,9 @@ wallet indexes are unchanged; this is not yet multi-network wallet persistence.
 `rpc_env_var` stores an environment-variable **name**, never a URL or key.
 `public_rpc_url` is an optional keyless fallback: HTTPS only, with no credentials,
 query string or fragment. `chains.rpc.resolve_rpc_url()` uses the variable when it
-is set and the public endpoint otherwise. The packaged fallbacks are the endpoints
-AgentKit used before the registry (`https://sepolia.base.org`,
-`https://sepolia.drpc.org`), so behaviour is unchanged without an override.
+is set and the public endpoint otherwise. The packaged fallbacks are
+`https://sepolia.base.org`, the endpoint AgentKit used before the registry, and
+`https://ethereum-sepolia-rpc.publicnode.com`, the endpoint the ENS service uses.
 
 Overrides must be HTTPS, or plain HTTP to `localhost`/`127.0.0.1`/`::1` for a local
 node such as anvil. A resolved URL may carry an API key. It is never stored in the
