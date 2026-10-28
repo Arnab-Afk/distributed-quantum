@@ -16,17 +16,26 @@ export type ProposalFragment = {
   claimed_by: string | null;
 };
 
+export type ProposalFunder = {
+  funder_id?: string;
+  wallet_address: string;
+  amount?: string;
+  funded_at?: string;
+};
+
 export type Proposal = {
   proposal_id: string;
   title: string;
   description: string;
   researcher_id: string;
+  researcher_wallet?: string;
   budget_required: string;
   budget_raised: string;
   funding_threshold?: string;
   funding_percentage?: string;
   status: "draft" | "active" | "funded" | "in_progress" | "completed" | "expired" | "cancelled";
   fragments: ProposalFragment[];
+  funders?: ProposalFunder[];
   deadline: string;
   tags: string[];
   created_at?: string;

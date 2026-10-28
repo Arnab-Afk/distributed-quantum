@@ -1,3 +1,4 @@
+import type { OracleProvenance } from "@/shared/types/oracle";
 export type RiskModel = "equity" | "credit";
 
 // --- Backend (snake_case) types ---
@@ -36,6 +37,7 @@ export interface BackendRiskVaRResult {
 }
 
 export interface BackendRiskAnalysisResult {
+  provenance?: OracleProvenance | null;
   job_id: string;
   risk_model: RiskModel;
   portfolio_size: number;
@@ -55,6 +57,9 @@ export interface BackendRiskAnalysisResult {
   circuit_depth: number;
   num_iqae_calls: number;
   analysis_duration_ms: number;
+  portfolio_value_usd?: number | null;
+  quantum_var_99_usd?: number | null;
+  quantum_cvar_99_usd?: number | null;
   generated_at: string;
 }
 
@@ -129,6 +134,10 @@ export interface RiskJobDetail {
     circuitDepth: number;
     numIqaeCalls: number;
     analysisDurationMs: number;
+    provenance?: OracleProvenance | null;
+    portfolioValueUsd?: number | null;
+    quantumVar99Usd?: number | null;
+    quantumCvar99Usd?: number | null;
     generatedAt: string;
   } | null;
   createdAt: string;

@@ -17,11 +17,17 @@ def load_settings(
     env_file: str | Path | None = None,
 ) -> AppSettings:
     """Load application settings from environment variables and a local .env file."""
+    return AppSettings.from_env(load_environment(env, env_file=env_file))
+
+
+def load_environment(
+    env: Mapping[str, str] | None = None, *, env_file: str | Path | None = None
+) -> dict[str, str]:
     env_map: dict[str, str] = {}
     if env is None or env_file is not None:
         env_map.update(_load_env_file(env_file))
     env_map.update(os.environ if env is None else env)
-    return AppSettings.from_env(env_map)
+    return env_map
 
 
 def _load_env_file(env_file: str | Path | None) -> dict[str, str]:

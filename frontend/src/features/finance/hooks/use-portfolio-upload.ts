@@ -1,23 +1,30 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { readApiError } from "@/shared/lib/api-error";
 import { QUERY_KEYS, API } from "@/constants";
 import type { BackendFinancialSubmitResponse } from "../types";
+
+interface PortfolioUpload { file: File; useChainlink: boolean; investmentUsd: number; expectedEthPrice: number; }
 
 export function usePortfolioUpload() {
   const queryClient = useQueryClient();
 
-  return useMutation<BackendFinancialSubmitResponse, Error, File>({
-    mutationFn: async (file: File) => {
+  return useMutation<BackendFinancialSubmitResponse, Error, PortfolioUpload>({
+    mutationFn: async ({ file, useChainlink, investmentUsd, expectedEthPrice }: PortfolioUpload) => {
       const formData = new FormData();
       formData.append("file", file);
+      if (useChainlink) {
+        formData.append("use_chainlink", "true");
+        formData.append("investment_usd", String(investmentUsd));
+        formData.append("expected_eth_price", String(expectedEthPrice));
+      }
       const res = await fetch(API.FINANCE.CREATE, {
         method: "POST",
         body: formData,
       });
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(err.detail ?? "Upload failed");
+        throw new Error(await readApiError(res, "Upload failed"));
       }
       return res.json() as Promise<BackendFinancialSubmitResponse>;
     },

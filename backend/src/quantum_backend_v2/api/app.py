@@ -22,6 +22,8 @@ from api.v1.proposals import router as proposals_router
 
 # AgentKit integration routers (new v1 API routers)
 from api.v1.wallet import router as wallet_router
+from api.v1.ens import router as ens_router
+from api.v1.ens_workers import router as ens_workers_router
 from quantum_backend_v2 import __version__
 from quantum_backend_v2.api.benchmark import router as benchmark_router
 from quantum_backend_v2.api.deps.auth import configure_auth
@@ -241,6 +243,8 @@ def create_app(
     app.include_router(notifications_router)
     app.include_router(marketplace_router)
     app.include_router(chat_sessions_router)
+    app.include_router(ens_router)
+    app.include_router(ens_workers_router)
 
     return app
 

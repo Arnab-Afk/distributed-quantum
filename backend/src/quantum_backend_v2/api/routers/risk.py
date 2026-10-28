@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import csv
 import io
+import math
+from datetime import date
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import not_found
@@ -18,6 +20,32 @@ from quantum_backend_v2.api.models.risk import (
     RiskSubmitResponse,
 )
 from quantum_backend_v2.application.parity import RiskJobService
+from quantum_backend_v2.chains.adapter import UnsupportedOperationError
+from quantum_backend_v2.chains.models import DisabledNetworkError, UnknownNetworkError
+from quantum_backend_v2.chains.prices import PriceRejectedError, PriceUnavailableError
+from quantum_backend_v2.chains.rpc import RpcConfigurationError
+
+
+def _daily_log_returns(rows: list[dict[str, str]]) -> list[list[float]]:
+    try:
+        history = sorted((date.fromisoformat(row["date"]), float(row["close"])) for row in rows)
+    except ValueError:
+        raise ValueError(
+            "Each row needs a date in YYYY-MM-DD format and a numeric closing price."
+        ) from None
+    if len(history) < 5 or len({day for day, _ in history}) != len(history):
+        raise ValueError("provide at least five distinct daily closing prices")
+    if any(
+        (current[0] - previous[0]).days != 1
+        for previous, current in zip(history, history[1:], strict=False)
+    ):
+        raise ValueError("provide consecutive daily ETH/USD closing prices without gaps")
+    if any(not math.isfinite(price) or price <= 0 for _, price in history):
+        raise ValueError("historical prices must be finite and positive")
+    return [
+        [math.log(current[1]) - math.log(previous[1])]
+        for previous, current in zip(history, history[1:], strict=False)
+    ]
 
 
 def build_risk_router(*, risk_job_service: RiskJobService) -> APIRouter:
@@ -39,12 +67,19 @@ def build_risk_router(*, risk_job_service: RiskJobService) -> APIRouter:
         portfolio_size = (
             len(request.holdings) if request.risk_model == "equity" else len(request.assets)
         )
-        record = await risk_job_service.submit(
-            risk_model=request.risk_model,
-            portfolio_size=portfolio_size,
-            owner_user_id=current_user.user_id,
-            request_payload=request_payload,
-        )
+        try:
+            record = await risk_job_service.submit(
+                risk_model=request.risk_model,
+                portfolio_size=portfolio_size,
+                owner_user_id=current_user.user_id,
+                request_payload=request_payload,
+            )
+        except (PriceUnavailableError, RpcConfigurationError):
+            raise HTTPException(status_code=503, detail="price feed is unavailable") from None
+        except (
+            PriceRejectedError, DisabledNetworkError, UnknownNetworkError, UnsupportedOperationError
+        ) as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         background_tasks.add_task(
             risk_job_service.process,
             job_id=record.id,
@@ -71,20 +106,58 @@ def build_risk_router(*, risk_job_service: RiskJobService) -> APIRouter:
         epsilon: float = Query(default=0.05, gt=0, lt=0.5),
         alpha: float = Query(default=0.05, gt=0, lt=0.5),
         lookback_days: int = Query(default=504, ge=60, le=2520),
+        use_chainlink: bool = Form(default=False),
+        quantity: float = Form(default=1, gt=0),
+        current_value: float | None = Form(default=None, gt=0),
     ) -> RiskSubmitResponse:
         contents = await file.read()
+        if use_chainlink and len(contents) > 4 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="live valuation CSV exceeds 4 MB")
         try:
             text = contents.decode("utf-8-sig")
         except UnicodeDecodeError:
             raise HTTPException(status_code=400, detail="CSV must be UTF-8 encoded.")
 
-        reader = csv.DictReader(io.StringIO(text))
-        if reader.fieldnames is None:
-            raise HTTPException(status_code=400, detail="CSV appears to be empty.")
-        fields = {f.strip().lower() for f in reader.fieldnames}
-        rows = [{k.strip().lower(): (v.strip() if v else "") for k, v in row.items()} for row in reader]
+        try:
+            reader = csv.DictReader(io.StringIO(text), strict=True)
+            if reader.fieldnames is None:
+                raise HTTPException(status_code=400, detail="CSV appears to be empty.")
+            headers = [field.strip().lower() for field in reader.fieldnames]
+            if len(set(headers)) != len(headers):
+                raise HTTPException(status_code=422, detail="CSV column names must be unique")
+            fields = set(headers)
+            rows = []
+            for row in reader:
+                if None in row:
+                    raise HTTPException(
+                        status_code=422, detail="CSV row has more values than columns"
+                    )
+                rows.append({
+                    key.strip().lower(): (value or "").strip() for key, value in row.items()
+                })
+        except csv.Error:
+            raise HTTPException(
+                status_code=422, detail="CSV is malformed or a field is too large"
+            ) from None
         if not rows:
             raise HTTPException(status_code=400, detail="CSV has no data rows.")
+
+        if use_chainlink:
+            try:
+                if fields != {"date", "close"}:
+                    raise ValueError(
+                        "Live ETH/USD history must contain only date and close columns."
+                    )
+                returns = _daily_log_returns(rows)
+                request = RiskJobRequest(
+                    holdings=[EquityHolding(ticker="ETH-USD", weight=1, quantity=quantity,
+                                            current_value=current_value, chainlink_price={})],
+                    historical_returns=returns,
+                    num_uncertainty_qubits=num_uncertainty_qubits, epsilon=epsilon, alpha=alpha,
+                )
+            except ValueError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+            return await submit_risk_job(request, background_tasks, current_user)
 
         # Auto-detect mode: credit if it has 'default_probability', equity otherwise
         if "default_probability" in fields:

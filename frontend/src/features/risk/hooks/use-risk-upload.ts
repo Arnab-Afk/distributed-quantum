@@ -1,29 +1,43 @@
 "use client";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { readApiError } from "@/shared/lib/api-error";
 import { QUERY_KEYS, API } from "@/constants";
 import type { BackendRiskSubmitResponse, RiskModel } from "../types";
 
 interface RiskUploadParams {
   file: File;
   riskModel: RiskModel;
+  useChainlink?: boolean;
+  quantity?: number;
+  expectedEthPrice?: number;
 }
 
 export function useRiskUpload() {
   const queryClient = useQueryClient();
 
   return useMutation<BackendRiskSubmitResponse, Error, RiskUploadParams>({
-    mutationFn: async ({ file, riskModel }: RiskUploadParams) => {
+    mutationFn: async ({
+      file,
+      riskModel,
+      useChainlink,
+      quantity,
+      expectedEthPrice,
+    }: RiskUploadParams) => {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("risk_model", riskModel);
+      if (useChainlink) {
+        formData.append("use_chainlink", "true");
+        formData.append("quantity", String(quantity));
+        formData.append("current_value", String(expectedEthPrice));
+      }
       const res = await fetch(API.RISK.CREATE, {
         method: "POST",
         body: formData,
       });
       if (!res.ok) {
-        const err = (await res.json().catch(() => ({}))) as { detail?: string };
-        throw new Error(err.detail ?? "Upload failed");
+        throw new Error(await readApiError(res, "Upload failed"));
       }
       return res.json() as Promise<BackendRiskSubmitResponse>;
     },

@@ -3,14 +3,23 @@
 services:
   kubo:
     image: ipfs/kubo:v0.43.1@sha256:b293923d66e490e70ced64df42ea7a6cf7eac2740e3fb29101df18070fa7be48
+    command: ["daemon", "--migrate=true", "--agent-version-suffix=docker", "--enable-gc"]
     environment:
       IPFS_PROFILE: server
       KUBO_RPC_SECRET: "${KUBO_RPC_SECRET:-}"
+      KUBO_STORAGE_MAX: "${KUBO_STORAGE_MAX:-10GB}"
+      KUBO_GC_PERIOD: "${KUBO_GC_PERIOD:-1h}"
     volumes:
       - kubo_data:/data/ipfs
       - type: bind
         source: ./deploy/kubo-init.sh
         target: /container-init.d/010-security.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./deploy/kubo-storage.sh
+        target: /container-init.d/020-storage.sh
         read_only: true
         bind:
           create_host_path: false
@@ -38,6 +47,30 @@ services:
     networks:
       - content_network
 
+  prometheus:
+    image: prom/prometheus:v3.15.1@sha256:fa3302279710be2f21a8301ec17a8b4f2301fd829bd113839b3b6b02b6f191a2
+    profiles: ["monitoring"]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --storage.tsdb.retention.size=512MB
+    volumes:
+      - type: bind
+        source: ./deploy/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+        bind:
+          create_host_path: false
+      - prometheus_data:/prometheus
+    depends_on:
+      kubo:
+        condition: service_started
+    # Neither the UI nor the Kubo metrics/API endpoint is published to the host.
+    restart: unless-stopped
+    networks:
+      - content_network
+
   backend:
     build:
       context: .
@@ -55,6 +88,7 @@ services:
       KUBO_RPC_URL: "${KUBO_RPC_URL:-http://kubo:5001}"
       KUBO_RPC_TIMEOUT_SECONDS: "${KUBO_RPC_TIMEOUT_SECONDS:-30}"
       KUBO_RPC_MAX_RESPONSE_BYTES: "${KUBO_RPC_MAX_RESPONSE_BYTES:-4194304}"
+      IPFS_PUBLIC_GATEWAY_URL: "${IPFS_PUBLIC_GATEWAY_URL:-}"
       QB2_MONGODB_TARGET: "${QB2_MONGODB_TARGET:-remote}"
       QB2_MONGODB_REMOTE_URI: "${QB2_MONGODB_REMOTE_URI}"
       QB2_MONGODB_DATABASE: "${QB2_MONGODB_DATABASE:-qds}"
@@ -145,6 +179,8 @@ services:
       - backend_network
 
 volumes:
+  prometheus_data:
+    driver: local
   kubo_data:
     driver: local
   backend_runtime:

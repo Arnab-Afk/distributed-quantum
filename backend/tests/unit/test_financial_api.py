@@ -33,6 +33,8 @@ class _StubFinancialJobService:
         owner_user_id: str,
         problem_type: str,
         config: object,
+        valuation: dict | None = None,
+        csv_bytes: bytes | None = None,
     ) -> SimpleNamespace:
         self.submit_calls.append(
             {

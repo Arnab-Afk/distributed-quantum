@@ -46,6 +46,7 @@ function transform(raw: BackendOptionsJobResponse): OptionsJobDetail {
           analysisDurationMs: raw.result.analysis_duration_ms,
           quadraticSpeedupFactor: raw.result.quadratic_speedup_factor,
           request: raw.result.request ?? {},
+          provenance: raw.result.provenance,
           generatedAt: raw.result.generated_at,
         }
       : null,

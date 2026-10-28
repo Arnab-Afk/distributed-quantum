@@ -82,6 +82,8 @@ export const BACKEND_AGENTKIT = {
   WALLET_BALANCE:  `${BASE_URL}/api/v1/wallet/balance`,
   WALLET_TX:       `${BASE_URL}/api/v1/wallet/transactions`,
   WALLET_TRANSFER: `${BASE_URL}/api/v1/wallet/transfer`,
+  ENS_RESOLVE:     `${BASE_URL}/api/v1/ens/resolve`,
+  ENS_REVERSE:     `${BASE_URL}/api/v1/ens/reverse`,
   PROPOSALS:       `${BASE_URL}/api/v1/proposals`,
   PROPOSAL:        (id: string) =>
     `${BASE_URL}/api/v1/proposals/${id}` as const,

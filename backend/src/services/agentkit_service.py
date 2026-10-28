@@ -34,21 +34,28 @@ from quantum_backend_v2.config import load_settings
 
 logger = logging.getLogger(__name__)
 
-# AgentKit imports (coinbase-agentkit)
+# Core deps used even when CDP/AgentKit is incomplete (do not bundle with CDP imports).
+try:
+    from web3 import Web3
+except ImportError:  # pragma: no cover
+    Web3 = Any  # type: ignore[misc, assignment]
+
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient
+except ImportError:  # pragma: no cover
+    AsyncIOMotorClient = Any  # type: ignore[misc, assignment]
+
+# AgentKit / CDP imports (optional for local API bring-up)
 try:
     from cdp import CdpClient
     # Wallet providers only; do not register AgentKit's automatic x402 actions.
     from coinbase_agentkit.wallet_providers import CdpEvmWalletProvider, CdpEvmWalletProviderConfig
-    from web3 import Web3
-    from motor.motor_asyncio import AsyncIOMotorClient
 except ImportError as e:
-    # Fallback for development without SDK installed
+    # Fallback for development without full SDK installed
     logger.warning(f"AgentKit SDK not fully available: {e}")
     CdpClient = Any
     CdpEvmWalletProvider = Any
     CdpEvmWalletProviderConfig = Any
-    Web3 = Any
-    AsyncIOMotorClient = Any
 
 # Import MongoDB models
 from db.agentkit_collections import (

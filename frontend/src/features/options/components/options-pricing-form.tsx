@@ -1,8 +1,4 @@
 "use client";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,17 +9,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ROUTES, API } from "@/constants";
-import {
-  optionsRequestSchema,
-  type OptionsRequestFormValues,
-} from "../schemas/options-request.schema";
+import { useOptionsPricingForm } from "../hooks/use-options-pricing-form";
 import type { OptionType } from "../types";
 
 const OPTION_TYPE_LABELS: Record<OptionType, string> = {
@@ -42,36 +30,16 @@ interface OptionsPricingFormProps {
 }
 
 export function OptionsPricingForm({ className }: OptionsPricingFormProps) {
-  const router = useRouter();
   const {
     register,
-    handleSubmit,
-    setValue,
-    formState: { errors, isSubmitting },
-  } = useForm<OptionsRequestFormValues>({
-    resolver: zodResolver(optionsRequestSchema),
-    defaultValues: {
-      volatility: 0.2,
-      risk_free_rate: 0.05,
-      time_to_expiry: 1,
-    },
-  });
-
-  async function onSubmit(values: OptionsRequestFormValues) {
-    const res = await fetch(API.OPTIONS.CREATE, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(values),
-    });
-    if (!res.ok) {
-      const err = (await res.json().catch(() => ({}))) as { detail?: string };
-      toast.error(err.detail ?? "Failed to submit options job");
-      return;
-    }
-    const data = (await res.json()) as { job_id: string };
-    toast.success("Options job submitted");
-    router.push(ROUTES.optionsDetail(data.job_id));
-  }
+    submit,
+    errors,
+    isSubmitting,
+    liveFeed,
+    supportsFeed,
+    selectOption,
+    setLiveFeed,
+  } = useOptionsPricingForm();
 
   return (
     <Card className={cn("border-hairline bg-surface-soft", className)}>
@@ -84,16 +52,11 @@ export function OptionsPricingForm({ className }: OptionsPricingFormProps) {
         </p>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          {/* Option type */}
+        <form onSubmit={submit} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="option_type">Option Type</Label>
             <Select
-              onValueChange={(v) =>
-                setValue("option_type", v as OptionType, {
-                  shouldValidate: true,
-                })
-              }
+              onValueChange={(value) => selectOption(value as OptionType)}
             >
               <SelectTrigger id="option_type">
                 <SelectValue placeholder="Select option type" />
@@ -113,13 +76,32 @@ export function OptionsPricingForm({ className }: OptionsPricingFormProps) {
             )}
           </div>
 
-          {/* Core numeric fields */}
+          {supportsFeed ? (
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={liveFeed}
+                  onChange={(event) => setLiveFeed(event.target.checked)}
+                />
+                Use live ETH/USD feed (Sepolia)
+              </label>
+              {liveFeed ? (
+                <p className="text-xs text-muted-foreground">
+                  Enter the expected USD price below. The run rejects stale
+                  prices and deviations above 20%.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-4">
             {(
               [
                 {
                   name: "current_value" as const,
-                  label: "Current Value (S)",
+                  label: liveFeed
+                    ? "Expected ETH price (USD)"
+                    : "Current Value (S)",
                   placeholder: "100",
                 },
                 {
