@@ -52,6 +52,7 @@ dependencies = [
   "motor>=3.3.0",
   "mcp[cli]>=1.0.0",
   "nearai-inference-sdk>=0.1.0",
+  "starknet-py>=0.30.0",
 ]
 
 [project.optional-dependencies]

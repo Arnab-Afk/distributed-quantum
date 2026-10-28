@@ -158,8 +158,11 @@ set `AGENT_LLM_PROVIDER=near`, `NEARAI_API_KEY`, and `NEAR_MODEL` (canonical Con
 model ID from `https://cloud-api.near.ai/v1/model/list` with `attestationSupported=true`);
 configure a per-key spend limit in the NEAR dashboard. Each completion round is verified
 with `nearai-inference-sdk` and surfaced as an attestation badge (`Model TEE verified`,
-`Gateway verified`, or `Unverified`) on the chat message. Provider switching is manual;
-there is no paid fallback or automatic rate-limit retry. Free model availability can change.
+`Gateway verified`, or `Unverified`) on the chat message.
+
+The agent chat UI includes a provider dropdown (Groq / OpenRouter / NEAR) that overrides the env default
+per browser; `AGENT_LLM_PROVIDER` remains the server fallback. There is no paid fallback or automatic 
+rate-limit retry. Free model availability can change.
 
 Frontend configuration (`frontend/.env.local`):
 

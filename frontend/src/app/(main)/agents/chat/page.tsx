@@ -30,6 +30,8 @@ import { AttestationBadge } from "@/features/agent/components/conversation-panel
 
 import { useStorageExports, type StorageExport } from "@/features/agentkit/hooks/use-storage-exports";
 import { StorageExports } from "@/features/agentkit/components/storage-exports";
+import { AgentLlmProviderSelect } from "@/features/agentkit/components/agent-llm-provider-select";
+import { useAgentLlmProvider } from "@/features/agentkit";
 
 function AgentChatIdentity({ agent, session }: { agent: AgentItem; session: ChatSession | null }) {
   const span = humanSpan(session?.createdAt, session?.updatedAt);
@@ -78,6 +80,7 @@ function AgentsChatInner() {
   const createAgent = useCreateAgent();
   const { sessions, sessionsReady, createSession, appendMessage, loadSession } = useChatSessions();
   const agents = collapseDuplicatePersonalAgents(ownedAgents, sessions);
+  const { provider: llmProvider } = useAgentLlmProvider();
 
   const activateSession = (id: string) => {
     setActiveSessionId(id);
@@ -223,7 +226,7 @@ function AgentsChatInner() {
       const res = await fetch(`/api/agentkit/agents/${agentId}/chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: text, history: historyMsgs, session_id: sessionId }),
+        body: JSON.stringify({ message: text, history: historyMsgs, session_id: sessionId, llm_provider: llmProvider }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? data.detail ?? data.error ?? "AI request failed");
@@ -393,22 +396,27 @@ function AgentsChatInner() {
           </AnimatePresence>
         </ScrollArea>
 
-        <div className="flex gap-2">
-          <Textarea
-            placeholder="Ask your agent anything…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
-            className="min-h-[44px] resize-none border-white/10 bg-white/[0.025] text-white"
-            rows={1}
-          />
-          <Button
-            onClick={() => send(input)}
-            disabled={!input.trim() || loading}
-            className="shrink-0 cursor-pointer bg-amber-600 hover:bg-amber-700"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center">
+            <AgentLlmProviderSelect variant="composer" />
+          </div>
+          <div className="flex gap-2">
+            <Textarea
+              placeholder="Ask your agent anything…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+              className="min-h-[44px] resize-none border-white/10 bg-white/[0.025] text-white"
+              rows={1}
+            />
+            <Button
+              onClick={() => send(input)}
+              disabled={!input.trim() || loading}
+              className="shrink-0 cursor-pointer bg-amber-600 hover:bg-amber-700"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>

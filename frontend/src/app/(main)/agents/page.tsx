@@ -9,12 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/shared/components/layout/page-header";
-import { useAgents, type AgentItem } from "@/features/agentkit";
+import { useAgents, useRevokeStarknetSession, type AgentItem } from "@/features/agentkit";
 import { collapseDuplicatePersonalAgents, humanSpan, humanWhen, shortAddress } from "@/features/agentkit/hooks/use-agents";
 import { WalletAddressCopy } from "@/features/agentkit/components/wallet-address-copy";
 import { useChatSessions, type ChatSession } from "@/features/agentkit/hooks/use-chat-sessions";
 import { motion, AnimatePresence, useMotionValue, useTransform, useSpring, animate } from "motion/react";
 import { toast } from "sonner";
+import { AgentLlmProviderSelect } from "@/features/agentkit/components/agent-llm-provider-select";
 
 function asDecimal(value: unknown): string | null {
   if (typeof value === "string" && value.trim()) return value;
@@ -110,6 +111,7 @@ function AgentCard({
   sessionCount,
   messageCount,
   onSelect,
+  onRevoke,
 }: {
   agent: AgentItem;
   index: number;
@@ -117,6 +119,7 @@ function AgentCard({
   sessionCount: number | null;
   messageCount: number | null;
   onSelect: (agentId: string) => void;
+  onRevoke: (agentId: string) => void;
 }) {
   const config = readConfig(agent.config);
   const created = humanWhen(agent.created_at);
@@ -215,6 +218,19 @@ function AgentCard({
           Configure
         </Button>
       </div>
+      {agent.starknet_session?.status === "active" && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="mt-2 h-8 w-full text-white/50 ring-1 ring-white/10 hover:bg-white/6 hover:text-white/80"
+          onClick={(event) => {
+            event.stopPropagation();
+            onRevoke(agent.agent_id);
+          }}
+        >
+          Revoke Starknet session
+        </Button>
+      )}
     </motion.div>
   );
 }
@@ -410,6 +426,7 @@ function SessionList({
 export default function AgentsOverviewPage() {
   const router = useRouter();
   const { data, isLoading, isError } = useAgents();
+  const revokeSession = useRevokeStarknetSession();
   const { sessions, sessionsReady } = useChatSessions();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const owned = data ?? [];
@@ -442,19 +459,22 @@ export default function AgentsOverviewPage() {
         description="Your agents, their configuration, and stored chat sessions."
         glow="amber"
       >
-        <Button
-          type="button"
-          size="sm"
-          className="h-8 bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/25 hover:bg-amber-500/25 hover:text-amber-100"
-          onClick={() => {
-            const params = new URLSearchParams({ new: String(Date.now()) });
-            if (selected?.agent_id) params.set("agentId", selected.agent_id);
-            router.push(`/agents/chat?${params.toString()}`);
-          }}
-        >
-          <Plus className="mr-1.5 h-3.5 w-3.5" />
-          New Chat
-        </Button>
+        <div className="flex items-center gap-2">
+          <AgentLlmProviderSelect variant="header" />
+          <Button
+            type="button"
+            size="sm"
+            className="h-8 bg-amber-500/15 text-amber-200 ring-1 ring-amber-500/25 hover:bg-amber-500/25 hover:text-amber-100"
+            onClick={() => {
+              const params = new URLSearchParams({ new: String(Date.now()) });
+              if (selected?.agent_id) params.set("agentId", selected.agent_id);
+              router.push(`/agents/chat?${params.toString()}`);
+            }}
+          >
+            <Plus className="mr-1.5 h-3.5 w-3.5" />
+            New Chat
+          </Button>
+        </div>
       </PageHeader>
 
       <div className="relative z-10 flex flex-col gap-6 p-6">
@@ -518,6 +538,12 @@ export default function AgentsOverviewPage() {
                       sessionCount={sessionsReady ? rows.length : null}
                       messageCount={sessionsReady ? rows.reduce((sum, row) => sum + row.messages.length, 0) : null}
                       onSelect={setSelectedId}
+                      onRevoke={(agentId) => {
+                        revokeSession.mutate(agentId, {
+                          onSuccess: () => toast.success("Starknet session revoked"),
+                          onError: (error: Error) => toast.error(error.message),
+                        });
+                      }}
                     />
                   );
                 })}

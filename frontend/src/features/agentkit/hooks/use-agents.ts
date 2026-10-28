@@ -41,6 +41,11 @@ export function humanSpan(created: string | number | null | undefined, updated: 
   return { text, title };
 }
 
+export type StarknetSessionStatus = {
+  status?: string;
+  expires_at?: number;
+};
+
 export type AgentItem = {
   agent_id: string;
   agent_name: string;
@@ -48,6 +53,7 @@ export type AgentItem = {
   wallet_address: string;
   config: Record<string, unknown>;
   total_spent: string;
+  starknet_session?: StarknetSessionStatus | null;
   created_at: string;
   updated_at?: string;
 };
@@ -106,6 +112,24 @@ async function postAgent(payload: typeof DEFAULT_AGENT_BODY): Promise<AgentItem>
     throw new Error(err.message ?? err.error ?? "Failed to create agent");
   }
   return res.json();
+}
+
+export function useRevokeStarknetSession() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (agentId: string) => {
+      const res = await fetch(
+        `/api/agentkit/agents/${encodeURIComponent(agentId)}/starknet-session/revoke`,
+        { method: "POST" },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Could not revoke the session");
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: QUERY_KEYS_AGENTKIT.agents() });
+    },
+  });
 }
 
 export function useCreateAgent() {
