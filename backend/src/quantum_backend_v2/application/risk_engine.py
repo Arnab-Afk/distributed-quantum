@@ -79,7 +79,7 @@ def _portfolio_lognormal_params(
     V0 is normalised to 1.0 (fractional loss).
     """
     mu_vec = returns.mean(axis=0)
-    cov = np.cov(returns.T)
+    cov = np.atleast_2d(np.cov(returns.T))
     mu_p = float(weights @ mu_vec)
     var_p = float(weights @ cov @ weights)
     sigma_p = math.sqrt(max(var_p, 1e-10))
@@ -207,13 +207,14 @@ def _iqae_cdf(
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
     from qiskit_algorithms import IterativeAmplitudeEstimation
-    from qiskit_algorithms.utils import algorithm_globals
-    algorithm_globals.random_seed = 42
+    from qiskit.primitives import StatevectorSampler
 
     problem, _ = _build_equity_cdf_circuit(
         mu_p, sigma_p, threshold, num_qubits, loss_min, loss_max
     )
-    iae = IterativeAmplitudeEstimation(epsilon_target=epsilon, alpha=alpha)
+    iae = IterativeAmplitudeEstimation(
+        epsilon_target=epsilon, alpha=alpha, sampler=StatevectorSampler(seed=42)
+    )
     result = iae.estimate(problem)
     ci = result.confidence_interval
     return float(result.estimation), float(ci[0]), float(ci[1])
@@ -310,7 +311,9 @@ def compute_equity_risk(request: dict[str, Any]) -> dict[str, Any]:
     weights = raw_weights / raw_weights.sum()
 
     # --- Fetch returns and derive portfolio distribution params ---
-    returns = _fetch_returns(tickers, lookback_days)
+    saved_returns = request.get("historical_returns")
+    returns = (np.asarray(saved_returns, dtype=float) if saved_returns is not None
+               else _fetch_returns(tickers, lookback_days))
     mu_p, sigma_p, _ = _portfolio_lognormal_params(returns, weights)
 
     # Loss range: ±4σ centred at -mu_p (loss mean)
@@ -617,4 +620,15 @@ def price_risk(request: dict[str, Any]) -> dict[str, Any]:
     risk_model = str(request.get("risk_model", "equity"))
     if risk_model == "credit":
         return compute_credit_risk(request)
-    return compute_equity_risk(request)
+    result = compute_equity_risk(request)
+    result["request"] = request
+    if request.get("portfolio_value_usd") is not None:
+        value = request["portfolio_value_usd"]
+        result["portfolio_value_usd"] = value
+        var_99 = next(
+            item["quantum_var"] for item in result["var_results"]
+            if item["confidence_level"] == 0.99
+        )
+        result["quantum_var_99_usd"] = var_99 * value
+        result["quantum_cvar_99_usd"] = result["quantum_cvar_99"] * value
+    return result

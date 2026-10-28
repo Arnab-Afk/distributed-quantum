@@ -1,3 +1,4 @@
+import { financeBackendFetch } from "@/shared/server/finance-backend-fetch";
 import { type NextRequest, NextResponse } from "next/server";
 import { BACKEND } from "@/constants";
 
@@ -5,7 +6,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   try {
-    const res = await fetch(BACKEND.OPTIONS.LIST);
+    const res = await financeBackendFetch(BACKEND.OPTIONS.LIST);
     const data: unknown = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch {
@@ -16,7 +17,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body: unknown = await request.json();
-    const res = await fetch(BACKEND.OPTIONS.SUBMIT, {
+    const res = await financeBackendFetch(BACKEND.OPTIONS.SUBMIT, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

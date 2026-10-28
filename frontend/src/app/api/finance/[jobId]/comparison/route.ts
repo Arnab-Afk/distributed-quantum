@@ -1,3 +1,4 @@
+import { financeBackendFetch } from "@/shared/server/finance-backend-fetch";
 import { type NextRequest, NextResponse } from "next/server";
 import { BACKEND } from "@/constants";
 
@@ -9,7 +10,7 @@ export async function GET(
 ) {
   const { jobId } = await params;
   try {
-    const res = await fetch(BACKEND.FINANCE.COMPARISON(jobId));
+    const res = await financeBackendFetch(BACKEND.FINANCE.COMPARISON(jobId));
     const data: unknown = await res.json();
     return NextResponse.json(data, { status: res.status });
   } catch {

@@ -1,3 +1,4 @@
+import { financeBackendFetch } from "@/shared/server/finance-backend-fetch";
 import "server-only";
 import { cache } from "react";
 import { BACKEND } from "@/constants";
@@ -58,6 +59,7 @@ function transformDetail(raw: BackendOptionsJobResponse): OptionsJobDetail {
           analysisDurationMs: raw.result.analysis_duration_ms,
           quadraticSpeedupFactor: raw.result.quadratic_speedup_factor,
           request: raw.result.request ?? {},
+          provenance: raw.result.provenance,
           generatedAt: raw.result.generated_at,
         }
       : null,
@@ -68,7 +70,7 @@ function transformDetail(raw: BackendOptionsJobResponse): OptionsJobDetail {
 
 export const getOptionsList = cache(async (): Promise<OptionsJobSummary[] | null> => {
   try {
-    const res = await fetch(BACKEND.OPTIONS.LIST, { next: { revalidate: 30 } });
+    const res = await financeBackendFetch(BACKEND.OPTIONS.LIST, { cache: "no-store" });
     if (!res.ok) return null;
     const data = (await res.json()) as BackendOptionsJobSummary[];
     return data.map(transformSummary);
@@ -79,7 +81,7 @@ export const getOptionsList = cache(async (): Promise<OptionsJobSummary[] | null
 
 export const getOptionsJob = cache(async (jobId: string): Promise<OptionsJobDetail | null> => {
   try {
-    const res = await fetch(BACKEND.OPTIONS.DETAIL(jobId), { next: { revalidate: 5 } });
+    const res = await financeBackendFetch(BACKEND.OPTIONS.DETAIL(jobId), { cache: "no-store" });
     if (!res.ok) return null;
     const data = (await res.json()) as BackendOptionsJobResponse;
     return transformDetail(data);

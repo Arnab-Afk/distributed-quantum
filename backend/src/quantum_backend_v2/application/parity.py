@@ -8,6 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from quantum_backend_v2.application.finance_provenance import build_finance_provenance
 from quantum_backend_v2.application.financial_comparison import (
     build_financial_comparison_report,
 )
@@ -15,8 +16,10 @@ from quantum_backend_v2.application.financial_portfolio import (
     PortfolioOptimizationConfig,
     build_portfolio_optimization_artifacts,
 )
-from quantum_backend_v2.application.financial_comparison import (
-    build_financial_comparison_report,
+from quantum_backend_v2.application.price_sources import (
+    PriceSource,
+    resolve_price_input,
+    resolve_risk_prices,
 )
 from quantum_backend_v2.application.provenance import (
     BundlePublisher,
@@ -332,7 +335,9 @@ class FinancialJobService:
         *,
         discovery_service: Any,
         libp2p_runtime: Any,
+        price_source: PriceSource | None = None,
     ) -> None:
+        self._price_source = price_source
         self._discovery_service = discovery_service
         self._libp2p_runtime = libp2p_runtime
 
@@ -343,7 +348,16 @@ class FinancialJobService:
         owner_user_id: str,
         problem_type: str,
         config: PortfolioOptimizationConfig,
+        valuation: dict[str, Any] | None = None,
+        csv_bytes: bytes | None = None,
     ) -> FinancialJobDocument:
+        snapshot = None
+        if valuation is not None:
+            if csv_bytes is None or len(csv_bytes) > 4 * 1024 * 1024:
+                raise ValueError("live valuation requires a CSV of at most 4 MB")
+            snapshot = await resolve_price_input(valuation, self._price_source)
+            snapshot["csv_text"] = csv_bytes.decode("utf-8-sig")
+            snapshot["config"] = _submission_request_snapshot(config)
         job_id = f"fin-{uuid.uuid4()}"
         await _ensure_platform_user(owner_user_id)
         doc = FinancialJobDocument(
@@ -352,6 +366,7 @@ class FinancialJobService:
             filename=filename,
             status=_FIN_STATUS_INGESTING,
             result_payload={"request": _submission_request_snapshot(config)},
+            request_payload=snapshot,
         )
         await doc.insert()
         return doc
@@ -368,12 +383,28 @@ class FinancialJobService:
         try:
             config = _config_from_doc(doc)
             artifacts = build_portfolio_optimization_artifacts(
-                csv_bytes=csv_bytes,
+                csv_bytes=(
+                    doc.request_payload["csv_text"].encode() if doc.request_payload else csv_bytes
+                ),
                 job_id=job_id,
                 filename=doc.filename,
                 config=config,
             )
 
+            if doc.request_payload:
+                from quantum_backend_v2.application.portfolio_valuation import (
+                    calculate_portfolio_quantities,
+                )
+
+                artifacts.payload["valuation"] = calculate_portfolio_quantities(
+                    artifacts.payload, doc.request_payload
+                )
+                if doc.owner_user_id is None:
+                    raise ValueError("oracle portfolio jobs require an owner")
+                artifacts.payload["provenance"] = build_finance_provenance(
+                    job_id, doc.owner_user_id, doc.request_payload, artifacts.payload,
+                    workflow="portfolio-optimization",
+                )
             doc = await FinancialJobDocument.get(job_id)
             if doc is None:
                 return
@@ -448,6 +479,9 @@ class FinancialJobService:
 class OptionsJobService:
     """Durable Track C real options pricing service (QAE vs Black-Scholes)."""
 
+    def __init__(self, price_source: PriceSource | None = None) -> None:
+        self._price_source = price_source
+
     async def submit(
         self,
         *,
@@ -455,6 +489,7 @@ class OptionsJobService:
         owner_user_id: str,
         request_payload: dict[str, Any],
     ) -> OptionsJobDocument:
+        resolved = await resolve_price_input(request_payload, self._price_source)
         job_id = f"opt-{uuid.uuid4()}"
         await _ensure_platform_user(owner_user_id)
         doc = OptionsJobDocument(
@@ -462,6 +497,7 @@ class OptionsJobService:
             owner_user_id=owner_user_id,
             option_type=option_type,
             status=_OPT_STATUS_QUEUED,
+            request_payload=resolved,
         )
         await doc.insert()
         return doc
@@ -477,9 +513,16 @@ class OptionsJobService:
         await doc.save()
 
         try:
-            payload_with_id = dict(request_payload)
+            inputs = doc.request_payload if doc.request_payload is not None else request_payload
+            payload_with_id = dict(inputs)
             payload_with_id["job_id"] = job_id
             result = price_options(payload_with_id)
+            if inputs.get("price_observation") is not None:
+                if doc.owner_user_id is None:
+                    raise ValueError("oracle options jobs require an owner")
+                result["provenance"] = build_finance_provenance(
+                    job_id, doc.owner_user_id, inputs, result, workflow="options-pricing"
+                )
 
             doc = await OptionsJobDocument.get(job_id)
             if doc is None:
@@ -548,6 +591,9 @@ _TERMINAL_RISK_STATUSES = {_RISK_STATUS_COMPLETED, _RISK_STATUS_FAILED}
 class RiskJobService:
     """Durable Track D quantum risk engine service (IQAE VaR/CVaR)."""
 
+    def __init__(self, price_source: PriceSource | None = None) -> None:
+        self._price_source = price_source
+
     async def submit(
         self,
         *,
@@ -556,6 +602,7 @@ class RiskJobService:
         owner_user_id: str,
         request_payload: dict[str, Any],
     ) -> RiskJobDocument:
+        resolved = await resolve_risk_prices(request_payload, self._price_source)
         job_id = f"risk-{uuid.uuid4()}"
         await _ensure_platform_user(owner_user_id)
         doc = RiskJobDocument(
@@ -564,6 +611,7 @@ class RiskJobService:
             risk_model=risk_model,
             portfolio_size=portfolio_size,
             status=_RISK_STATUS_QUEUED,
+            request_payload=resolved,
         )
         await doc.insert()
         return doc
@@ -579,9 +627,16 @@ class RiskJobService:
         await doc.save()
 
         try:
-            payload_with_id = dict(request_payload)
+            inputs = doc.request_payload if doc.request_payload is not None else request_payload
+            payload_with_id = dict(inputs)
             payload_with_id["job_id"] = job_id
             result = price_risk(payload_with_id)
+            if inputs.get("price_observations"):
+                if doc.owner_user_id is None:
+                    raise ValueError("oracle risk jobs require an owner")
+                result["provenance"] = build_finance_provenance(
+                    job_id, doc.owner_user_id, inputs, result, workflow="risk-analysis"
+                )
 
             doc = await RiskJobDocument.get(job_id)
             if doc is None:

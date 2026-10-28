@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from quantum_backend_v2.api.models.prices import ChainlinkPriceRequest
 
 
 OptionType = Literal[
@@ -24,7 +26,15 @@ class OptionsJobRequest(BaseModel):
     """Input parameters for a real options pricing job."""
 
     option_type: OptionType
-    current_value: Annotated[float, Field(gt=0.0, description="S₀ — current asset / project value")]
+    chainlink_price: ChainlinkPriceRequest | None = None
+    current_value: Annotated[
+        float,
+        Field(
+            gt=0.0,
+            allow_inf_nan=False,
+            description="S₀, or expected USD price used for oracle deviation checks",
+        ),
+    ]
     strike_or_cost: Annotated[float, Field(gt=0.0, description="K — strike price or investment cost")]
     time_to_expiry: Annotated[float, Field(gt=0.0, description="T in years")]
     volatility: Annotated[float, Field(gt=0.0, le=5.0, description="σ — annualised volatility")]
@@ -49,6 +59,15 @@ class OptionsJobRequest(BaseModel):
     num_uncertainty_qubits: int = Field(default=5, ge=3, le=8)
     epsilon: float = Field(default=0.01, gt=0.0, lt=0.5)
     alpha: float = Field(default=0.05, gt=0.0, lt=1.0)
+
+    @model_validator(mode="after")
+    def validate_oracle_option(self) -> OptionsJobRequest:
+        if self.chainlink_price is not None and self.option_type not in {
+            "european_call_short",
+            "european_call_long",
+        }:
+            raise ValueError("oracle prices currently support european calls only")
+        return self
 
 
 class OptionsSubmitResponse(BaseModel):
@@ -85,6 +104,7 @@ class OptionsAnalysisResult(BaseModel):
     job_id: str
     option_type: OptionType
     request: dict
+    provenance: dict | None = None
 
     # Pricing
     quantum_price: float

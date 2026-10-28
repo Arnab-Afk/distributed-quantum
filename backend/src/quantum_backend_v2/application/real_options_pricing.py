@@ -224,16 +224,11 @@ def _run_iqae_for_params(
 
     warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-    # Reset global seed so sequential IQAE calls in the same process don't share
-    # corrupted simulator state (critical for batch mode with multiple rows).
-    from qiskit_algorithms.utils import algorithm_globals
-
-    algorithm_globals.random_seed = 12345
-
-    from qiskit_algorithms import IterativeAmplitudeEstimation, EstimationProblem
-    from qiskit_finance.circuit.library import LogNormalDistribution
-    from qiskit.circuit.library import LinearAmplitudeFunctionGate
     from qiskit.circuit import QuantumCircuit
+    from qiskit.circuit.library import LinearAmplitudeFunctionGate
+    from qiskit.primitives import StatevectorSampler
+    from qiskit_algorithms import EstimationProblem, IterativeAmplitudeEstimation
+    from qiskit_finance.circuit.library import LogNormalDistribution
 
     # Risk-neutral drift: E[ln(S_T)] = ln(S) + (r - q - σ²/2)·T
     mu_ln = math.log(S) + (r - q - 0.5 * sigma ** 2) * T
@@ -297,7 +292,9 @@ def _run_iqae_for_params(
         post_processing=_post,
     )
 
-    iae = IterativeAmplitudeEstimation(epsilon_target=epsilon, alpha=alpha)
+    iae = IterativeAmplitudeEstimation(
+        epsilon_target=epsilon, alpha=alpha, sampler=StatevectorSampler(seed=12345)
+    )
     result = iae.estimate(problem)
 
     # Discount to present value

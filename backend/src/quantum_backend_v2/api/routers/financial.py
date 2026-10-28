@@ -13,16 +13,18 @@ from fastapi import (
     status,
 )
 
-from quantum_backend_v2.application.financial_portfolio import PortfolioOptimizationConfig
-from quantum_backend_v2.application.parity import FinancialJobService
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import not_found
 from quantum_backend_v2.api.models.financial import (
+    FinancialComparisonResponse,
     FinancialJobResponse,
     FinancialJobSummary,
-    FinancialComparisonResponse,
     FinancialSubmitResponse,
 )
+from quantum_backend_v2.application.financial_portfolio import PortfolioOptimizationConfig
+from quantum_backend_v2.application.parity import FinancialJobService
+from quantum_backend_v2.chains.prices import PriceUnavailableError
+from quantum_backend_v2.chains.rpc import RpcConfigurationError
 
 
 def build_financial_router(*, financial_job_service: FinancialJobService) -> APIRouter:
@@ -40,6 +42,9 @@ def build_financial_router(*, financial_job_service: FinancialJobService) -> API
         current_user: CurrentUser,
         file: UploadFile = File(...),
         problem_type: str = Form(default="portfolio_optimization"),
+        use_chainlink: bool = Form(default=False),
+        investment_usd: float | None = Form(default=None, gt=0, allow_inf_nan=False),
+        expected_eth_price: float | None = Form(default=None, gt=0, allow_inf_nan=False),
         budget: int | None = Form(default=None, ge=1),
         risk_aversion: float = Form(default=0.5, ge=0.0, le=10.0),
         max_assets_considered: int = Form(default=6, ge=2, le=8),
@@ -68,22 +73,40 @@ def build_financial_router(*, financial_job_service: FinancialJobService) -> API
                 detail="CSV file too large (max 50 MB)",
             )
 
-        record = await financial_job_service.submit(
-            filename=file.filename,
-            owner_user_id=current_user.user_id,
-            problem_type=problem_type,
-            config=PortfolioOptimizationConfig(
-                budget=budget,
-                risk_aversion=risk_aversion,
-                max_assets_considered=max_assets_considered,
-                qaoa_reps=qaoa_reps,
-                date_column=date_column,
-                ticker_column=ticker_column,
-                value_column=value_column,
-                value_mode=value_mode,
-                parameter_search_steps=parameter_search_steps,
-            ),
-        )
+        if use_chainlink and (investment_usd is None or expected_eth_price is None):
+            raise HTTPException(
+                status_code=422, detail="live valuation requires investment and expected ETH price"
+            )
+        valuation = None
+        if use_chainlink:
+            valuation = {
+                "current_value": expected_eth_price,
+                "investment_usd": investment_usd,
+                "chainlink_price": {"network": "ethereum-sepolia", "feed": "eth-usd"},
+            }
+        try:
+            record = await financial_job_service.submit(
+                filename=file.filename,
+                valuation=valuation,
+                csv_bytes=csv_bytes if use_chainlink else None,
+                owner_user_id=current_user.user_id,
+                problem_type=problem_type,
+                config=PortfolioOptimizationConfig(
+                    budget=budget,
+                    risk_aversion=risk_aversion,
+                    max_assets_considered=max_assets_considered,
+                    qaoa_reps=qaoa_reps,
+                    date_column=date_column,
+                    ticker_column=ticker_column,
+                    value_column=value_column,
+                    value_mode=value_mode,
+                    parameter_search_steps=parameter_search_steps,
+                ),
+            )
+        except (PriceUnavailableError, RpcConfigurationError):
+            raise HTTPException(status_code=503, detail="price feed is unavailable") from None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
         background_tasks.add_task(
             financial_job_service.process,
             job_id=record.id,
