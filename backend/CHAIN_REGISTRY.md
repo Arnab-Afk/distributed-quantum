@@ -170,7 +170,7 @@ Checked October 21, 2026:
   restriction concerns CDP token-balance queries; the existing service reads
   balances directly through Web3.
 
-## Validation and remaining work
+## Validation
 
 From `backend`, with project dependencies installed:
 
@@ -207,7 +207,19 @@ Circle test USDC. Do not substitute one of those addresses alone: pool/token
 compatibility and existing positions need a separate escrow review. No live
 Aave transaction or contract verification was performed for this migration.
 
-This is **Part of #2**, not its completion. Remaining slices must verify and enable
-additional wallet networks, use `verify_transaction` in payment and proposal
-confirmation, design network-aware wallet/payment persistence, and add a frontend
-selector. Existing payment recording and confirmation semantics remain unchanged.
+## Frontend
+
+`src/features/chains` in the frontend reads `/api/v1/chains` through `/api/chains`.
+Wallet, funding and storage-export screens resolve the wallet's stored `network`
+through `aliases` and build explorer links from the registry templates; none of
+them hard-code an explorer or network. The wallet transfer tab and the proposal
+funding dialog show a chain selector. Only the wallet's own network is selectable,
+and only when it has the operation's capability (`transfer_stablecoin`,
+`aave_supply`), because wallet and funding requests do not take a network yet.
+
+## Out of scope for #2
+
+Enabling a second wallet network, letting requests choose a network, and
+network-aware wallet/payment persistence wait until a second chain supports
+wallets. Confirming payouts with `verify_transaction` belongs to the payout work
+in #8. Existing payment recording and confirmation semantics remain unchanged.
