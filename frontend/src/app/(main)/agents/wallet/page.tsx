@@ -6,6 +6,7 @@ import { resolveEnsFresh } from "@/features/agentkit/hooks/use-ens";
 import { AddressOrEnsInput } from "@/features/agentkit/components/address-or-ens-input";
 import { EnsAddress } from "@/features/agentkit/components/ens-address";
 import { isHexAddress, looksLikeEnsName, truncateAddress } from "@/features/agentkit/lib/ens";
+import { ChainSelect, explorerUrl, findChain, useChains } from "@/features/chains";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,9 @@ export default function WalletPage() {
   const createWallet = useCreateWallet();
   const transfer = useTransferUSDC();
   const { data: txData } = useWalletTransactions();
+  const { data: chains } = useChains();
+  const chain = findChain(chains, wallet?.network);
+  const networkName = chain?.display_name ?? wallet?.network ?? "Unknown network";
 
   const [toAddress, setToAddress] = useState("");
   const [amount, setAmount] = useState("");
@@ -113,7 +117,7 @@ export default function WalletPage() {
   if (isLoading) {
     return (
       <div className="relative flex flex-col">
-        <PageHeader icon={Wallet} label="AgentKit" title="Wallet" description="Your Base Sepolia wallet." glow="emerald" />
+        <PageHeader icon={Wallet} label="AgentKit" title="Wallet" description="Your testnet wallet." glow="emerald" />
         <div className="p-6 space-y-6">
           <div className="grid grid-cols-3 gap-4">
             {[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 rounded-2xl bg-white/[0.04]" />)}
@@ -129,14 +133,14 @@ export default function WalletPage() {
         <div className="pointer-events-none absolute inset-x-6 top-0 overflow-hidden" style={{ height: "300px" }}>
           <div className="absolute h-[260px] w-[260px] rounded-full opacity-20 blur-[80px]" style={{ left: "10%", top: "-40px", background: "radial-gradient(circle, rgba(52,211,153,0.65) 0%, transparent 70%)" }} />
         </div>
-        <PageHeader icon={Wallet} label="AgentKit" title="Wallet" description="Your Base Sepolia wallet." glow="emerald" />
+        <PageHeader icon={Wallet} label="AgentKit" title="Wallet" description="Your testnet wallet." glow="emerald" />
         <div className="relative z-10 flex flex-col items-center gap-6 p-12">
           <div
             className="w-full max-w-sm rounded-2xl p-8 ring-1 ring-white/8 flex flex-col items-center gap-4 text-center"
             style={{ background: "rgba(255,255,255,0.04)", backdropFilter: "blur(12px)" }}
           >
             <Wallet className="h-10 w-10 text-emerald-400/60" />
-            <p className="text-sm text-white/50">No wallet yet. Create one to get started on Base Sepolia.</p>
+            <p className="text-sm text-white/50">No wallet yet. Create one to get started.</p>
             <Button
               onClick={() => createWallet.mutate()}
               disabled={createWallet.isPending}
@@ -166,7 +170,7 @@ export default function WalletPage() {
         icon={Wallet}
         label="AgentKit"
         title="Wallet"
-        description="Your Base Sepolia wallet — balances and transfers."
+        description={`Your ${networkName} wallet — balances and transfers.`}
         glow="emerald"
       />
 
@@ -176,7 +180,7 @@ export default function WalletPage() {
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <StatCard label="USDC Balance" value={wallet.usdc ?? (wallet as Record<string, string>).usdc ?? "0.00"} accent="text-emerald-400" />
           <StatCard label="ETH Balance" value={wallet.eth ?? (wallet as Record<string, string>).eth ?? "0.000"} />
-          <StatCard label="Network" value={wallet.network ?? (wallet as Record<string, string>).network ?? "base-sepolia"} />
+          <StatCard label="Network" value={networkName} />
         </div>
 
         {/* Tabs */}
@@ -207,7 +211,7 @@ export default function WalletPage() {
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-xs text-white/40 uppercase tracking-wider">Network</span>
-                <span className="text-sm text-white/80">{wallet.network ?? (wallet as Record<string, string>).network ?? "base-sepolia"}</span>
+                <span className="text-sm text-white/80">{networkName}</span>
               </div>
             </div>
           </TabsContent>
@@ -220,15 +224,15 @@ export default function WalletPage() {
               {transactions.length === 0 ? (
                 <div className="py-12 flex flex-col items-center gap-3 text-center">
                   <p className="text-sm text-white/30">No platform transactions yet</p>
-                  {wallet?.address && (
+                  {wallet?.address && chain && (
                     <a
-                      href={`https://sepolia.basescan.org/address/${wallet.address}`}
+                      href={explorerUrl(chain, "address", wallet.address)}
                       target="_blank"
                       rel="noreferrer"
                       className="flex items-center gap-1.5 text-xs text-cyan-400 hover:text-cyan-300"
                     >
                       <ExternalLink className="h-3 w-3" />
-                      View full on-chain history on Basescan
+                      View full on-chain history on the explorer
                     </a>
                   )}
                 </div>
@@ -276,6 +280,10 @@ export default function WalletPage() {
               className="rounded-2xl p-5 ring-1 ring-white/8 space-y-4"
               style={{ background: "rgba(255,255,255,0.04)", backdropFilter: "blur(12px)" }}
             >
+              <div className="space-y-2">
+                <label htmlFor="transfer-network" className="text-xs uppercase tracking-wider text-white/40">Network</label>
+                <ChainSelect id="transfer-network" registry={chains} active={chain} capability="transfer_stablecoin" className="w-full" />
+              </div>
               <div className="space-y-2">
                 <label className="text-xs uppercase tracking-wider text-white/40">To address or ENS name</label>
                 <AddressOrEnsInput
@@ -359,7 +367,7 @@ export default function WalletPage() {
                 <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400">
                   Transfer submitted!{" "}
                   <a href={txResult.basescan_url} target="_blank" rel="noreferrer" className="underline">
-                    View on Basescan
+                    View on explorer
                   </a>
                 </div>
               )}
