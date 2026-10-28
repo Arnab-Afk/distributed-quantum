@@ -25,3 +25,6 @@ export const AGENT_QUERY_KEYS = {
   messages: (id: string) => ["agent", "messages", id] as const,
   budget: () => ["agent", "budget"] as const,
 } as const;
+
+/** Storage exports are paid through Toju, which only settles on Base Sepolia. */
+export const STORAGE_PAYMENT_CHAIN_ID = "eip155:84532";
