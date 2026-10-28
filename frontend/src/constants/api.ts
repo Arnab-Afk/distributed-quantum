@@ -4,6 +4,7 @@ export const API = {
     CHECK_EMAIL: "/api/auth/check-email",
     STRIPE_WEBHOOK: "/api/auth/stripe/webhook",
   },
+  CHAINS: "/api/chains",
   BILLING: {
     CREDITS: "/api/billing/credits",
     CREDITS_CHECKOUT: "/api/billing/credits/checkout",

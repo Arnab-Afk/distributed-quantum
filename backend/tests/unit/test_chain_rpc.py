@@ -11,7 +11,7 @@ from quantum_backend_v2.chains.rpc import RpcConfigurationError, resolve_rpc_url
     "network,url",
     [
         ("base-sepolia", "https://sepolia.base.org"),
-        ("ethereum-sepolia", "https://sepolia.drpc.org"),
+        ("ethereum-sepolia", "https://ethereum-sepolia-rpc.publicnode.com"),
     ],
 )
 def test_public_rpc_is_the_default(network, url):

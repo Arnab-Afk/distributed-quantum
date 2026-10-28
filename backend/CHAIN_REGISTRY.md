@@ -52,9 +52,9 @@ wallet indexes are unchanged; this is not yet multi-network wallet persistence.
 `rpc_env_var` stores an environment-variable **name**, never a URL or key.
 `public_rpc_url` is an optional keyless fallback: HTTPS only, with no credentials,
 query string or fragment. `chains.rpc.resolve_rpc_url()` uses the variable when it
-is set and the public endpoint otherwise. The packaged fallbacks are the endpoints
-AgentKit used before the registry (`https://sepolia.base.org`,
-`https://sepolia.drpc.org`), so behaviour is unchanged without an override.
+is set and the public endpoint otherwise. The packaged fallbacks are
+`https://sepolia.base.org`, the endpoint AgentKit used before the registry, and
+`https://ethereum-sepolia-rpc.publicnode.com`, the endpoint the ENS service uses.
 
 Overrides must be HTTPS, or plain HTTP to `localhost`/`127.0.0.1`/`::1` for a local
 node such as anvil. A resolved URL may carry an API key. It is never stored in the
@@ -172,6 +172,7 @@ The response has `default_chain_id` and an ordered `chains` list. Each enabled
 entry contains exactly:
 
 - `chain_id`, `family`, `display_name`, `testnet`
+- `aliases`: legacy network names, such as the `network` stored on wallets
 - `native_token`: `symbol`, `decimals`
 - `stablecoin`: `symbol`, `decimals`, `address`, or `null`
 - `explorers`: `transaction`, `address`, `block` templates
@@ -224,7 +225,7 @@ Checked October 21, 2026:
   restriction concerns CDP token-balance queries; the existing service reads
   balances directly through Web3.
 
-## Validation and remaining work
+## Validation
 
 From `backend`, with project dependencies installed:
 
@@ -269,7 +270,19 @@ Circle test USDC. Do not substitute one of those addresses alone: pool/token
 compatibility and existing positions need a separate escrow review. No live
 Aave transaction or contract verification was performed for this migration.
 
-This is **Part of #2**, not its completion. Remaining slices must verify and enable
-additional wallet networks, use `verify_transaction` in payment and proposal
-confirmation, design network-aware wallet/payment persistence, and add a frontend
-selector. Existing payment recording and confirmation semantics remain unchanged.
+## Frontend
+
+`src/features/chains` in the frontend reads `/api/v1/chains` through `/api/chains`.
+Wallet, funding and storage-export screens resolve the wallet's stored `network`
+through `aliases` and build explorer links from the registry templates; none of
+them hard-code an explorer or network. The wallet transfer tab and the proposal
+funding dialog show a chain selector. Only the wallet's own network is selectable,
+and only when it has the operation's capability (`transfer_stablecoin`,
+`aave_supply`), because wallet and funding requests do not take a network yet.
+
+## Out of scope for #2
+
+Enabling a second wallet network, letting requests choose a network, and
+network-aware wallet/payment persistence wait until a second chain supports
+wallets. Confirming payouts with `verify_transaction` belongs to the payout work
+in #8. Existing payment recording and confirmation semantics remain unchanged.

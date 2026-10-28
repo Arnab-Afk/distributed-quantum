@@ -5,6 +5,7 @@ export const BACKEND = {
   BASE_URL,
   HEALTH: `${BASE_URL}/api/v1/health`,
   READY: `${BASE_URL}/api/v1/ready`,
+  CHAINS: `${BASE_URL}/api/v1/chains`,
   BOOTSTRAP: {
     LIBP2P: `${BASE_URL}/api/v1/bootstrap/libp2p`,
     RUNTIME: `${BASE_URL}/api/v1/bootstrap/libp2p/runtime`,
