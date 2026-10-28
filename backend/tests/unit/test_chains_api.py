@@ -35,6 +35,7 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "chain_id",
             "family",
             "display_name",
+            "aliases",
             "testnet",
             "native_token",
             "stablecoin",
@@ -42,6 +43,11 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "capabilities",
         }
         assert set(chain["native_token"]) == {"symbol", "decimals"}
+        assert chain["aliases"] == {
+            "eip155:84532": ["base-sepolia"],
+            "eip155:11155111": ["ethereum-sepolia"],
+            "eip155:46630": ["robinhood-testnet"],
+        }[chain["chain_id"]]
         if chain["chain_id"] != "eip155:46630":
             assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
         if chain["chain_id"] == "eip155:84532":
