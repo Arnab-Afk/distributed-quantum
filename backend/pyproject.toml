@@ -89,7 +89,10 @@ minversion = "8.0"
 addopts = "-ra"
 testpaths = ["tests"]
 pythonpath = ["src"]
-markers = ["live_kubo: opt-in integration against a disposable private Kubo node"]
+markers = [
+  "live_kubo: opt-in integration against a disposable private Kubo node",
+  "live_robinhood: opt-in read-only Robinhood Chain mainnet price-feed check",
+]
 
 [tool.ruff]
 line-length = 100

@@ -25,7 +25,11 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
     body = response.json()
     assert set(body) == {"default_chain_id", "chains"}
     assert body["default_chain_id"] == "eip155:84532"
-    assert [c["chain_id"] for c in body["chains"]] == ["eip155:84532", "eip155:11155111"]
+    assert [c["chain_id"] for c in body["chains"]] == [
+        "eip155:84532",
+        "eip155:11155111",
+        "eip155:46630",
+    ]
     for chain in body["chains"]:
         assert set(chain) == {
             "chain_id",
@@ -38,7 +42,8 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "capabilities",
         }
         assert set(chain["native_token"]) == {"symbol", "decimals"}
-        assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
+        if chain["chain_id"] != "eip155:46630":
+            assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
         if chain["chain_id"] == "eip155:84532":
             assert set(chain["capabilities"]) == {
                 "explorer_url",
@@ -54,6 +59,7 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             assert chain["capabilities"] == ["explorer_url", "verify_transaction", "get_price"]
         else:
             assert chain["capabilities"] == ["explorer_url", "verify_transaction"]
+            assert chain["stablecoin"] is None
     for private in (
         "TOP_SECRET",
         "rpc_env_var",
@@ -73,7 +79,7 @@ def test_disabled_networks_are_not_advertised():
     data["chains"][1]["enabled"] = False
     with TestClient(make_app(ChainRegistry.model_validate(data))) as client:
         response = client.get("/api/v1/chains")
-    assert len(response.json()["chains"]) == 1
+    assert [c["chain_id"] for c in response.json()["chains"]] == ["eip155:84532", "eip155:46630"]
 
 
 def test_registries_are_scoped_to_each_app():
