@@ -121,6 +121,7 @@ The response has `default_chain_id` and an ordered `chains` list. Each enabled
 entry contains exactly:
 
 - `chain_id`, `family`, `display_name`, `testnet`
+- `aliases`: legacy network names, such as the `network` stored on wallets
 - `native_token`: `symbol`, `decimals`
 - `stablecoin`: `symbol`, `decimals`, `address`, or `null`
 - `explorers`: `transaction`, `address`, `block` templates
