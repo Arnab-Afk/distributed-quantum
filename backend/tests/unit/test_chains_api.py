@@ -25,7 +25,11 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
     body = response.json()
     assert set(body) == {"default_chain_id", "chains"}
     assert body["default_chain_id"] == "eip155:84532"
-    assert [c["chain_id"] for c in body["chains"]] == ["eip155:84532", "eip155:11155111"]
+    assert [c["chain_id"] for c in body["chains"]] == [
+        "eip155:84532",
+        "eip155:11155111",
+        "starknet:SN_SEPOLIA",
+    ]
     for chain in body["chains"]:
         assert set(chain) == {
             "chain_id",
@@ -39,10 +43,14 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "capabilities",
         }
         assert set(chain["native_token"]) == {"symbol", "decimals"}
-        assert chain["aliases"] == (
-            ["base-sepolia"] if chain["chain_id"] == "eip155:84532" else ["ethereum-sepolia"]
+        if chain["chain_id"] == "starknet:SN_SEPOLIA":
+            assert chain["aliases"] == ["starknet-sepolia"]
+            assert chain["stablecoin"] is None
+        else:
+            assert chain["aliases"] == (
+        ["base-sepolia"] if chain["chain_id"] == "eip155:84532" else ["ethereum-sepolia"]
         )
-        assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
+            assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
         if chain["chain_id"] == "eip155:84532":
             assert set(chain["capabilities"]) == {
                 "explorer_url",
@@ -64,6 +72,8 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
         "public_rpc_url",
         "sepolia.base.org",
         "QB2_BASE_SEPOLIA_RPC_URL",
+        "QB2_STARKNET_SEPOLIA_RPC_URL",
+        "starknet-sepolia.public.blastapi.io",
         "provider_aliases",
         "aave_pool_address",
     ):
@@ -77,7 +87,7 @@ def test_disabled_networks_are_not_advertised():
     data["chains"][1]["enabled"] = False
     with TestClient(make_app(ChainRegistry.model_validate(data))) as client:
         response = client.get("/api/v1/chains")
-    assert len(response.json()["chains"]) == 1
+    assert len(response.json()["chains"]) == 2
 
 
 def test_registries_are_scoped_to_each_app():
