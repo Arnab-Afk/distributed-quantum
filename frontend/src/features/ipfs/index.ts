@@ -6,6 +6,13 @@ export { useCidResolve } from "./hooks/use-cid-resolve";
 export { useLocalVaultIndex } from "./hooks/use-local-vault-index";
 export { getTrustlessGateways, DEFAULT_TRUSTLESS_GATEWAYS } from "./lib/gateways";
 export { resolveVaultCid, parseCidString } from "./lib/cid-resolve";
+export {
+  buildRunRecord,
+  linkifyRunForDagJson,
+  materializeRunRecord,
+  normalizeCircuitCid,
+} from "./lib/run-record";
+export { resolveRunCircuit, getVaultJson } from "./lib/run-circuit-link";
 
 export type {
   CircuitIPFSRecord,

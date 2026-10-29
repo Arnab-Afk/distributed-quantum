@@ -13,12 +13,14 @@
     "test:billing": "bun test tests/billing-webhook.test.mjs",
     "test:vault": "bun test tests/vault-pinning.test.mjs",
     "test:vault-cid": "bun test tests/vault-cid-resolve.test.mjs",
+    "test:vault-run-link": "bun test tests/vault-run-circuit-link.test.mjs",
     "analyze": "ANALYZE=true bun run build"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
     "@better-auth/stripe": "~1.6.11",
     "@helia/block-brokers": "^5.2.4",
+    "@helia/dag-json": "^6.0.6",
     "@helia/json": "^5.1.1",
     "@helia/routers": "^5.1.1",
     "@helia/unixfs": "^8.0.9",
@@ -32,6 +34,7 @@
     "@x402/next": "2.23.0",
     "@xyflow/react": "^12.10.2",
     "better-auth": "^1.6.9",
+    "blockstore-core": "^6.1.3",
     "blockstore-idb": "^3.0.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
