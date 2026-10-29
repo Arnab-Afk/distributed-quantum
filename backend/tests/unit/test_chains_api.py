@@ -55,7 +55,12 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
                 "faucet_instructions",
             }
         elif chain["chain_id"] == "eip155:11155111":
-            assert chain["capabilities"] == ["explorer_url", "verify_transaction", "get_price"]
+            assert chain["capabilities"] == [
+                "explorer_url",
+                "verify_transaction",
+                "get_price",
+                "anchor_root",
+            ]
         else:
             assert chain["capabilities"] == ["explorer_url", "verify_transaction"]
     for private in (

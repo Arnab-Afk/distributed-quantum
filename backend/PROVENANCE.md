@@ -226,6 +226,46 @@ index, batch size, siblings (`proof`), hash profile and optional explorer `url`.
 formats are chain-specific and must be checked by adapters, not this schema.
 No anchor key, RPC credential or wallet secret belongs in a bundle.
 
+### Anchor transactions (#21)
+
+An anchor is a **zero-value transaction from the anchor account to itself** on a
+registry network with the `anchor_root` capability (testnets only; Ethereum Sepolia
+in the packaged registry). Its 45-byte calldata is:
+
+| Bytes | Content |
+| --- | --- |
+| 8 | ASCII `QMSHANC1` |
+| 32 | SHA-256 Merkle root (`qmesh-provenance-sha256-v1`) |
+| 4 | Batch size, big-endian unsigned |
+| 1 | Hash profile: `0x01` = `qmesh-provenance-sha256-v1` |
+
+Putting the batch size in the payload authenticates it together with the root, so a
+proof cannot claim a different `leaf_count` for the same transaction. No contract is
+deployed; a batch costs 21,780-22,740 gas on any EVM chain (measured on a local node).
+
+`chains.anchor.EvmAnchorAdapter.check_anchor` reports `confirmed` only when the
+transaction succeeded, came from and went to the configured anchor account, moved no
+value, carries exactly the expected payload and is at or below the `finalized` block.
+Anything else is `pending`, `not_found`, `failed` or `mismatch`.
+
+`application.anchoring.RegistryAnchorAdapter` implements `AnchorAdapter` for the verify
+endpoint. Set `QB2_ANCHOR_NETWORK` (alias or CAIP-2 ID) and the public
+`QB2_ANCHOR_SENDER` address to enable it; the RPC is the network's registry variable or
+public endpoint. A confirmed match passes; a mismatch or failed transaction fails; a
+pending, missing or unreachable transaction is `unavailable`, because a missing
+transaction cannot be told apart from an RPC node that pruned old history. An unknown,
+disabled or non-anchoring network stops startup.
+
+Anyone can check a downloaded bundle without a key or database:
+
+```bash
+cd backend
+uv run --frozen python scripts/verify_anchor.py bundle.json --sender 0xANCHOR_ACCOUNT
+```
+
+It recomputes the bundle commitment (and compares any recorded `bundle_hash`), checks
+each Merkle proof, then checks the transaction as above. It exits 0 only if all pass.
+
 ## Compatibility and checks
 
 New bundle fields default to null or empty tuples, so old bundles still load.

@@ -150,3 +150,21 @@ def test_application_closes_scoped_service_clients(application_factory, bedrock_
         service.mongo_client.close.assert_called_once_with()
         if getattr(service, "bedrock", None) is not None:
             service.bedrock.close.assert_called_once_with()
+
+
+def test_anchor_settings_wire_a_read_only_verifier(application_factory):
+    create_application, _, _ = application_factory
+    bootstrap = sys.modules["quantum_backend_v2.bootstrap.application"]
+    sender = "0x" + "a1" * 20
+    with patch.object(bootstrap, "create_app", Mock()) as create_app:
+        create_application(
+            env={"QB2_ANCHOR_NETWORK": "ethereum-sepolia", "QB2_ANCHOR_SENDER": sender}
+        )
+        anchored = create_app.call_args.kwargs["provenance_service"]
+        create_application(env={})
+        default = create_app.call_args.kwargs["provenance_service"]
+    assert list(anchored._anchor_adapters) == ["eip155:11155111"]
+    assert default is None
+    # A network without anchoring support fails startup rather than skipping checks.
+    with pytest.raises(ValueError, match="does not support provenance anchoring"):
+        create_application(env={"QB2_ANCHOR_NETWORK": "base-sepolia", "QB2_ANCHOR_SENDER": sender})

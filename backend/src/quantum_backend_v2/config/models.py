@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 def _default_peer_log_directory() -> Path:
@@ -114,6 +114,23 @@ class KuboSettings(BaseModel):
     max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
 
 
+class AnchorSettings(BaseModel):
+    """Provenance anchoring (#21); off unless a registry network is configured."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    # Registry alias or CAIP-2 ID of an entry with the anchor_root capability.
+    network: str | None = Field(default=None, min_length=1)
+    # Public anchor account; verifiers check transactions come from it.
+    sender: str | None = Field(default=None, pattern=r"^0x[0-9a-fA-F]{40}$")
+
+    @model_validator(mode="after")
+    def _sender_with_network(self) -> AnchorSettings:
+        if self.network is not None and self.sender is None:
+            raise ValueError("QB2_ANCHOR_SENDER is required with QB2_ANCHOR_NETWORK")
+        return self
+
+
 class GatewaySettings(BaseModel):
     """Bounded, read-only access to an operator-configured IPFS gateway."""
 
@@ -186,6 +203,7 @@ class AppSettings(BaseModel):
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
     kubo: KuboSettings = Field(default_factory=KuboSettings)
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
+    anchor: AnchorSettings = Field(default_factory=AnchorSettings)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AppSettings:
@@ -219,6 +237,10 @@ class AppSettings(BaseModel):
                     "timeout_seconds": env.get("IPFS_GATEWAY_TIMEOUT_SECONDS", "30"),
                     "max_response_bytes": env.get("IPFS_GATEWAY_MAX_RESPONSE_BYTES", "4194304"),
                 }
+            ),
+            anchor=AnchorSettings(
+                network=_optional(env.get("QB2_ANCHOR_NETWORK")),
+                sender=_optional(env.get("QB2_ANCHOR_SENDER")),
             ),
             logging=LoggingSettings(
                 level=env.get("QB2_LOG_LEVEL", "INFO"),
