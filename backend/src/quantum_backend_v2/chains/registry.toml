@@ -10,9 +10,10 @@ testnet = true
 enabled = true
 aliases = ["base-sepolia"]
 rpc_env_var = "QB2_BASE_SEPOLIA_RPC_URL"
+public_rpc_url = "https://sepolia.base.org"
 capabilities = [
   "explorer_url", "create_wallet", "get_balance", "transfer_stablecoin",
-  "aave_supply", "aave_withdraw", "faucet_instructions",
+  "verify_transaction", "aave_supply", "aave_withdraw", "faucet_instructions",
 ]
 # Preserve the legacy escrow configuration; deployment verification is separate.
 aave_pool_address = "0x07eA79F68B2B3df564D0A34F8e19D9B1e339814b"
@@ -43,7 +44,8 @@ testnet = true
 enabled = true
 aliases = ["ethereum-sepolia"]
 rpc_env_var = "QB2_ETHEREUM_SEPOLIA_RPC_URL"
-capabilities = ["explorer_url"]
+public_rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
+capabilities = ["explorer_url", "verify_transaction", "get_price"]
 
 [chains.provider_aliases]
 agentkit = "ethereum-sepolia"
@@ -62,3 +64,9 @@ decimals = 18
 symbol = "USDC"
 decimals = 6
 address = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
+
+# Chainlink's Sepolia ETH/USD proxy; limits below are application policy.
+[chains.price_feeds.eth-usd]
+address = "0x694AA1769357215DE4FAC081bf1f309aDC325306"
+max_age_seconds = 3600
+max_deviation_bps = 2000

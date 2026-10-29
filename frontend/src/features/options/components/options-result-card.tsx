@@ -1,5 +1,6 @@
 "use client";
-import { TrendingUp, Cpu, Zap, Settings, AlertTriangle, Database } from "lucide-react";
+import { OracleEvidence } from "@/shared/components/oracle-evidence";
+import { TrendingUp, Zap, Settings, AlertTriangle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
@@ -117,7 +118,7 @@ export function OptionsResultCard({ job, className }: OptionsResultCardProps) {
   }));
 
   // ── Request parameters ────────────────────────────────────────────────────────
-  const SKIP_KEYS = new Set(["option_type"]);
+  const SKIP_KEYS = new Set(["option_type", "chainlink_price", "price_observation"]);
   const paramRows: ParamRow[] = Object.entries(r.request)
     .filter(([k, v]) => !SKIP_KEYS.has(k) && v !== null && v !== undefined)
     .map(([k, v]) => ({
@@ -127,6 +128,7 @@ export function OptionsResultCard({ job, className }: OptionsResultCardProps) {
 
   return (
     <div className={cn("flex flex-col gap-4", className)}>
+      <OracleEvidence provenance={r.provenance} />
       <JobMetaStrip
         jobId={job.jobId}
         status={job.status}

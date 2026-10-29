@@ -27,6 +27,7 @@ class SessionMessageIn(BaseModel):
     role: str = Field(description="user or agent")
     content: str = Field(description="Message text")
     rich_content: dict | None = Field(default=None, description="Optional rich content payload")
+    attestation: dict | None = Field(default=None, description="Optional private inference attestation summary")
 
 
 class SessionAppendRequest(BaseModel):
@@ -164,9 +165,11 @@ async def append_session_message(
             error=ErrorCode.FORBIDDEN,
             message="Not your session",
         )
-    msg = {"role": body.message.role, "content": body.message.content}
+    msg: dict = {"role": body.message.role, "content": body.message.content}
     if body.message.rich_content:
         msg["richContent"] = body.message.rich_content
+    if body.message.attestation:
+        msg["attestation"] = body.message.attestation
     doc.messages.append(msg)
     doc.updated_at = datetime.now(timezone.utc)
     await doc.save()

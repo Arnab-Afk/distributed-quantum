@@ -4,7 +4,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAgentSession } from "../hooks/use-agent-session";
 import { useAgentStream } from "../hooks/use-agent-stream";
 import { useAgentStore } from "../stores/agent-store";
-import { MessageItem } from "./message-item";
+import { AttestationBadge, MessageItem } from "./message-item";
 import { ApprovalCard } from "./approval-card";
 import { ChatInput } from "./chat-input";
 import { useEffect, useRef } from "react";
@@ -79,3 +79,6 @@ export function ConversationPanel({ sessionId }: ConversationPanelProps) {
     </div>
   );
 }
+
+export { AttestationBadge };
+

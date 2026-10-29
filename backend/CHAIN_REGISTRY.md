@@ -30,10 +30,15 @@ settings; unset uses package data. Relative paths use the working directory.
 `NETWORK` selects the wallet network by alias or canonical ID. When unset, the
 registry default applies; the packaged default remains Base Sepolia. Empty or
 unknown values fail startup. Wallet endpoints use an application-scoped service
-with the same immutable registry as the public chain endpoint. Standalone
-`AgentKitService` callers load these settings too, or accept an injected registry
-and explicit network. Injected registries use their own default, without reading
-process-wide network selection.
+with the same immutable registry as the public chain endpoint. Marketplace,
+proposal, and AI agent API services share this wallet service, including proposal
+broadcasts, agent wallet creation, autonomous funding, and escrow release. These
+services are initialized lazily per application; their MongoDB clients and the proposal
+service’s Bedrock client close on application shutdown. Standalone proposal and
+agent callers can inject a wallet service; otherwise each lazily creates and
+reuses its own service. Standalone `AgentKitService` callers load these settings
+too, or accept an injected registry and explicit network. Injected registries use
+their own default, without reading process-wide network selection.
 
 Mainnet entries must have `enabled = false`. Disabled entries cannot be resolved
 for operations and are omitted from the public list. Existing wallet records must
@@ -45,8 +50,16 @@ wallet indexes are unchanged; this is not yet multi-network wallet persistence.
 ## Credentials and operation capabilities
 
 `rpc_env_var` stores an environment-variable **name**, never a URL or key.
-`QB2_BASE_SEPOLIA_RPC_URL` and `QB2_ETHEREUM_SEPOLIA_RPC_URL` are documented in
-`.env.example` for future adapters. Neither is required or resolved in this slice.
+`public_rpc_url` is an optional keyless fallback: HTTPS only, with no credentials,
+query string or fragment. `chains.rpc.resolve_rpc_url()` uses the variable when it
+is set and the public endpoint otherwise. The packaged fallbacks are
+`https://sepolia.base.org`, the endpoint AgentKit used before the registry, and
+`https://ethereum-sepolia-rpc.publicnode.com`, the endpoint the ENS service uses.
+
+Overrides must be HTTPS, or plain HTTP to `localhost`/`127.0.0.1`/`::1` for a local
+node such as anvil. A resolved URL may carry an API key. It is never stored in the
+registry, returned by `GET /api/v1/chains` or logged: RPC failures are logged by
+exception type only, and configuration errors name the variable, not its value.
 
 Base Sepolia declares `explorer_url`, `create_wallet`, `get_balance`,
 `transfer_stablecoin`, `aave_supply`, `aave_withdraw`, and `faucet_instructions`.
@@ -56,15 +69,40 @@ queries. Aave operations require an explicit pool address. Wallet capabilities
 are currently restricted to the existing Base Sepolia provider mapping; adding
 another network requires provider validation and implementation coverage.
 
-Ethereum Sepolia declares only `explorer_url`. Listing its provider aliases does
-not enable wallet operations. Unimplemented capabilities such as
-`verify_transaction` still fail validation. The explorer adapter and the legacy
+Ethereum Sepolia declares `explorer_url` and `verify_transaction`. Listing its
+provider aliases does not enable wallet operations. `verify_transaction` is
+read-only and needs no wallet provider, so it is the one RPC capability allowed
+outside the Base Sepolia wallet mapping. The explorer adapter and the legacy
 `utils.basescan` wrappers perform no network I/O. They validate reference shape,
 not checksums, existence, ownership, or transaction success.
 
 The faucet endpoint returns manual instructions; it does not send funds. Balance
-queries use Web3, not the CDP token-balance endpoint. RPC environment-variable
-references remain reserved; this migration retains AgentKit's public RPC defaults.
+queries use Web3 through the registry RPC, not the CDP token-balance endpoint.
+
+## Adapters
+
+| Adapter | Operations | Network I/O |
+| --- | --- | --- |
+| `EvmExplorerAdapter` | `explorer_url` | None |
+| `EvmRpcAdapter` | `get_balance`, `verify_transaction` | Read-only JSON-RPC through an injected `Web3` |
+
+`EvmRpcAdapter` checks the chain's capabilities and validates every address and
+hash before any RPC call. Before its first query it compares `eth_chainId` with the
+registry entry and raises `ChainMismatchError` on a mismatch, so a mistyped
+override cannot read another network.
+
+- `get_balance(address)` returns the native and stablecoin balances, scaled by the
+  registry's decimals.
+- `verify_transaction(tx_hash, expected_transfer=None, min_confirmations=1)`
+  returns `not_found`, `pending` (in the mempool, or mined with too few
+  confirmations), `failed` (reverted) or `confirmed`, with the block and
+  confirmation count. With an `expected_transfer`, it also reports whether the
+  receipt has a Transfer log from the registry's stablecoin with that exact sender,
+  recipient and amount. `verified` is true only for a confirmed transaction whose
+  expected transfer, if any, matched.
+
+Transfers and Aave calls stay in `AgentKitService`: they are signed by the CDP
+wallet provider, which uses its own RPC client. No adapter holds keys.
 
 Explorer templates deliberately support only HTTPS URLs of the form
 `https://HOST/tx/{tx_hash}`, `/address/{address}`, and `/block/{block_number}`.
@@ -83,6 +121,7 @@ The response has `default_chain_id` and an ordered `chains` list. Each enabled
 entry contains exactly:
 
 - `chain_id`, `family`, `display_name`, `testnet`
+- `aliases`: legacy network names, such as the `network` stored on wallets
 - `native_token`: `symbol`, `decimals`
 - `stablecoin`: `symbol`, `decimals`, `address`, or `null`
 - `explorers`: `transaction`, `address`, `block` templates
@@ -99,7 +138,8 @@ responses and OpenAPI.
    `eip155:NUMBER` without leading zeros and unique aliases. Unknown provider
    mappings and stablecoin metadata can be omitted.
 3. Set `testnet = true`, choose `enabled`, and declare only implemented capabilities.
-4. Document its RPC environment-variable reference in `.env.example`.
+4. Set `rpc_env_var`, add a keyless `public_rpc_url` if one exists, and document
+   the variable in `.env.example`.
 5. Add metadata expectations and run the focused tests below.
 
 ## Verified sources and provider limits
@@ -130,12 +170,13 @@ Checked October 21, 2026:
   restriction concerns CDP token-balance queries; the existing service reads
   balances directly through Web3.
 
-## Validation and remaining work
+## Validation
 
 From `backend`, with project dependencies installed:
 
 ```bash
 uv run --no-sync pytest tests/unit/test_chain_registry.py tests/unit/test_chain_adapter.py tests/unit/test_chains_api.py -q
+uv run --no-sync pytest tests/unit/test_chain_rpc.py tests/unit/test_chain_rpc_adapter.py -q
 uv run --no-sync pytest tests/unit/test_chains_bootstrap.py tests/unit/test_wallet_registry_service.py tests/unit/test_basescan_registry.py -q
 uv run --no-sync ruff check src/quantum_backend_v2/chains src/quantum_backend_v2/api/routers/chains.py tests/unit/test_chain*.py
 uv run --no-sync mypy --follow-imports=silent src/quantum_backend_v2/chains src/quantum_backend_v2/api/routers/chains.py
@@ -144,8 +185,9 @@ uv run --no-sync mypy --follow-imports=silent src/quantum_backend_v2/chains src/
 The first command runs isolated registry/API tests. Bootstrap tests exercise the
 real app factory and lifespan with persistence, recovery, peers, and legacy external
 service clients mocked;
-they require the backend's other import-time dependencies. Neither group uses a
-database, blockchain, or wallet. They do not verify live peer or wallet integration.
+they require the backend's other import-time dependencies. None of these use a
+database, blockchain, or wallet: the RPC adapter tests answer JSON-RPC from a
+scripted in-process provider. They do not verify live peer or wallet integration.
 
 The dependency fix pins the published libp2p 0.6.0 release and removes the moving
 archive URL; see [Local development](README.md#local-development). The bootstrap
@@ -165,8 +207,19 @@ Circle test USDC. Do not substitute one of those addresses alone: pool/token
 compatibility and existing positions need a separate escrow review. No live
 Aave transaction or contract verification was performed for this migration.
 
-This is **Part of #2**, not its completion. Remaining slices must verify and enable
-additional wallet networks, add transaction verification, design network-aware
-wallet/payment persistence, propagate application-scoped services through the
-remaining proposal/agent orchestration, and add a frontend selector. Existing
-payment recording and confirmation semantics remain unchanged.
+## Frontend
+
+`src/features/chains` in the frontend reads `/api/v1/chains` through `/api/chains`.
+Wallet, funding and storage-export screens resolve the wallet's stored `network`
+through `aliases` and build explorer links from the registry templates; none of
+them hard-code an explorer or network. The wallet transfer tab and the proposal
+funding dialog show a chain selector. Only the wallet's own network is selectable,
+and only when it has the operation's capability (`transfer_stablecoin`,
+`aave_supply`), because wallet and funding requests do not take a network yet.
+
+## Out of scope for #2
+
+Enabling a second wallet network, letting requests choose a network, and
+network-aware wallet/payment persistence wait until a second chain supports
+wallets. Confirming payouts with `verify_transaction` belongs to the payout work
+in #8. Existing payment recording and confirmation semantics remain unchanged.

@@ -1,7 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { useProposals, useProposalDetail, useFundProposal, ProposalCreateDialog } from "@/features/agentkit";
+import {
+  useProposals,
+  useProposalDetail,
+  useFundProposal,
+  useWallet,
+  ProposalCreateDialog,
+  EnsAddress,
+} from "@/features/agentkit";
+import { ChainSelect, findChain, useChains } from "@/features/chains";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -113,6 +121,9 @@ export default function ProposalsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [fundAmount, setFundAmount] = useState("");
   const fund = useFundProposal();
+  const { data: wallet } = useWallet();
+  const { data: chains } = useChains();
+  const fundingChain = findChain(chains, wallet?.network);
 
   const handleFund = () => {
     if (!selectedId || !fundAmount) return;
@@ -222,8 +233,42 @@ export default function ProposalsPage() {
                   <DetailField label="Title"       value={selected.title} />
                   <DetailField label="Proposal ID" value={selected.proposal_id} mono />
                   <DetailField label="Researcher"  value={selected.researcher_id} mono />
+                  {selected.researcher_wallet ? (
+                    <div className="flex items-start justify-between gap-3 py-1.5">
+                      <span className="text-[11px] uppercase tracking-wider text-white/35 shrink-0">
+                        Researcher wallet
+                      </span>
+                      <EnsAddress
+                        address={selected.researcher_wallet}
+                        className="text-sm text-white/80 text-right"
+                      />
+                    </div>
+                  ) : null}
                   <DetailField label="Status"      value={selected.status} badge={statusBadge(selected.status)} />
                 </ModalSection>
+
+                {(selected.funders?.length ?? 0) > 0 ? (
+                  <ModalSection title="Funders" icon={User}>
+                    <div className="space-y-2">
+                      {selected.funders!.map((funder, idx) => (
+                        <div
+                          key={funder.funder_id ?? `${funder.wallet_address}-${idx}`}
+                          className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2 ring-1 ring-white/6"
+                        >
+                          <EnsAddress
+                            address={funder.wallet_address}
+                            className="text-sm text-white/80"
+                          />
+                          {funder.amount ? (
+                            <span className="text-xs text-emerald-400/90 shrink-0">
+                              {funder.amount} USDC
+                            </span>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </ModalSection>
+                ) : null}
 
                 {/* Proposal Draft */}
                 <ModalSection title="Proposal Draft" icon={FileText}>
@@ -291,6 +336,12 @@ export default function ProposalsPage() {
 
                 {/* Fund action */}
                 <ModalSection title="Fund this Proposal" icon={CheckCircle2}>
+                  <ChainSelect
+                    registry={chains}
+                    active={fundingChain}
+                    capability="aave_supply"
+                    className="mb-2 w-full"
+                  />
                   <div className="flex gap-2 pt-0.5">
                     <Input
                       placeholder="Amount (USDC)"

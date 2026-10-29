@@ -6,8 +6,9 @@ from collections.abc import Mapping
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 
 def _default_peer_log_directory() -> Path:
@@ -113,6 +114,37 @@ class KuboSettings(BaseModel):
     max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
 
 
+class GatewaySettings(BaseModel):
+    """Bounded, read-only access to an operator-configured IPFS gateway."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    url: str = Field(default="http://kubo:8080", repr=False)
+    # Where browsers reach the gateway; evidence links on the run page use it.
+    public_url: str | None = None
+    timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
+    max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
+
+    @field_validator("public_url")
+    @classmethod
+    def _public_origin(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlsplit(value)
+        if (
+            parts.scheme not in {"http", "https"}
+            or not parts.hostname
+            or parts.username
+            or parts.password
+            or parts.query
+            or parts.fragment
+            or parts.path not in {"", "/"}
+            or any(character.isspace() for character in value)
+        ):
+            raise ValueError("Public gateway URL must be a bare http(s) origin")
+        return f"{parts.scheme}://{parts.netloc}"
+
+
 class AppSettings(BaseModel):
     """Top-level application settings."""
 
@@ -153,6 +185,7 @@ class AppSettings(BaseModel):
     persistence: PersistenceSettings = Field(default_factory=PersistenceSettings)
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
     kubo: KuboSettings = Field(default_factory=KuboSettings)
+    gateway: GatewaySettings = Field(default_factory=GatewaySettings)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AppSettings:
@@ -177,6 +210,14 @@ class AppSettings(BaseModel):
                     "rpc_secret": env.get("KUBO_RPC_SECRET") or None,
                     "timeout_seconds": env.get("KUBO_RPC_TIMEOUT_SECONDS", "30"),
                     "max_response_bytes": env.get("KUBO_RPC_MAX_RESPONSE_BYTES", "4194304"),
+                }
+            ),
+            gateway=GatewaySettings.model_validate(
+                {
+                    "url": env.get("IPFS_GATEWAY_URL", "http://kubo:8080"),
+                    "public_url": env.get("IPFS_PUBLIC_GATEWAY_URL") or None,
+                    "timeout_seconds": env.get("IPFS_GATEWAY_TIMEOUT_SECONDS", "30"),
+                    "max_response_bytes": env.get("IPFS_GATEWAY_MAX_RESPONSE_BYTES", "4194304"),
                 }
             ),
             logging=LoggingSettings(

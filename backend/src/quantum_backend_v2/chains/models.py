@@ -10,11 +10,17 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 ChainId = Annotated[str, Field(pattern=r"^eip155:[1-9][0-9]{0,31}$")]
 NetworkAlias = Annotated[str, Field(pattern=r"^[a-z][a-z0-9-]{0,63}$")]
 EvmAddress = Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")]
+# Keyless public endpoints only: HTTPS, no credentials, query string or fragment.
+PublicRpcUrl = Annotated[
+    str, Field(pattern=r"^https://[a-z0-9]+(?:[.-][a-z0-9]+)*(?:/[A-Za-z0-9._~-]+)*/?$")
+]
 Capability = Literal[
     "explorer_url",
     "create_wallet",
     "get_balance",
     "transfer_stablecoin",
+    "verify_transaction",
+    "get_price",
     "aave_supply",
     "aave_withdraw",
     "faucet_instructions",
@@ -61,6 +67,12 @@ class ExplorerTemplates(_RegistryModel):
         return self
 
 
+class PriceFeedSpec(_RegistryModel):
+    address: EvmAddress
+    max_age_seconds: int = Field(gt=0, le=86400, strict=True)
+    max_deviation_bps: int = Field(gt=0, le=10000, strict=True)
+
+
 class ChainSpec(_RegistryModel):
     chain_id: ChainId
     family: Literal["evm"]
@@ -69,13 +81,16 @@ class ChainSpec(_RegistryModel):
     enabled: bool = Field(strict=True)
     aliases: tuple[NetworkAlias, ...] = ()
     provider_aliases: ProviderAliases = Field(default_factory=ProviderAliases)
-    # References only: this slice never reads, stores or resolves RPC credentials.
+    # The environment variable may hold a credential-bearing URL; it is never
+    # stored here, returned by the API or logged. public_rpc_url is the fallback.
     rpc_env_var: str = Field(pattern=r"^[A-Z][A-Z0-9_]*$")
+    public_rpc_url: PublicRpcUrl | None = None
     explorers: ExplorerTemplates
     native_token: NativeToken
     stablecoin: Stablecoin | None = None
     aave_pool_address: EvmAddress | None = None
     capabilities: tuple[Capability, ...] = ()
+    price_feeds: dict[NetworkAlias, PriceFeedSpec] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_network(self) -> ChainSpec:
@@ -85,7 +100,14 @@ class ChainSpec(_RegistryModel):
             raise ValueError("duplicate network alias")
         if len(set(self.capabilities)) != len(self.capabilities):
             raise ValueError("duplicate operation capability")
-        wallet_operations = set(self.capabilities) - {"explorer_url"}
+        # Read-only RPC checks need no wallet provider, so any EVM chain may offer them.
+        if "get_price" in self.capabilities and not self.price_feeds:
+            raise ValueError("price reads require configured feeds")
+        wallet_operations = set(self.capabilities) - {
+            "explorer_url",
+            "verify_transaction",
+            "get_price",
+        }
         if wallet_operations:
             # Only the existing Base Sepolia wallet path is enabled in this migration.
             if (

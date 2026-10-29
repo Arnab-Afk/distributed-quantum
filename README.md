@@ -153,8 +153,13 @@ set that URI explicitly even if connecting to a remote MongoDB installation.
 
 For Groq instead, set `AGENT_LLM_PROVIDER=groq`, `GROQ_API_KEY`, and
 `GROQ_MODEL=openai/gpt-oss-20b`. OpenRouter accepts only free model names and sends
-zero-price provider limits. Provider switching is manual; there is no paid
-fallback or automatic rate-limit retry. Free model availability can change.
+zero-price provider limits. For NEAR AI Cloud private inference in a Confidential TEE,
+set `AGENT_LLM_PROVIDER=near`, `NEARAI_API_KEY`, and `NEAR_MODEL` (canonical Confidential TEE
+model ID from `https://cloud-api.near.ai/v1/model/list` with `attestationSupported=true`);
+configure a per-key spend limit in the NEAR dashboard. Each completion round is verified
+with `nearai-inference-sdk` and surfaced as an attestation badge (`Model TEE verified`,
+`Gateway verified`, or `Unverified`) on the chat message. Provider switching is manual;
+there is no paid fallback or automatic rate-limit retry. Free model availability can change.
 
 Frontend configuration (`frontend/.env.local`):
 
@@ -271,7 +276,7 @@ and external settlement failures remain demo limitations.
 
 ## Quick start
 
-**Prerequisites:** Python 3.11+ with [uv](https://github.com/astral-sh/uv), Node.js 22 (Bun for the frontend, npm for the isolated Toju payment worker), and Docker (full stack only).
+**Prerequisites:** Python 3.12+ with [uv](https://github.com/astral-sh/uv), Node.js 22 (Bun for the frontend, npm for the isolated Toju payment worker), and Docker (full stack only).
 
 **Backend** (http://localhost:8081, Swagger at `/docs`):
 
@@ -404,11 +409,75 @@ process inspection can reveal it. Never expose it through browser variables,
 logs or public proxies. See the pinned [native authorization implementation](https://github.com/ipfs/kubo/blob/v0.43.1/core/corehttp/commands.go#L176)
 and [resource-management guidance](https://github.com/ipfs/kubo/blob/v0.43.1/docs/production/low-memory.md).
 
+### Storage targets, automatic GC and private monitoring
+
+`deploy/kubo-storage.sh` runs after the security hook on **every start**, including
+existing volumes. It manages `Datastore.StorageMax` (default **10GB**),
+`Datastore.StorageGCWatermark` (**90%**) and `Datastore.GCPeriod` (default **1h**).
+Compose enables `daemon --enable-gc`, preserving the image's migration/version flags.
+Tune `KUBO_STORAGE_MAX` and `KUBO_GC_PERIOD` privately in `.env`, then recreate Kubo.
+Accepted formats are a positive integer of up to six digits followed by `MB`/`GB`/`TB`
+or `s`/`m`/`h`, respectively; fractions, spaces and leading zeroes are rejected before
+configuration is changed. Empty values use defaults. These keys overwrite manual
+repo edits at restart. **Upgrading enables automatic GC on existing volumes**:
+pin content you need and back up the repository before recreating the node.
+
+**StorageMax is a soft GC target, not a disk quota.** Every GC interval Kubo checks
+whether raw-block storage exceeds the watermark; it only collects unpinned,
+unreferenced blocks. Recursively pinned DAGs and live MFS roots are retained even
+above StorageMax, so pins can fill the disk. Metadata and datastore overhead require
+additional headroom; deleting blocks need not immediately shrink every datastore.
+Unpinning makes content eligible for collection, not immediate or global deletion.
+The backend credential still cannot run `repo/gc` or change configuration; automatic
+GC is internal to the daemon. See the pinned
+[storage settings](https://github.com/ipfs/kubo/blob/v0.43.1/docs/config.md#datastorestoragemax)
+and [GC implementation](https://github.com/ipfs/kubo/blob/v0.43.1/core/corerepo/gc.go).
+
+Enable optional monitoring without starting backend/Caddy:
+
+```bash
+docker compose --profile monitoring up -d --wait kubo prometheus
+docker compose exec prometheus wget -qO- 'http://127.0.0.1:9090/api/v1/targets'
+docker compose exec kubo sh -c 'df -h /data/ipfs; du -sh /data/ipfs'
+# Stop only the monitoring service, keeping node/application/data intact:
+docker compose --profile monitoring stop prometheus
+```
+
+When tearing down a monitoring-enabled project, include `--profile monitoring`
+with `down` so it also selects the monitor; omit `--volumes` to retain data.
+
+The digest-pinned Prometheus service scrapes Kubo's native
+`http://kubo:5001/debug/metrics/prometheus` every 30s. This native debug endpoint is
+outside command-RPC authorization: scraping needs **no backend token**. Prometheus
+receives no RPC secret and joins only the trusted `content_network`; neither its UI
+nor Kubo's API/metrics has a published host port or Caddy route. Docker/network
+administrators remain trusted. Inspect via `exec`, not a public proxy. Compute has
+no dependency on monitoring. Once started, the scraper continues when Kubo is down.
+Prometheus history uses its own named volume with 7-day/512MB retention targets;
+WAL/compaction overhead means these are not hard filesystem limits either.
+
+Basic operator alert notes (no Alertmanager/notification delivery is installed):
+
+- `up{job="kubo"} == 0` for 2 minutes: inspect node health/logs and disk space.
+- `sum(rate(ipfs_fsrepo_datastore_put_errors_total{job="kubo"}[5m])) > 0`:
+  investigate datastore write failures, including a full disk.
+- Monitor the **filesystem hosting kubo_data** separately: warn at 80% used,
+  critical at 90%, and size StorageMax well below available capacity. The pinned
+  native exporter does **not** provide an `ipfs_repo_size` or filesystem-free-space
+  gauge. `df`/`du` above are manual checks, not automated Prometheus disk alerts;
+  wire existing host monitoring or a filesystem exporter before production. With
+  Docker Desktop, monitor the VM allocation and outer host disk as well.
+- A full disk is not fixed by repeatedly running GC when pins dominate. Stop new
+  publications, expand storage or intentionally review/unpin expendable artifacts;
+  retain MongoDB job results. Never delete the deployment volume as a cleanup step.
+
 Checks require Python 3.10+ (via uv) and Docker Compose with `up --wait` support:
 
 ```bash
 uv run --no-project python -m unittest discover -s scripts -p 'test_kubo*.py' -v
 uv run --no-project python scripts/smoke_kubo.py
+# Also start a disposable Prometheus and prove scrape success + node-outage detection:
+uv run --no-project python scripts/smoke_kubo.py --monitoring
 ```
 
 The first command checks deployment configuration without starting containers.
@@ -423,7 +492,12 @@ it, and attempts to remove only its own containers/network/volume, including on 
 If cleanup also fails, it reports the disposable project label without replacing
 the original error. Command failures identify the operation without dumping
 possibly sensitive output. It needs no backend dependencies or private data;
-its fixture is harmless public text.
+its fixtures are harmless public text and a deterministic 2MiB binary DAG. The
+storage test uses a **disposable 1MB target/1s GC interval**: it proves an oversized
+pinned DAG remains readable, then unpins it and waits for automatic reclamation
+while a separate pin survives. Production defaults are not reduced. `--monitoring`
+also checks `up{job="kubo"}=1`, an unpublished monitoring UI, and `up=0` after node
+shutdown. It never runs GC against an existing deployment.
 
 The normal service is **online**: IPFS is public content-addressed networking,
 not confidential storage. Never add private data expecting the CID to be secret.
@@ -431,7 +505,9 @@ Native authentication adds defense beyond unpublished RPC; it does not make
 Docker administration or public IPFS content confidential. The typed async
 [Python RPC client](backend/README.md#kubo-rpc-client) supports content writes,
 pin management and CAR imports with bounded requests and safe errors (#61).
-Automatic uploads, gateway reads and production hosting remain separate work.
+Optional circuit-run provenance publishing and CID-verified gateway reads are
+documented in the backend. Storage-adapter integration and production hosting
+remain separate work.
 
 ## Documentation
 

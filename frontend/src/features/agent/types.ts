@@ -10,15 +10,26 @@ export type ApprovalMode = "auto" | "interactive";
 
 export type TechnicalDetailLevel = "domain" | "balanced" | "full";
 
+export interface AttestationSummary {
+  provider: "near";
+  status: "model_tee_verified" | "gateway_verified" | "unverified";
+  signature_kind: string;
+  model: string;
+  request_id?: string | null;
+  rounds: number;
+}
+
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
   timestamp: string;
+  attestation?: AttestationSummary | null;
   metadata?: {
     thinking?: string;
     actions?: string[];
     approval_required?: boolean;
+    attestation?: AttestationSummary | null;
   };
 }
 

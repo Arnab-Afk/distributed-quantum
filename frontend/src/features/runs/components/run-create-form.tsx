@@ -10,6 +10,7 @@ import { Play, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useCreateRun } from "../hooks/use-create-run";
+import { ShareCircuitToVaultButton } from "@/features/ipfs/components/share-circuit-to-vault-button";
 import { ROUTES } from "@/constants";
 import type { HighlightedLine } from "./new-run-page-client";
 
@@ -174,6 +175,9 @@ export function RunCreateForm({
           </p>
         )}
       </div>
+
+      {/* Publish circuit to local vault (Helia) without starting a run */}
+      <ShareCircuitToVaultButton qasm={circuit} />
 
       {/* Submit */}
       <Button

@@ -13,6 +13,15 @@ New run records are encoded with `@helia/dag-json`. The `circuitCid` field is a 
 ```bash
 bun test:vault-run-link
 ```
+## Publish a circuit — Lab → New Run
+
+Location: `/runs/new` (`RunCreateForm`) — **Publish circuit to VAULT**.
+
+Publishes a Helia JSON record with:
+
+`name`, `description`, `qasm`, `qubitCount`, `gateCount`, `author`, `publishedAt`, `tags`
+
+After publish, the same **Pin** flow used for runs appears. The circuit shows up in the local Circuit Library and can be re-opened by CID. The share button is loaded with `next/dynamic({ ssr: false })` so Helia never runs on the server.
 
 ## Open any CID — `/vault/cid/[cid]`
 
@@ -46,4 +55,5 @@ Trustless gateways see every CID you request (and your client IP). Prefer a self
 ```bash
 bun test:vault-cid
 bun test:vault-run-link
+bun test:vault-circuit
 ```

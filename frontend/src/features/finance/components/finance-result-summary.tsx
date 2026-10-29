@@ -1,7 +1,7 @@
 "use client";
 import {
   TrendingUp, Layers, Database, Settings, AlertTriangle,
-  Activity, GitBranch, CheckCircle2, XCircle
+  Activity, GitBranch
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -15,7 +15,8 @@ import {
   type DataTableColumn,
 } from "@/shared/components/detail";
 import { ROUTES } from "@/constants";
-import type { FinanceJobDetail } from "../types";
+import { PortfolioValuation } from "./portfolio-valuation";
+import type { FinanceResult, FinanceJobDetail } from "../types";
 
 interface FinanceResultSummaryProps {
   job: FinanceJobDetail;
@@ -143,7 +144,7 @@ export function FinanceResultSummary({ job, className }: FinanceResultSummaryPro
   );
 }
 
-function PortfolioOptimizationFinance({ result }: { result: Record<string, unknown> }) {
+function PortfolioOptimizationFinance({ result }: { result: FinanceResult }) {
   const benchmark = obj(result.benchmark);
   const quantum = obj(benchmark.quantum);
   const classical = obj(benchmark.classical);
@@ -221,6 +222,7 @@ function PortfolioOptimizationFinance({ result }: { result: Record<string, unkno
 
   return (
     <>
+      <PortfolioValuation result={result} />
       <GlassCard>
         <SectionTitle
           icon={TrendingUp}

@@ -19,6 +19,10 @@ def configure_logging(config: LoggingSettings) -> None:
     level = getattr(logging, config.level.upper(), logging.INFO)
     logging.basicConfig(level=level, format="%(message)s", stream=sys.stdout, force=True)
 
+    # RPC URLs can contain credentials.
+    for name in ("web3", "urllib3"):
+        logging.getLogger(name).setLevel(logging.WARNING)
+
     if structlog is None:
         return
 

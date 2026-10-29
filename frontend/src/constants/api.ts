@@ -4,6 +4,7 @@ export const API = {
     CHECK_EMAIL: "/api/auth/check-email",
     STRIPE_WEBHOOK: "/api/auth/stripe/webhook",
   },
+  CHAINS: "/api/chains",
   BILLING: {
     CREDITS: "/api/billing/credits",
     CREDITS_CHECKOUT: "/api/billing/credits/checkout",
@@ -82,6 +83,8 @@ export const API_AGENTKIT = {
   WALLET_CREATE:   "/api/agentkit/wallet",
   WALLET_TRANSFER: "/api/agentkit/wallet/transfer",
   WALLET_TX:       "/api/agentkit/wallet/transactions",
+  ENS_RESOLVE:     "/api/agentkit/ens/resolve",
+  ENS_REVERSE:     "/api/agentkit/ens/reverse",
   PROPOSALS:       "/api/agentkit/proposals",
   PROPOSAL:        (id: string) => `/api/agentkit/proposals/${id}` as const,
   MARKETPLACE:     "/api/agentkit/marketplace",

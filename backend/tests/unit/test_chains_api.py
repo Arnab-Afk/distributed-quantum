@@ -31,6 +31,7 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "chain_id",
             "family",
             "display_name",
+            "aliases",
             "testnet",
             "native_token",
             "stablecoin",
@@ -38,6 +39,9 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "capabilities",
         }
         assert set(chain["native_token"]) == {"symbol", "decimals"}
+        assert chain["aliases"] == (
+            ["base-sepolia"] if chain["chain_id"] == "eip155:84532" else ["ethereum-sepolia"]
+        )
         assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
         if chain["chain_id"] == "eip155:84532":
             assert set(chain["capabilities"]) == {
@@ -45,15 +49,20 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
                 "create_wallet",
                 "get_balance",
                 "transfer_stablecoin",
+                "verify_transaction",
                 "aave_supply",
                 "aave_withdraw",
                 "faucet_instructions",
             }
+        elif chain["chain_id"] == "eip155:11155111":
+            assert chain["capabilities"] == ["explorer_url", "verify_transaction", "get_price"]
         else:
-            assert chain["capabilities"] == ["explorer_url"]
+            assert chain["capabilities"] == ["explorer_url", "verify_transaction"]
     for private in (
         "TOP_SECRET",
         "rpc_env_var",
+        "public_rpc_url",
+        "sepolia.base.org",
         "QB2_BASE_SEPOLIA_RPC_URL",
         "provider_aliases",
         "aave_pool_address",

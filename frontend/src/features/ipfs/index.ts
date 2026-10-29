@@ -13,6 +13,12 @@ export {
   normalizeCircuitCid,
 } from "./lib/run-record";
 export { resolveRunCircuit, getVaultJson } from "./lib/run-circuit-link";
+  buildCircuitRecord,
+  countGatesFromQasm,
+  countQubitsFromQasm,
+} from "./lib/circuit-record";
+export { ShareCircuitToVaultButton } from "./components/share-circuit-to-vault-button";
+export { ShareToVaultButton } from "./components/share-to-vault-button";
 
 export type {
   CircuitIPFSRecord,

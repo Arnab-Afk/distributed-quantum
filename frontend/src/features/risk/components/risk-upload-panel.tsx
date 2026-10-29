@@ -1,12 +1,8 @@
 "use client";
-import { useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRiskForm } from "../hooks/use-risk-form";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -16,8 +12,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { ROUTES } from "@/constants";
-import { useRiskUpload } from "../hooks/use-risk-upload";
 import type { RiskModel } from "../types";
 
 interface RiskUploadPanelProps {
@@ -25,23 +19,16 @@ interface RiskUploadPanelProps {
 }
 
 export function RiskUploadPanel({ className }: RiskUploadPanelProps) {
-  const router = useRouter();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [riskModel, setRiskModel] = useState<RiskModel>("equity");
-  const { mutate, isPending } = useRiskUpload();
-
-  function handleSubmit() {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
-    mutate(
-      { file, riskModel },
-      {
-        onSuccess: (data) => {
-          router.push(ROUTES.riskDetail(data.job_id));
-        },
-      },
-    );
-  }
+  const {
+    errors,
+    fileRef,
+    riskModel,
+    setRiskModel,
+    submit,
+    isPending,
+    register,
+    useChainlink,
+  } = useRiskForm();
 
   return (
     <Card className={cn("border-hairline bg-surface-soft", className)}>
@@ -50,7 +37,8 @@ export function RiskUploadPanel({ className }: RiskUploadPanelProps) {
           Upload Portfolio
         </h2>
         <p className="text-xs text-muted-foreground">
-          Upload a CSV with your portfolio holdings to run quantum risk analysis.
+          Upload a CSV with your portfolio holdings to run quantum risk
+          analysis.
         </p>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -86,7 +74,47 @@ export function RiskUploadPanel({ className }: RiskUploadPanelProps) {
           </p>
         </div>
 
-        <Button onClick={handleSubmit} disabled={isPending} className="w-full">
+        {riskModel === "equity" ? (
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" {...register("useChainlink")} />
+              Value ETH holdings with the live Sepolia ETH/USD feed
+            </label>
+            {useChainlink ? (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  Upload ETH/USD history with only date,close columns (at least
+                  five consecutive daily rows). Historical returns determine risk; the feed values
+                  your holdings in USD.
+                </p>
+                <Label htmlFor="eth-quantity">ETH quantity</Label>
+                <Input
+                  id="eth-quantity"
+                  type="number"
+                  min="0"
+                  step="any"
+                  {...register("quantity", { valueAsNumber: true })}
+                />
+                <Label htmlFor="eth-reference">Expected ETH price (USD)</Label>
+                <Input
+                  id="eth-reference"
+                  type="number"
+                  min="0"
+                  step="any"
+                  {...register("expectedEthPrice", { valueAsNumber: true })}
+                />
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {Object.keys(errors).length > 0 ? (
+          <p role="alert" className="text-sm text-destructive">
+            {errors.root?.message ??
+              "Enter positive values for the live valuation fields."}
+          </p>
+        ) : null}
+        <Button onClick={submit} disabled={isPending} className="w-full">
           {isPending ? "Submitting…" : "Run Risk Analysis"}
         </Button>
       </CardContent>
