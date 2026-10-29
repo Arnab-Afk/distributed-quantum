@@ -12,6 +12,7 @@ from quantum_backend_v2.chains.models import (
     ChainRegistry,
     ExplorerTemplates,
     NativeToken,
+    NetworkAlias,
     Stablecoin,
 )
 
@@ -20,6 +21,8 @@ class PublicChain(BaseModel):
     chain_id: ChainId
     family: ChainFamily
     display_name: str
+    # Legacy network names, such as the ``network`` stored on wallets.
+    aliases: tuple[NetworkAlias, ...]
     testnet: bool
     native_token: NativeToken
     stablecoin: Stablecoin | None
@@ -44,6 +47,7 @@ def build_chains_router(*, registry: ChainRegistry) -> APIRouter:
                     chain_id=chain.chain_id,
                     family=chain.family,
                     display_name=chain.display_name,
+                    aliases=chain.aliases,
                     testnet=chain.testnet,
                     native_token=chain.native_token,
                     stablecoin=chain.stablecoin,

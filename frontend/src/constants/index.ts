@@ -15,4 +15,4 @@ export type {
   SidebarConfig,
 } from "./navigation";
 export { BREADCRUMB_LABELS, RAIL_LABEL_FOR_PREFIX } from "./breadcrumbs";
-export { AGENT_API, AGENT_LIMITS, AGENT_QUERY_KEYS, getStreamWS } from "./agent";
+export { AGENT_API, AGENT_LIMITS, AGENT_QUERY_KEYS, STORAGE_PAYMENT_CHAIN_ID, getStreamWS } from "./agent";

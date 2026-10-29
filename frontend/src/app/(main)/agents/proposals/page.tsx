@@ -5,9 +5,11 @@ import {
   useProposals,
   useProposalDetail,
   useFundProposal,
+  useWallet,
   ProposalCreateDialog,
   EnsAddress,
 } from "@/features/agentkit";
+import { ChainSelect, findChain, useChains } from "@/features/chains";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
@@ -119,6 +121,9 @@ export default function ProposalsPage() {
   const [createOpen, setCreateOpen] = useState(false);
   const [fundAmount, setFundAmount] = useState("");
   const fund = useFundProposal();
+  const { data: wallet } = useWallet();
+  const { data: chains } = useChains();
+  const fundingChain = findChain(chains, wallet?.network);
 
   const handleFund = () => {
     if (!selectedId || !fundAmount) return;
@@ -331,6 +336,12 @@ export default function ProposalsPage() {
 
                 {/* Fund action */}
                 <ModalSection title="Fund this Proposal" icon={CheckCircle2}>
+                  <ChainSelect
+                    registry={chains}
+                    active={fundingChain}
+                    capability="aave_supply"
+                    className="mb-2 w-full"
+                  />
                   <div className="flex gap-2 pt-0.5">
                     <Input
                       placeholder="Amount (USDC)"

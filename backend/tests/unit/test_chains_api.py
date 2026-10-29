@@ -35,6 +35,7 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "chain_id",
             "family",
             "display_name",
+            "aliases",
             "testnet",
             "native_token",
             "stablecoin",
@@ -42,9 +43,13 @@ def test_public_chains_without_wallet_credentials(monkeypatch):
             "capabilities",
         }
         assert set(chain["native_token"]) == {"symbol", "decimals"}
-        if chain["stablecoin"] is None:
-            assert chain["chain_id"] == "starknet:SN_SEPOLIA"
+        if chain["chain_id"] == "starknet:SN_SEPOLIA":
+            assert chain["aliases"] == ["starknet-sepolia"]
+            assert chain["stablecoin"] is None
         else:
+            assert chain["aliases"] == (
+        ["base-sepolia"] if chain["chain_id"] == "eip155:84532" else ["ethereum-sepolia"]
+        )
             assert set(chain["stablecoin"]) == {"symbol", "decimals", "address"}
         if chain["chain_id"] == "eip155:84532":
             assert set(chain["capabilities"]) == {
