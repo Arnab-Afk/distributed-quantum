@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
+
+import httpx
 
 from bson import Decimal128
 from fastapi import APIRouter, status
@@ -14,6 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field
 from db.agentkit_collections import AIAgentDocument
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import ErrorCode, PlatformException
+from quantum_backend_v2.chains.loader import load_chain_registry
+from quantum_backend_v2.chains.rpc import resolve_rpc_url
+from quantum_backend_v2.chains.starknet import StarknetRpcAdapter
 from quantum_backend_v2.starknet.calldata import (
     policy_contract_address,
     register_session_calldata,
@@ -30,7 +36,9 @@ from quantum_backend_v2.starknet.session import (
     encrypt_session_key,
     generate_session_keypair,
     policy_from_document,
+    note_submitted_tx,
     public_session,
+    refresh_call_statuses,
     session_document,
 )
 
@@ -45,12 +53,22 @@ class OpenSessionRequest(BaseModel):
     recipient: str
     expires_at: int = Field(gt=0)
     decimals: int = Field(default=18, ge=0, le=255)
+    max_per_proposal: str | None = None
+    daily_budget: str | None = None
 
 
 class SpendRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     amount: str
+
+
+class TxNoteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["register", "spend", "revoke"]
+    tx_hash: str
+    amount: str | None = None
 
 
 def _decimal(value: object) -> Decimal:
@@ -76,6 +94,33 @@ async def _owned_agent(agent_id: str, user_id: str) -> AIAgentDocument:
     return agent
 
 
+class _JsonRpc:
+    def __init__(self, url: str) -> None:
+        self._url = url
+
+    def request(self, method: str, params: list[object]) -> object:
+        response = httpx.post(
+            self._url,
+            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+            timeout=12,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("error"):
+            raise LookupError("transaction receipt is unavailable")
+        return payload.get("result")
+
+
+def _refresh_receipts(stored: dict[str, Any], now: int) -> dict[str, Any]:
+    chain = load_chain_registry().resolve("starknet:SN_SEPOLIA")
+    adapter = StarknetRpcAdapter(chain, _JsonRpc(resolve_rpc_url(chain)))
+
+    def verify(tx_hash: str) -> str:
+        return adapter.verify_transaction(tx_hash).status
+
+    return refresh_call_statuses(stored, verify, now=now)
+
+
 def _bad_request(exc: Exception) -> PlatformException:
     return PlatformException(
         status_code=status.HTTP_400_BAD_REQUEST,
@@ -96,8 +141,8 @@ async def open_starknet_session(
     try:
         private_hex, public_hex = generate_session_keypair()
         policy = policy_from_agent_config(
-            max_per_proposal=_decimal(agent.config["max_per_proposal"]),
-            daily_budget=_decimal(agent.config["daily_budget"]),
+            max_per_proposal=_decimal(body.max_per_proposal or agent.config["max_per_proposal"]),
+            daily_budget=_decimal(body.daily_budget or agent.config["daily_budget"]),
             owner=body.owner,
             token=body.token,
             recipient=body.recipient,
@@ -192,6 +237,63 @@ async def spend_starknet_session(
             "calldata": spend_calldata(amount),
         },
     }
+
+
+@router.post("/{agent_id}/starknet-session/tx")
+async def note_starknet_tx(
+    agent_id: str,
+    body: TxNoteRequest,
+    current_user: CurrentUser,
+) -> dict[str, Any]:
+    """Store the hash returned by the owner wallet. Caps and revocation stay unchanged."""
+    agent = await _owned_agent(agent_id, current_user.user_id)
+    stored = agent.starknet_session
+    if not stored:
+        raise PlatformException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error=ErrorCode.NOT_FOUND,
+            message="Agent has no Starknet session",
+        )
+    try:
+        noted = note_submitted_tx(
+            stored,
+            kind=body.kind,
+            tx_hash=body.tx_hash,
+            amount=body.amount,
+            now=int(time.time()),
+        )
+    except ValueError as exc:
+        raise _bad_request(exc) from None
+    await AIAgentDocument.find_one({"agent_id": agent_id}).update(
+        {"$set": {"starknet_session": noted, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"starknet_session": public_session(noted, now=int(time.time()))}
+
+
+@router.post("/{agent_id}/starknet-session/txs")
+async def refresh_starknet_txs(agent_id: str, current_user: CurrentUser) -> dict[str, Any]:
+    """Read receipts for this session's calls. A confirmed revoke is recorded as revoked."""
+    agent = await _owned_agent(agent_id, current_user.user_id)
+    stored = agent.starknet_session
+    if not stored:
+        raise PlatformException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            error=ErrorCode.NOT_FOUND,
+            message="Agent has no Starknet session",
+        )
+    now = int(time.time())
+    try:
+        refreshed = await asyncio.to_thread(_refresh_receipts, dict(stored), now)
+    except Exception as exc:
+        raise PlatformException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error=ErrorCode.INTERNAL_ERROR,
+            message="Starknet receipt lookup is unavailable",
+        ) from exc
+    await AIAgentDocument.find_one({"agent_id": agent_id}).update(
+        {"$set": {"starknet_session": refreshed, "updated_at": datetime.now(timezone.utc)}}
+    )
+    return {"starknet_session": public_session(refreshed, now=now)}
 
 
 @router.post("/{agent_id}/starknet-session/revoke")

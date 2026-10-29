@@ -33,7 +33,10 @@ from quantum_backend_v2.starknet.policy import (
 from quantum_backend_v2.starknet.session import (
     encrypt_session_key,
     generate_session_keypair,
+    apply_call_status,
+    note_submitted_tx,
     public_session,
+    refresh_call_statuses,
     session_document,
 )
 
@@ -187,6 +190,50 @@ def test_revoke_request_stays_pending_until_the_chain_confirms(monkeypatch):
     assert visible is not None
     assert visible["status"] == "revocation_pending"
     assert visible["revoked"] is False
+
+
+def test_noted_tx_is_visible_and_does_not_change_the_budget(monkeypatch):
+    monkeypatch.setenv("WALLET_ENCRYPTION_KEY", "test-secret")
+    stored = session_document(_policy(), encrypt_session_key("aa"), decimals=18)
+    spent = stored["spent_today"]
+    noted = note_submitted_tx(stored, kind="spend", tx_hash="0xabc", amount="1", now=NOW)
+    noted = note_submitted_tx(noted, kind="register", tx_hash="0xdef", now=NOW)
+    visible = public_session(noted, now=NOW)
+    assert visible is not None
+    assert noted["spent_today"] == spent
+    assert noted["revoked"] is False
+    assert visible["status"] == "active"
+    assert visible["last_spend_tx"] == "0xabc"
+    assert visible["calls"][0]["kind"] == "spend"
+    assert visible["calls"][0]["status"] == "pending"
+    assert visible["calls"][1]["tx_hash"] == "0xdef"
+    with pytest.raises(ValueError):
+        note_submitted_tx(stored, kind="spend", tx_hash="not-a-hash", amount="1", now=NOW)
+
+
+def test_confirmed_revoke_receipt_marks_the_session_revoked(monkeypatch):
+    monkeypatch.setenv("WALLET_ENCRYPTION_KEY", "test-secret")
+    stored = session_document(_policy(), encrypt_session_key("aa"), decimals=18)
+    stored["revocation_pending"] = True
+    noted = note_submitted_tx(stored, kind="revoke", tx_hash="0xabc", now=NOW)
+    refreshed = refresh_call_statuses(noted, lambda _tx: "confirmed", now=NOW + 5)
+    visible = public_session(refreshed, now=NOW + 5)
+    assert visible is not None
+    assert visible["status"] == "revoked"
+    assert visible["calls"][0]["status"] == "confirmed"
+    assert refreshed["spent_today"] == stored["spent_today"]
+
+
+def test_confirmed_spend_receipt_does_not_change_the_budget(monkeypatch):
+    monkeypatch.setenv("WALLET_ENCRYPTION_KEY", "test-secret")
+    stored = session_document(_policy(), encrypt_session_key("aa"), decimals=18)
+    noted = note_submitted_tx(stored, kind="spend", tx_hash="0xabc", amount="1", now=NOW)
+    refreshed = apply_call_status(noted, tx_hash="0xabc", status="confirmed", now=NOW + 5)
+    visible = public_session(refreshed, now=NOW + 5)
+    assert visible is not None
+    assert visible["status"] == "active"
+    assert refreshed["spent_today"] == stored["spent_today"]
+    assert visible["calls"][0]["status"] == "confirmed"
 
 
 def test_public_session_omits_the_private_key(monkeypatch):
