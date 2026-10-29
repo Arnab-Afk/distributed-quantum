@@ -76,6 +76,8 @@ def public_session(stored: Mapping[str, Any] | None, *, now: int) -> dict[str, A
         return None
     if bool(stored.get("revoked")):
         status = "revoked"
+    elif bool(stored.get("revocation_pending")):
+        status = "revocation_pending"
     elif int(stored["expires_at"]) <= now:
         status = "expired"
     else:

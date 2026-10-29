@@ -1,7 +1,7 @@
 """Spending rules shared with the Sepolia policy contract.
 
-The contract is the enforcement point. These checks are the same decisions:
-a stolen session key can call only `spend`, and `spend` reverts past the caps.
+The contract enforces the caps when the owner calls `spend`.
+The stored session key is not a signer in this version.
 """
 
 from __future__ import annotations

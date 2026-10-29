@@ -2,12 +2,11 @@
 
 import { createContext, useEffect, useState, type ReactNode } from "react";
 import { LLM_PROVIDER_STORAGE_KEY, type AgentLlmProvider } from "./constants";
-
-type ProviderInfo = {
-  id: AgentLlmProvider;
-  label: string;
-  configured: boolean;
-};
+import {
+  FALLBACK_LLM_PROVIDERS,
+  parseLlmProvidersPayload,
+  type ProviderInfo,
+} from "./parse-providers";
 
 type AgentLlmProviderContextValue = {
   provider: AgentLlmProvider;
@@ -35,31 +34,30 @@ export function AgentLlmProviderProvider({ children }: { children: ReactNode }) 
 
     // Then fetch from backend to get default and provider list
     fetch("/api/agentkit/agents/llm-providers")
-      .then((res) => res.json())
-      .then((data: { default: string; providers: ProviderInfo[] }) => {
+      .then(async (res) => {
+        const data: unknown = await res.json().catch(() => null);
+        return parseLlmProvidersPayload(res.status, data);
+      })
+      .then((parsed) => {
         if (cancelled) return;
-        
-        setProviders(data.providers);
-        
-        // If no localStorage value, use backend default
-        if (!stored) {
-          const defaultProvider = data.default as AgentLlmProvider;
-          if (defaultProvider === "groq" || defaultProvider === "openrouter" || defaultProvider === "near") {
-            setProviderState(defaultProvider);
-            localStorage.setItem(LLM_PROVIDER_STORAGE_KEY, defaultProvider);
-          }
+        if (!parsed) {
+          setProviders(FALLBACK_LLM_PROVIDERS);
+          setLoading(false);
+          return;
         }
-        
+
+        setProviders(parsed.providers);
+
+        if (!stored && (parsed.defaultProvider === "groq" || parsed.defaultProvider === "openrouter" || parsed.defaultProvider === "near")) {
+          setProviderState(parsed.defaultProvider);
+          localStorage.setItem(LLM_PROVIDER_STORAGE_KEY, parsed.defaultProvider);
+        }
+
         setLoading(false);
       })
       .catch(() => {
         if (!cancelled) {
-          // Fallback to groq if fetch fails
-          setProviders([
-            { id: "groq", label: "Groq", configured: true },
-            { id: "openrouter", label: "OpenRouter", configured: false },
-            { id: "near", label: "NEAR AI Cloud", configured: false },
-          ]);
+          setProviders(FALLBACK_LLM_PROVIDERS);
           setLoading(false);
         }
       });

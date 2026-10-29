@@ -20,7 +20,11 @@ def assert_sponsorable(entrypoint: str) -> None:
 
 
 def build_sponsor_request(
-    *, entrypoint: str, account_address: str, calldata: list[str]
+    *,
+    entrypoint: str,
+    account_address: str,
+    contract_address: str,
+    calldata: list[str],
 ) -> dict[str, Any]:
     assert_sponsorable(entrypoint)
     return {
@@ -30,7 +34,13 @@ def build_sponsor_request(
         "params": {
             "invoke": {
                 "userAddress": account_address,
-                "calls": [{"entrypoint": entrypoint, "calldata": calldata}],
+                "calls": [
+                    {
+                        "contractAddress": contract_address,
+                        "entrypoint": entrypoint,
+                        "calldata": calldata,
+                    }
+                ],
             },
             "execution_mode": "sponsored",
         },
@@ -47,6 +57,7 @@ def sponsored_call(
     *,
     entrypoint: str,
     account_address: str,
+    contract_address: str,
     calldata: list[str],
     api_key: str,
     post: Any,
@@ -54,7 +65,10 @@ def sponsored_call(
 ) -> object:
     """POST a sponsored build. `post` is an injected HTTP caller so tests stay offline."""
     body = build_sponsor_request(
-        entrypoint=entrypoint, account_address=account_address, calldata=calldata
+        entrypoint=entrypoint,
+        account_address=account_address,
+        contract_address=contract_address,
+        calldata=calldata,
     )
     headers: Mapping[str, str] = sponsor_headers(api_key)
     return post(endpoint, body, headers)

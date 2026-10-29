@@ -14,12 +14,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from db.agentkit_collections import AIAgentDocument
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import ErrorCode, PlatformException
+from quantum_backend_v2.starknet.calldata import (
+    policy_contract_address,
+    register_session_calldata,
+    spend_calldata,
+)
 from quantum_backend_v2.starknet.paymaster import PaymasterSponsorError, build_sponsor_request
 from quantum_backend_v2.starknet.policy import (
     PolicyRejectedError,
     authorize,
     policy_from_agent_config,
-    revoke,
     token_units,
 )
 from quantum_backend_v2.starknet.session import (
@@ -111,29 +115,35 @@ async def open_starknet_session(
         ) from None
     except ValueError as exc:
         raise _bad_request(exc) from None
+    try:
+        contract = policy_contract_address()
+    except RuntimeError as exc:
+        raise PlatformException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error=ErrorCode.INTERNAL_ERROR,
+            message=str(exc),
+        ) from None
     stored = session_document(policy, encrypted, decimals=body.decimals)
     await AIAgentDocument.find_one({"agent_id": agent_id}).update(
         {"$set": {"starknet_session": stored, "updated_at": datetime.now(timezone.utc)}}
     )
-    calldata = [
-        policy.token,
-        policy.recipient,
-        str(policy.max_per_call),
-        str(policy.daily_limit),
-        str(policy.expires_at),
-        policy.session_public_key,
-    ]
+    calldata = register_session_calldata(policy)
     try:
         sponsor = build_sponsor_request(
             entrypoint="register_session",
             account_address=policy.owner,
+            contract_address=contract,
             calldata=calldata,
         )
     except PaymasterSponsorError as exc:
         raise _bad_request(exc) from None
     return {
         "starknet_session": public_session(stored, now=now),
-        "register_session": {"entrypoint": "register_session", "calldata": calldata},
+        "register_session": {
+            "contract": contract,
+            "entrypoint": "register_session",
+            "calldata": calldata,
+        },
         "paymaster": sponsor,
     }
 
@@ -144,7 +154,7 @@ async def spend_starknet_session(
     body: SpendRequest,
     current_user: CurrentUser,
 ) -> dict[str, Any]:
-    """Preflight a spend. Over-cap calls are rejected here and revert in the policy contract."""
+    """Read-only preflight. Spending is recorded on-chain after the owner submits `spend`."""
     agent = await _owned_agent(agent_id, current_user.user_id)
     stored = agent.starknet_session
     if not stored:
@@ -158,30 +168,35 @@ async def spend_starknet_session(
         policy = policy_from_document(stored)
         decimals = int(stored.get("decimals", 18))
         amount = token_units(Decimal(body.amount), decimals)
-        updated = authorize(
+        authorize(
             policy,
             amount=amount,
             token=policy.token,
             recipient=policy.recipient,
             now=now,
         )
+        contract = policy_contract_address()
     except (PolicyRejectedError, ValueError) as exc:
         raise _bad_request(exc) from None
-    document = session_document(
-        updated, str(stored["session_key_encrypted"]), decimals=decimals
-    )
-    await AIAgentDocument.find_one({"agent_id": agent_id}).update(
-        {"$set": {"starknet_session": document, "updated_at": datetime.now(timezone.utc)}}
-    )
+    except RuntimeError as exc:
+        raise PlatformException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error=ErrorCode.INTERNAL_ERROR,
+            message=str(exc),
+        ) from None
     return {
-        "starknet_session": public_session(document, now=now),
-        "spend": {"entrypoint": "spend", "calldata": [str(amount)]},
+        "starknet_session": public_session(stored, now=now),
+        "spend": {
+            "contract": contract,
+            "entrypoint": "spend",
+            "calldata": spend_calldata(amount),
+        },
     }
 
 
 @router.post("/{agent_id}/starknet-session/revoke")
 async def revoke_starknet_session(agent_id: str, current_user: CurrentUser) -> dict[str, Any]:
-    """Mark the session revoked and return the owner call. The paymaster does not sponsor it."""
+    """Return the owner revoke call. The database stays active until the chain confirms it."""
     agent = await _owned_agent(agent_id, current_user.user_id)
     stored = agent.starknet_session
     if not stored:
@@ -190,25 +205,36 @@ async def revoke_starknet_session(agent_id: str, current_user: CurrentUser) -> d
             error=ErrorCode.NOT_FOUND,
             message="Agent has no Starknet session",
         )
-    updated = revoke(policy_from_document(stored))
-    document = session_document(
-        updated,
-        str(stored["session_key_encrypted"]),
-        decimals=int(stored.get("decimals", 18)),
-    )
+    try:
+        contract = policy_contract_address()
+    except RuntimeError as exc:
+        raise PlatformException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error=ErrorCode.INTERNAL_ERROR,
+            message=str(exc),
+        ) from None
+    pending = dict(stored)
+    pending["revocation_pending"] = True
     await AIAgentDocument.find_one({"agent_id": agent_id}).update(
-        {"$set": {"starknet_session": document, "updated_at": datetime.now(timezone.utc)}}
+        {"$set": {"starknet_session": pending, "updated_at": datetime.now(timezone.utc)}}
     )
     try:
         build_sponsor_request(
-            entrypoint="revoke_session", account_address=updated.owner, calldata=[]
+            entrypoint="revoke_session",
+            account_address=str(stored["owner"]),
+            contract_address=contract,
+            calldata=[],
         )
     except PaymasterSponsorError:
         sponsored = False
     else:
         sponsored = True
     return {
-        "starknet_session": public_session(document, now=int(time.time())),
-        "revoke_session": {"entrypoint": "revoke_session", "calldata": []},
+        "starknet_session": public_session(pending, now=int(time.time())),
+        "revoke_session": {
+            "contract": contract,
+            "entrypoint": "revoke_session",
+            "calldata": [],
+        },
         "paymaster_sponsored": sponsored,
     }

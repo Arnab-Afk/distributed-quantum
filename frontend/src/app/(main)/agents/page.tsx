@@ -218,7 +218,8 @@ function AgentCard({
           Configure
         </Button>
       </div>
-      {agent.starknet_session?.status === "active" && (
+      {(agent.starknet_session?.status === "active" ||
+        agent.starknet_session?.status === "revocation_pending") && (
         <Button
           size="sm"
           variant="ghost"
@@ -228,7 +229,9 @@ function AgentCard({
             onRevoke(agent.agent_id);
           }}
         >
-          Revoke Starknet session
+          {agent.starknet_session.status === "revocation_pending"
+            ? "On-chain revocation pending"
+            : "Revoke Starknet session"}
         </Button>
       )}
     </motion.div>
@@ -540,7 +543,11 @@ export default function AgentsOverviewPage() {
                       onSelect={setSelectedId}
                       onRevoke={(agentId) => {
                         revokeSession.mutate(agentId, {
-                          onSuccess: () => toast.success("Starknet session revoked"),
+                          onSuccess: () =>
+                            toast.info("On-chain revocation pending", {
+                              description:
+                                "Sign revoke_session in Ready. The contract stays active until that transaction confirms.",
+                            }),
                           onError: (error: Error) => toast.error(error.message),
                         });
                       }}

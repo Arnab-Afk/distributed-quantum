@@ -135,7 +135,7 @@ responses and OpenAPI.
 
 ## Starknet session policies
 
-Ready (Argent) is the owner wallet. The owner signs `register_session` and `revoke_session` on `backend/contracts/starknet`. The backend stores only the session private key, encrypted with `WALLET_ENCRYPTION_KEY`. The session may call `spend`. That call reverts on-chain when the amount exceeds `max_per_proposal` (`per_call`), the UTC day total exceeds `daily_budget` (`daily`), the session is past `expires_at` (`expired`), or it has been revoked (`revoked`).
+Ready (Argent) is the owner wallet. In this version the owner signs `register_session`, `spend`, and `revoke_session` on `backend/contracts/starknet`. The backend stores only the session private key, encrypted with `WALLET_ENCRYPTION_KEY`. That key is not registered on the Ready account and `spend` does not check it. `spend` reverts on-chain when the amount exceeds `max_per_proposal` (`per_call`), the UTC day total exceeds `daily_budget` (`daily`), the session is past `expires_at` (`expired`), or it has been revoked (`revoked`).
 
 AVNU's Sepolia paymaster (`https://sepolia.paymaster.avnu.fi`, header `x-paymaster-api-key` from `AVNU_PAYMASTER_API_KEY`) may sponsor `deploy_account` and `register_session` only. Spends and revokes are not sponsored.
 

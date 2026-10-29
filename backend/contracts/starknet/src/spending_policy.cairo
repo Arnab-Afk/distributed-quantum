@@ -1,6 +1,7 @@
 /// Session spends revert unless they stay inside the agent caps.
-/// The Ready session may call `spend` only. `register_session` and `revoke_session`
-/// are owner calls, so a stolen session key cannot raise the caps.
+/// In this version the Ready owner signs `register_session`, `spend`, and
+/// `revoke_session`. `session_public_key` is stored for a later account session.
+/// `spend` checks the owner address. It does not check that key.
 use starknet::ContractAddress;
 
 #[starknet::interface]

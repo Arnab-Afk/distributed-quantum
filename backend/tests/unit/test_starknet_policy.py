@@ -13,6 +13,12 @@ from quantum_backend_v2.chains.starknet import (
     StarknetExplorerAdapter,
     StarknetRpcAdapter,
 )
+from quantum_backend_v2.starknet.calldata import (
+    register_session_calldata,
+    register_session_field_names,
+    spend_calldata,
+    u256_felts,
+)
 from quantum_backend_v2.starknet.paymaster import (
     PaymasterSponsorError,
     build_sponsor_request,
@@ -95,13 +101,22 @@ def test_contract_reverts_with_the_same_codes():
 
 def test_paymaster_sponsors_registration_only():
     request = build_sponsor_request(
-        entrypoint="register_session", account_address=OWNER, calldata=["0x1"]
+        entrypoint="register_session",
+        account_address=OWNER,
+        contract_address=TOKEN,
+        calldata=["0x1"],
     )
     assert request["method"] == "paymaster_buildTransaction"
     assert request["params"]["execution_mode"] == "sponsored"
+    assert request["params"]["invoke"]["calls"][0]["contractAddress"] == TOKEN
     for entrypoint in ("spend", "revoke_session", "register_session_admin"):
         with pytest.raises(PaymasterSponsorError, match="onboarding only"):
-            build_sponsor_request(entrypoint=entrypoint, account_address=OWNER, calldata=[])
+            build_sponsor_request(
+                entrypoint=entrypoint,
+                account_address=OWNER,
+                contract_address=TOKEN,
+                calldata=[],
+            )
 
 
 def test_sponsored_call_sends_the_key_header():
@@ -115,6 +130,7 @@ def test_sponsored_call_sends_the_key_header():
     result = sponsored_call(
         entrypoint="deploy_account",
         account_address=OWNER,
+        contract_address=TOKEN,
         calldata=[],
         api_key="portal-key",
         post=post,
@@ -131,6 +147,46 @@ def test_generate_session_keypair_returns_hex_pair():
     assert public_hex.startswith("0x")
     assert 3 <= len(public_hex) <= 66
     int(public_hex, 16)
+
+
+def test_u256_calldata_matches_the_contract_abi():
+    policy = _policy()
+    source = (
+        Path(__file__).resolve().parents[2] / "contracts/starknet/src/spending_policy.cairo"
+    ).read_text()
+    signature = source.split("fn register_session", 1)[1].split(")", 1)[0]
+    for name in register_session_field_names():
+        assert name in signature
+    assert register_session_calldata(policy) == [
+        policy.token,
+        policy.recipient,
+        "10000000",
+        "0",
+        "25000000",
+        "0",
+        str(policy.expires_at),
+        policy.session_public_key,
+    ]
+    assert spend_calldata(10_000_000) == ["10000000", "0"]
+    assert u256_felts((1 << 128) + 7) == ["7", "1"]
+
+
+def test_repeated_preflight_does_not_reduce_the_budget():
+    policy = _policy()
+    first = authorize(policy, amount=10_000_000, token=TOKEN, recipient=OTHER, now=NOW)
+    second = authorize(policy, amount=10_000_000, token=TOKEN, recipient=OTHER, now=NOW)
+    assert policy.spent_today == 0
+    assert first.spent_today == second.spent_today == 10_000_000
+
+
+def test_revoke_request_stays_pending_until_the_chain_confirms(monkeypatch):
+    monkeypatch.setenv("WALLET_ENCRYPTION_KEY", "test-secret")
+    stored = session_document(_policy(), encrypt_session_key("aa"), decimals=6)
+    stored["revocation_pending"] = True
+    visible = public_session(stored, now=NOW)
+    assert visible is not None
+    assert visible["status"] == "revocation_pending"
+    assert visible["revoked"] is False
 
 
 def test_public_session_omits_the_private_key(monkeypatch):
