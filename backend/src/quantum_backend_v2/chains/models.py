@@ -28,6 +28,20 @@ Capability = Literal[
 ]
 
 
+# Anchoring must never target these, whatever an entry's testnet flag says.
+_KNOWN_MAINNETS = frozenset(
+    {
+        "eip155:1",
+        "eip155:10",
+        "eip155:56",
+        "eip155:137",
+        "eip155:4663",
+        "eip155:8453",
+        "eip155:42161",
+    }
+)
+
+
 class _RegistryModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
@@ -106,7 +120,7 @@ class ChainSpec(_RegistryModel):
             raise ValueError("price reads require configured feeds")
         # Anchors are sent by a dedicated low-balance key, not the wallet provider.
         if "anchor_root" in self.capabilities:
-            if not self.testnet:
+            if not self.testnet or self.chain_id in _KNOWN_MAINNETS:
                 raise ValueError("provenance anchoring is limited to testnets")
             if "verify_transaction" not in self.capabilities:
                 raise ValueError("provenance anchoring requires transaction verification")

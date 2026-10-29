@@ -13,20 +13,38 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
+from beanie import init_beanie
 from eth_account import Account
+from pymongo import AsyncMongoClient
 from web3 import Web3
 
-from quantum_backend_v2.application.anchoring import AnchorUnavailableError, RegistryAnchorAdapter
+from quantum_backend_v2.application.anchoring import (
+    STUCK_SECONDS,
+    AnchorUnavailableError,
+    EvmAnchorChain,
+    ProvenanceAnchorService,
+    RegistryAnchorAdapter,
+)
 from quantum_backend_v2.chains.anchor import AnchorPayload, EvmAnchorAdapter
 from quantum_backend_v2.chains.loader import load_chain_registry
+from quantum_backend_v2.persistence.mongodb import (
+    AnchorBatchDocument,
+    AnchorLeaseDocument,
+    ProvenanceBundleDocument,
+)
 from quantum_backend_v2.provenance.hashing import bundle_hash
 from quantum_backend_v2.provenance.merkle import MerkleTree
-from quantum_backend_v2.provenance.models import ChainAnchor
-from quantum_backend_v2.provenance.verification import RunEvidence, build_result_bundle
+from quantum_backend_v2.provenance.models import ChainAnchor, ProvenanceBundle
+from quantum_backend_v2.provenance.verification import (
+    RunEvidence,
+    build_result_bundle,
+    verify_bundle,
+)
 
 RPC_URL = os.environ.get("QB2_ANVIL_RPC_URL")
 pytestmark = pytest.mark.skipif(not RPC_URL, reason="set QB2_ANVIL_RPC_URL to a local anvil")
@@ -160,3 +178,110 @@ def test_script_and_adapter_verify_a_real_batch(web3, tmp_path):
     assert verify(tampered).returncode == 1
     wrong_leaf = bundles[3].model_copy(update={"anchors": (anchor_of(2),)})
     assert verify(wrong_leaf).returncode == 1
+
+
+MONGODB_URI = os.environ.get("QMESH_TEST_MONGODB_URI")
+needs_mongo = pytest.mark.skipif(not MONGODB_URI, reason="also needs QMESH_TEST_MONGODB_URI")
+
+
+def with_mongo(scenario):
+    async def run_scenario():
+        client = AsyncMongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        name = "qmesh_anchor_e2e_" + uuid4().hex
+        try:
+            await init_beanie(
+                database=client[name],
+                document_models=[
+                    ProvenanceBundleDocument,
+                    AnchorBatchDocument,
+                    AnchorLeaseDocument,
+                ],
+            )
+            await scenario()
+        finally:
+            await client.drop_database(name)
+            await client.close()
+
+    asyncio.run(run_scenario())
+
+
+async def store(runs) -> None:
+    created = datetime(2026, 10, 29, tzinfo=timezone.utc)
+    for item in runs:
+        bundle = build_result_bundle(item, created_at=created)
+        await ProvenanceBundleDocument(
+            bundle_id=bundle.bundle_id,
+            workflow_run_id=item.run_id,
+            payload=bundle.model_dump(mode="json"),
+            content_hash=bundle_hash(bundle),
+        ).insert()
+
+
+async def assert_verified(runs, sender: str) -> None:
+    adapters = {SEPOLIA.chain_id: RegistryAnchorAdapter(SEPOLIA, sender, ENV)}
+    for item in runs:
+        doc = await ProvenanceBundleDocument.find_one({"workflow_run_id": item.run_id})
+        bundle = ProvenanceBundle.model_validate(doc.payload)
+        report = await verify_bundle(
+            bundle, expected_hash=doc.content_hash, run=item, anchor_adapters=adapters
+        )
+        assert report.status == "verified", report.checks
+
+
+@needs_mongo
+def test_scheduler_anchors_stored_bundles_end_to_end(web3):
+    account = funded_account(web3)
+    runs = [run(f"workflow-e2e-{i}") for i in range(6)]
+
+    async def scenario():
+        await store(runs)
+        service = ProvenanceAnchorService(
+            EvmAnchorChain(SEPOLIA, account, ENV, max_fee_wei=100 * 10**9),
+            chain_id=SEPOLIA.chain_id,
+            sender=account.address,
+        )
+        assert await service.run_once() == "pending"
+        finalize(web3)
+        assert await service.run_once() == "anchored"
+        assert await service.run_once() == "idle"
+        batch = await AnchorBatchDocument.find_one({"status": "anchored"})
+        receipt = web3.eth.get_transaction_receipt(batch.tx_hash)
+        assert receipt["status"] == 1 and receipt["gasUsed"] < 23_000
+        assert batch.block_number == receipt["blockNumber"]
+        await assert_verified(runs, account.address)
+
+    with_mongo(scenario)
+
+
+@needs_mongo
+def test_a_stuck_anchor_is_replaced_on_a_real_node(web3):
+    account = funded_account(web3)
+    runs = [run(f"workflow-stuck-{i}") for i in range(3)]
+    clock = [datetime.now(timezone.utc)]
+
+    async def scenario():
+        await store(runs)
+        service = ProvenanceAnchorService(
+            EvmAnchorChain(SEPOLIA, account, ENV, max_fee_wei=100 * 10**9),
+            chain_id=SEPOLIA.chain_id,
+            sender=account.address,
+            now=lambda: clock[0],
+        )
+        web3.provider.make_request("evm_setAutomine", [False])
+        try:
+            assert await service.run_once() == "pending"  # Sitting in the mempool.
+            clock[0] += timedelta(seconds=STUCK_SECONDS + 1)
+            assert await service.run_once() == "pending"  # Outbid at the same nonce.
+            batch = await AnchorBatchDocument.find_one({"open": True})
+            first, second = (attempt["tx_hash"] for attempt in batch.attempts)
+            web3.provider.make_request("evm_mine", [])
+        finally:
+            web3.provider.make_request("evm_setAutomine", [True])
+        finalize(web3)
+        assert await service.run_once() == "anchored"
+        anchored = await AnchorBatchDocument.find_one({"status": "anchored"})
+        # The node accepted the replacement, so it is the mined transaction.
+        assert anchored.tx_hash == second != first
+        await assert_verified(runs, account.address)
+
+    with_mongo(scenario)

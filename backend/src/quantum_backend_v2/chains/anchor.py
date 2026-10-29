@@ -8,12 +8,17 @@ and the hash profile, so the size is authenticated together with the root.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from eth_typing import HexStr
 
 from quantum_backend_v2.chains.adapter import EvmRpcAdapter
+
+if TYPE_CHECKING:
+    from eth_account.signers.local import LocalAccount
+    from eth_account.types import TransactionDictType
 
 MAGIC = b"QMSHANC1"
 # Calldata profile byte -> provenance hash profile. New profiles need a new byte.
@@ -70,12 +75,23 @@ class AnchorCheck:
 class EvmAnchorAdapter(EvmRpcAdapter):
     """Read-only anchor checks; signing lives with the anchor sender, not here."""
 
-    def check_anchor(self, tx_hash: str, payload: AnchorPayload, sender: str) -> AnchorCheck:
-        """Report `confirmed` only for a finalized, successful self-send carrying `payload`."""
+    def check_anchor(
+        self, tx_hash: str, payload: AnchorPayload, senders: str | Collection[str]
+    ) -> AnchorCheck:
+        """Report `confirmed` only for a finalized, successful self-send carrying `payload`.
+
+        `senders` lists the anchor accounts to accept, so anchors sent before a key
+        rotation still verify. `pending` without a block means not yet mined.
+        """
         from web3.exceptions import TransactionNotFound
 
         self._require("anchor_root")
-        if _TX_HASH.fullmatch(tx_hash) is None or _ADDRESS.fullmatch(sender) is None:
+        accounts = {senders.lower()} if isinstance(senders, str) else {s.lower() for s in senders}
+        if (
+            _TX_HASH.fullmatch(tx_hash) is None
+            or not accounts
+            or any(_ADDRESS.fullmatch(account) is None for account in accounts)
+        ):
             raise ValueError("invalid anchor reference")
         expected = payload.encode()
         self._check_chain()
@@ -89,9 +105,9 @@ class EvmAnchorAdapter(EvmRpcAdapter):
         receipt = self.web3.eth.get_transaction_receipt(HexStr(tx_hash))
         if int(receipt["status"]) != 1:
             return AnchorCheck(status="failed", block_number=int(block))
-        account = sender.lower()
+        account = str(transaction["from"]).lower()
         if (
-            str(transaction["from"]).lower() != account
+            account not in accounts
             or str(transaction.get("to") or "").lower() != account
             or int(transaction["value"]) != 0
             or bytes(transaction["input"]) != expected
@@ -101,3 +117,104 @@ class EvmAnchorAdapter(EvmRpcAdapter):
         if int(block) > int(self.web3.eth.get_block("finalized")["number"]):
             return AnchorCheck(status="pending", block_number=int(block))
         return AnchorCheck(status="confirmed", block_number=int(block))
+
+
+@dataclass(frozen=True)
+class SignedAnchor:
+    nonce: int
+    raw_transaction: str
+    tx_hash: str
+    max_fee: int = 0
+    priority_fee: int = 0
+
+
+class AnchorFeeTooHighError(RuntimeError):
+    """Network fees exceed the configured cap; anchoring waits for a later run."""
+
+
+class AnchorBroadcastError(RuntimeError):
+    """The node rejected the transaction and does not know it."""
+
+
+# Nodes accept a same-nonce replacement only if both fees rise by at least 10%.
+REPLACEMENT_BUMP = (9, 8)  # 12.5%
+
+
+class EvmAnchorSender(EvmAnchorAdapter):
+    """Signs anchor transactions locally with the dedicated anchor account."""
+
+    def next_nonce(self, account: str) -> int:
+        self._require("anchor_root")
+        self._check_chain()
+        return int(
+            self.web3.eth.get_transaction_count(self.web3.to_checksum_address(account), "pending")
+        )
+
+    def mined_nonce(self, account: str) -> int:
+        """Transactions from `account` already in blocks; a lower nonce can never be mined."""
+        self._require("anchor_root")
+        self._check_chain()
+        return int(
+            self.web3.eth.get_transaction_count(self.web3.to_checksum_address(account), "latest")
+        )
+
+    def sign(
+        self,
+        account: LocalAccount,
+        payload: AnchorPayload,
+        nonce: int,
+        max_fee_wei: int,
+        replacing: SignedAnchor | None = None,
+    ) -> SignedAnchor:
+        """Sign at `nonce`; when `replacing` a stuck transaction, outbid it by 12.5%."""
+        self._require("anchor_root")
+        self._check_chain()
+        data = payload.encode()
+        priority = int(self.web3.eth.max_priority_fee)
+        base_fee = int(self.web3.eth.get_block("latest")["baseFeePerGas"])
+        # Twice the base fee keeps the transaction includable through a few full blocks.
+        max_fee = 2 * base_fee + priority
+        floor = 0
+        if replacing is not None:
+            bump, scale = REPLACEMENT_BUMP
+            priority = max(priority, -(-replacing.priority_fee * bump // scale))
+            floor = -(-replacing.max_fee * bump // scale)
+            max_fee = max(max_fee, floor, base_fee + priority)
+        # Never pay more than the cap; give up only if the cap cannot get included.
+        max_fee = min(max_fee, max_fee_wei)
+        if max_fee < base_fee + priority or max_fee < floor:
+            raise AnchorFeeTooHighError("network fee exceeds the anchoring cap")
+        call = {"from": account.address, "to": account.address, "value": 0, "data": data}
+        transaction: TransactionDictType = {
+            "type": 2,
+            "chainId": int(self.chain.chain_id.split(":")[1]),
+            "nonce": nonce,
+            "to": account.address,
+            "value": 0,
+            "data": data,
+            "gas": int(self.web3.eth.estimate_gas(call)),  # type: ignore[arg-type]
+            "maxFeePerGas": max_fee,
+            "maxPriorityFeePerGas": priority,
+        }
+        signed = account.sign_transaction(transaction)
+        return SignedAnchor(
+            nonce=nonce,
+            raw_transaction="0x" + bytes(signed.raw_transaction).hex(),
+            tx_hash="0x" + bytes(signed.hash).hex(),
+            max_fee=max_fee,
+            priority_fee=priority,
+        )
+
+    def broadcast(self, signed: SignedAnchor) -> None:
+        """Send the stored transaction; re-sending one the node already has is a no-op."""
+        from web3.exceptions import TransactionNotFound
+
+        self._require("anchor_root")
+        self._check_chain()
+        try:
+            self.web3.eth.send_raw_transaction(HexStr(signed.raw_transaction))
+        except Exception:
+            try:
+                self.web3.eth.get_transaction(HexStr(signed.tx_hash))
+            except TransactionNotFound:
+                raise AnchorBroadcastError("anchor broadcast failed") from None

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import os
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 from fastapi import FastAPI
@@ -43,6 +43,7 @@ from quantum_backend_v2.api.routers.reservations import build_reservations_route
 from quantum_backend_v2.api.routers.risk import build_risk_router
 from quantum_backend_v2.api.routers.services import build_services_router
 from quantum_backend_v2.api.routers.workflows import build_workflows_router
+from quantum_backend_v2.application.anchoring import ProvenanceAnchorService, anchor_periodically
 from quantum_backend_v2.application.parity import (
     CircuitJobService,
     FinancialJobService,
@@ -78,6 +79,7 @@ def create_app(
     reservation_service: ReservationService | None = None,
     runtime_recovery_service: RuntimeRecoveryService | None = None,
     provenance_service: ProvenanceService | None = None,
+    anchor_service: ProvenanceAnchorService | None = None,
 ) -> FastAPI:
     """Create the backend FastAPI application."""
     configure_auth(
@@ -118,11 +120,21 @@ def create_app(
             }
 
         await discovery_service.start()
+        anchor_task = None
         try:
+            if anchor_service is not None and persistence_runtime.mongodb is not None:
+                anchor_task = asyncio.create_task(
+                    anchor_periodically(anchor_service, settings.anchor.interval_seconds)
+                )
             yield
         finally:
             if reconcile_task is not None:
                 reconcile_task.cancel()
+            if anchor_task is not None:
+                # Let an in-flight run stop before persistence shuts down.
+                anchor_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await anchor_task
             for service_name in ("proposal_service", "ai_agent_service", "marketplace_service"):
                 service = getattr(app.state, service_name, None)
                 if service is not None:

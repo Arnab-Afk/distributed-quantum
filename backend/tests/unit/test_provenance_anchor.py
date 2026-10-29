@@ -293,3 +293,101 @@ def test_anchored_bundle_verifies_through_the_existing_report(node):
         result={"job_id": "workflow-1", "fragment_results": [], "quantum_result": {}},
     )
     assert asyncio.run(verify(changed)).status != "verified"
+
+
+class FeeNode(AnchorNode):
+    def __init__(self, base_gwei: int) -> None:
+        super().__init__()
+        self.base = base_gwei * 10**9
+
+    def make_request(self, method, params):
+        result = {
+            "eth_maxPriorityFeePerGas": hex(2 * 10**9),
+            "eth_estimateGas": hex(22_740),
+        }.get(method)
+        if method == "eth_getBlockByNumber" and params[0] == "latest":
+            result = {"number": "0x1", "hash": "0x" + "ef" * 32, "baseFeePerGas": hex(self.base)}
+        if result is not None:
+            return {"jsonrpc": "2.0", "id": 1, "result": result}
+        return super().make_request(method, params)
+
+
+def sign(base_gwei: int, replacing=None, cap_gwei: int = 100):
+    from eth_account import Account
+
+    from quantum_backend_v2.chains.anchor import EvmAnchorSender
+
+    sender = EvmAnchorSender(SEPOLIA, Web3(FeeNode(base_gwei)))
+    return sender.sign(Account.create(), PAYLOAD, 7, cap_gwei * 10**9, replacing=replacing)
+
+
+def test_fees_are_capped_and_never_exceed_the_limit():
+    from eth_account import Account
+
+    from quantum_backend_v2.chains.anchor import AnchorFeeTooHighError
+
+    normal = sign(10)
+    assert (normal.max_fee, normal.priority_fee, normal.nonce) == (22 * 10**9, 2 * 10**9, 7)
+    signed = Account.recover_transaction(normal.raw_transaction)
+    assert signed  # A valid signature over the transaction.
+    # 2 x 60 + 2 gwei would exceed the 100 gwei cap, so the cap is used instead.
+    assert sign(60).max_fee == 100 * 10**9
+    # Base fee plus tip above the cap cannot be included at all: wait instead.
+    with pytest.raises(AnchorFeeTooHighError):
+        sign(99)
+
+
+def test_a_replacement_outbids_the_stuck_transaction_within_the_cap():
+    from quantum_backend_v2.chains.anchor import AnchorFeeTooHighError
+
+    stuck = sign(10)
+    replacement = sign(10, replacing=stuck)
+    assert replacement.nonce == stuck.nonce
+    assert replacement.tx_hash != stuck.tx_hash
+    # Nodes need at least +10% on both fees to accept a same-nonce replacement.
+    assert replacement.max_fee * 8 >= stuck.max_fee * 9
+    assert replacement.priority_fee * 8 >= stuck.priority_fee * 9
+    with pytest.raises(AnchorFeeTooHighError):
+        sign(10, replacing=stuck, cap_gwei=23)
+
+
+def test_scheduler_keeps_running_and_polls_faster_while_pending(monkeypatch, caplog):
+    outcomes = iter(
+        ["pending", RuntimeError("https://user:TOP_SECRET@rpc/key"), "anchored", "idle"]
+    )
+    sleeps = []
+
+    class Service:
+        async def run_once(self):
+            outcome = next(outcomes)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return outcome
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+        if len(sleeps) == 4:
+            raise asyncio.CancelledError
+
+    monkeypatch.setattr(anchoring.asyncio, "sleep", fake_sleep)
+    with caplog.at_level("WARNING"), pytest.raises(asyncio.CancelledError):
+        asyncio.run(anchoring.anchor_periodically(Service(), 3600))
+    # Finality and backlog are rechecked soon; errors back off; idle waits the interval.
+    assert sleeps == [60, 300, 5, 3600]
+    assert "RuntimeError" in caplog.text and "TOP_SECRET" not in caplog.text
+
+
+def test_anchors_from_a_rotated_key_keep_verifying(node):
+    new_key = "0x" + "c3" * 20
+    rotated = RegistryAnchorAdapter(SEPOLIA, (new_key, SENDER), {})
+    assert asyncio.run(rotated.contains_root(anchor())) is True
+    # Without the old account listed, the same real anchor no longer matches.
+    assert asyncio.run(RegistryAnchorAdapter(SEPOLIA, new_key, {}).contains_root(anchor())) is False
+    with pytest.raises(ValueError):
+        RegistryAnchorAdapter(SEPOLIA, (), {})
+
+
+def test_a_misconfigured_rpc_is_unavailable_not_failed(node):
+    node.chain_id = 84532  # The override points at another network.
+    with pytest.raises(AnchorUnavailableError):
+        contains(anchor())

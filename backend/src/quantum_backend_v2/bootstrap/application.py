@@ -7,7 +7,11 @@ from collections.abc import Mapping
 from fastapi import FastAPI
 
 from quantum_backend_v2.api.app import create_app
-from quantum_backend_v2.application.anchoring import RegistryAnchorAdapter
+from quantum_backend_v2.application.anchoring import (
+    EvmAnchorChain,
+    ProvenanceAnchorService,
+    RegistryAnchorAdapter,
+)
 from quantum_backend_v2.application.parity import (
     CircuitJobService,
     FinancialJobService,
@@ -67,17 +71,34 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     reservation_service = ReservationService()
     runtime_recovery_service = RuntimeRecoveryService()
     provenance_service = None
-    if settings.anchor.network is not None and settings.anchor.sender is not None:
+    anchor_service = None
+    anchor = settings.anchor
+    if anchor.network is not None and anchor.sender is not None:
         # Unknown, disabled or non-anchoring networks fail startup instead of skipping checks.
-        anchor_chain = chain_registry.resolve(settings.anchor.network)
+        anchor_chain = chain_registry.resolve(anchor.network)
         provenance_service = ProvenanceService(
             MongoProvenanceRepository(),
             anchor_adapters={
                 anchor_chain.chain_id: RegistryAnchorAdapter(
-                    anchor_chain, settings.anchor.sender, env
+                    anchor_chain, (anchor.sender, *anchor.past_senders), env
                 )
             },
         )
+        if anchor.private_key is not None:
+            from eth_account import Account
+
+            try:
+                account = Account.from_key(anchor.private_key.get_secret_value())
+            except ValueError:
+                raise ValueError("QB2_ANCHOR_PRIVATE_KEY is not a valid key") from None
+            if account.address.lower() != anchor.sender.lower():
+                raise ValueError("QB2_ANCHOR_PRIVATE_KEY does not belong to QB2_ANCHOR_SENDER")
+            anchor_service = ProvenanceAnchorService(
+                EvmAnchorChain(anchor_chain, account, env, max_fee_wei=anchor.max_fee_gwei * 10**9),
+                chain_id=anchor_chain.chain_id,
+                sender=anchor.sender,
+                max_batch=anchor.max_batch,
+            )
     return create_app(
         settings,
         chain_registry=chain_registry,
@@ -92,4 +113,5 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
         reservation_service=reservation_service,
         runtime_recovery_service=runtime_recovery_service,
         provenance_service=provenance_service,
+        anchor_service=anchor_service,
     )
