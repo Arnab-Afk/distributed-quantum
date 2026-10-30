@@ -19,6 +19,7 @@ from datetime import datetime, date, timezone
 from typing import TYPE_CHECKING, Any, Optional
 import logging
 import os
+import time
 import uuid
 import json
 
@@ -42,6 +43,7 @@ from db.agentkit_collections import (
     _decimal_to_decimal128,
     _decimal128_to_decimal,
 )
+from quantum_backend_v2.starknet.session import public_session, submit_session_spend
 
 
 class AIAgentService:
@@ -55,7 +57,12 @@ class AIAgentService:
     - Track spending history and enforce budget limits
     """
 
-    def __init__(self, *, agentkit_service: AgentKitService | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        agentkit_service: AgentKitService | None = None,
+        starknet_submit_fn: Any = None,
+    ) -> None:
         """
         Initialize AI Agent service with Groq and MongoDB.
 
@@ -66,6 +73,7 @@ class AIAgentService:
         - MONGODB_DATABASE
         """
         self._agentkit_service = agentkit_service
+        self._starknet_submit_fn = starknet_submit_fn
         logger.info("Initializing AIAgentService")
 
         # Initialize MongoDB connection
@@ -573,7 +581,78 @@ class AIAgentService:
             if not agent_doc:
                 raise ValueError(f"Agent not found: {agent_id}")
 
-            # Check spending limits
+            # Load proposal to get researcher wallet
+            proposal_doc = await self.db.research_proposals.find_one({"proposal_id": proposal_id})
+            if not proposal_doc:
+                raise ValueError(f"Proposal not found: {proposal_id}")
+
+            raw_session = agent_doc.get("starknet_session")
+            now_unix = int(time.time())
+            session_view = public_session(raw_session, now=now_unix) if raw_session else None
+
+            if session_view and session_view.get("status") == "active":
+                starknet_payee = (proposal_doc.get("researcher_starknet_wallet") or "").strip()
+                if not starknet_payee:
+                    raise ValueError(
+                        "Proposal has no researcher_starknet_wallet for active Starknet session funding"
+                    )
+                updated_session, tx_hash = await submit_session_spend(
+                    raw_session,
+                    agent_id=agent_id,
+                    amount_strk=amount,
+                    payee=starknet_payee,
+                    now=now_unix,
+                    submit_fn=self._starknet_submit_fn,
+                )
+                logger.info(f"Starknet session funding executed: {tx_hash}")
+
+                current_strk = (
+                    _decimal128_to_decimal(proposal_doc["budget_raised_strk"])
+                    if proposal_doc.get("budget_raised_strk") is not None
+                    else Decimal("0")
+                )
+                new_budget_raised_strk = current_strk + amount
+                await self.db.research_proposals.update_one(
+                    {"proposal_id": proposal_id},
+                    {
+                        "$set": {
+                            "budget_raised_strk": _decimal_to_decimal128(new_budget_raised_strk),
+                            "updated_at": datetime.now(timezone.utc),
+                        },
+                        "$push": {
+                            "funders": {
+                                "funder_id": agent_id,
+                                "wallet_address": str(raw_session.get("owner") or agent_doc["wallet_address"]),
+                                "amount_strk": _decimal_to_decimal128(amount),
+                                "amount_usdc": _decimal_to_decimal128(Decimal("0")),
+                                "currency": "STRK",
+                                "funded_at": datetime.now(timezone.utc),
+                            }
+                        },
+                    },
+                )
+                spending_record = {
+                    "timestamp": datetime.now(timezone.utc),
+                    "amount": _decimal_to_decimal128(amount),
+                    "currency": "STRK",
+                    "purpose": f"Funded proposal {proposal_id} (Starknet session)",
+                    "transaction_hash": tx_hash,
+                }
+                new_total_spent = _decimal128_to_decimal(agent_doc["total_spent"]) + amount
+                await self.db.ai_agents.update_one(
+                    {"agent_id": agent_id},
+                    {
+                        "$push": {"spending_history": spending_record},
+                        "$set": {
+                            "starknet_session": updated_session,
+                            "total_spent": _decimal_to_decimal128(new_total_spent),
+                            "updated_at": datetime.now(timezone.utc),
+                        },
+                    },
+                )
+                return
+
+            # Check spending limits for Base USDC funding
             max_per_proposal = _decimal128_to_decimal(agent_doc["config"]["max_per_proposal"])
             daily_remaining = await self._get_daily_remaining(agent_id)
 
@@ -586,11 +665,6 @@ class AIAgentService:
                 raise ValueError(
                     f"Funding amount ({amount}) exceeds daily remaining budget ({daily_remaining})"
                 )
-
-            # Load proposal to get researcher wallet
-            proposal_doc = await self.db.research_proposals.find_one({"proposal_id": proposal_id})
-            if not proposal_doc:
-                raise ValueError(f"Proposal not found: {proposal_id}")
 
             agentkit_service = self.agentkit
 

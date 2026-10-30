@@ -17,7 +17,7 @@ const STATUS_LABEL: Record<string, string> = {
   revoked: "Revoked",
 };
 
-const RECEIPT_CHECK_DELAYS_MS = [15_000, 60_000];
+const RECEIPT_CHECK_DELAYS_MS = [150_000, 270_000, 330_000];
 
 function pendingSubmittedMarks(calls: StarknetSessionStatus["calls"]) {
   const marks = new Set<number>();
@@ -38,16 +38,51 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
+function SessionEndedReopen({
+  compact,
+  buttonLabel,
+  onReopen,
+}: {
+  compact?: boolean;
+  buttonLabel: string;
+  onReopen: () => void;
+}) {
+  return (
+    <div
+      className={
+        compact
+          ? "mt-2 rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/12"
+          : "mt-2 w-[22.5rem] rounded-xl bg-white/[0.03] px-4 py-3 ring-1 ring-white/12"
+      }
+    >
+      <p className="text-xs leading-relaxed text-white/60">Spending session ended.</p>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="mt-2.5 h-8 w-full text-xs text-purple-100/80 ring-1 ring-purple-400/30 hover:bg-purple-500/10"
+        onClick={(event) => {
+          event.stopPropagation();
+          onReopen();
+        }}
+      >
+        {buttonLabel}
+      </Button>
+    </div>
+  );
+}
+
 export function StarknetSessionPanel({
   agentId,
   session,
   variant,
   onTestSpend,
+  onOpenSession,
 }: {
   agentId: string;
   session: StarknetSessionStatus;
   variant: "card" | "header";
   onTestSpend?: (agentId: string) => void;
+  onOpenSession?: (agentId: string) => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   const revokeSession = useRevokeStarknetSession();
@@ -59,6 +94,7 @@ export function StarknetSessionPanel({
   const { address, connectWallet, signAndSend } = useStarknetWallet();
   const status = session.status ?? "active";
   const header = variant === "header";
+  const isMainnet = session.chain_id === "starknet:SN_MAIN";
   const pendingMarks = pendingSubmittedMarks(session.calls).join(",");
 
   useEffect(() => {
@@ -120,14 +156,24 @@ export function StarknetSessionPanel({
     }
   };
 
+  if (header && status === "revoked") {
+    return (
+      <SessionEndedReopen
+        buttonLabel="Open Starknet Session"
+        onReopen={() => onOpenSession?.(agentId)}
+      />
+    );
+  }
+
   return (
-    <div
-      className={
-        header
-          ? "mt-2 w-[22.5rem] rounded-xl bg-purple-500/[0.07] px-4 py-3.5 ring-1 ring-purple-400/35"
-          : "mt-3 rounded-xl bg-purple-500/[0.05] px-4 py-3.5 ring-1 ring-purple-400/25"
-      }
-    >
+    <>
+      <div
+        className={
+          header
+            ? "mt-2 w-[22.5rem] rounded-xl bg-purple-500/[0.07] px-4 py-3.5 ring-1 ring-purple-400/35"
+            : "mt-3 rounded-xl bg-purple-500/[0.05] px-4 py-3.5 ring-1 ring-purple-400/25"
+        }
+      >
       <div className="mb-3 flex items-center justify-between gap-4">
         <span className={header ? "text-sm font-medium text-purple-100" : "text-xs font-medium text-purple-100/90"}>
           Starknet Session
@@ -148,6 +194,11 @@ export function StarknetSessionPanel({
         <Row label="Max / proposal">{formatStrk(session.max_per_call, session.decimals)}</Row>
         <Row label="Daily limit">{formatStrk(session.daily_limit, session.decimals)}</Row>
       </div>
+      {header && status === "active" && (
+        <p className="mt-2.5 text-[11px] leading-relaxed text-white/45">
+          STRK spend caps for this agent.
+        </p>
+      )}
       {!header && (
         <Button
           size="sm"
@@ -163,18 +214,20 @@ export function StarknetSessionPanel({
       )}
       {status === "active" && (
         <div className="mt-2 flex gap-2">
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-8 flex-1 text-xs text-blue-200/80 ring-1 ring-blue-400/25 hover:bg-blue-500/10"
-            onClick={(event) => {
-              event.stopPropagation();
-              onTestSpend?.(agentId);
-            }}
-          >
-            <TrendingUp size={12} className="mr-1.5" />
-            Test Spend
-          </Button>
+          {!isMainnet && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 flex-1 text-xs text-blue-200/80 ring-1 ring-blue-400/25 hover:bg-blue-500/10"
+              onClick={(event) => {
+                event.stopPropagation();
+                onTestSpend?.(agentId);
+              }}
+            >
+              <TrendingUp size={12} className="mr-1.5" />
+              Get STRK
+            </Button>
+          )}
           <Button
             size="sm"
             variant="ghost"
@@ -188,7 +241,9 @@ export function StarknetSessionPanel({
       )}
       {status === "revocation_pending" && (
         <p className="mt-3 text-center text-[11px] leading-relaxed text-amber-200/80">
-          Revocation is waiting on the Ready transaction.
+          {header
+            ? "Spending session still active until the revoke is accepted on L2."
+            : "Revocation is waiting on the Ready transaction."}
         </p>
       )}
       {!header && (
@@ -199,6 +254,14 @@ export function StarknetSessionPanel({
           onOpenChange={setHistoryOpen}
         />
       )}
-    </div>
+      </div>
+      {!header && status === "revoked" && (
+        <SessionEndedReopen
+          compact
+          buttonLabel="Reopen starknet session"
+          onReopen={() => onOpenSession?.(agentId)}
+        />
+      )}
+    </>
   );
 }

@@ -8,15 +8,26 @@ Create a session for one agent, have the Ready owner register it, and test a spe
 
 ## What This Does
 
-Agent budget caps (`max_per_proposal`, `daily_budget`) are enforced **on-chain** when the Ready owner calls `spend`. The backend stores a session key encrypted with `WALLET_ENCRYPTION_KEY` and puts the public key in `register_session`. This contract does not check that key.
+Agent budget caps (`max_per_proposal`, `daily_budget`) map onto on-chain `max_per_call` and `daily_limit` per agent row in `SpendingPolicy`. The backend stores a session key encrypted with `WALLET_ENCRYPTION_KEY` and puts the public key in `register_session`.
 
-The Ready owner signs `register_session`, `spend`, and `revoke_session`. The policy contract checks:
+| Acceptance criterion (`FEAT_STARKNET_SPENDING_POLICIES.md`) | Implementation |
+|---|---|
+| Agent transacts within policy and is rejected on-chain beyond it | When an agent has an active Starknet session and funds a proposal with `researcher_starknet_wallet`, `ai_agent_service._execute_funding` signs a session-key `spend` over `(agent_key, payee, amount, nonce, contract, chain_id)` and the backend relayer submits it. Over-cap, expired, or revoked calls revert on-chain with no Base USDC fallback. Agents without an active session keep the Base USDC transfer. |
+| Session keys can be revoked and expire automatically | Ready owner signs `revoke_session`, and `expires_at` is checked on every `spend`. Register and revoke UI remain available on Sepolia and mainnet. |
+| Policy parameters map to existing agent config fields | `max_per_proposal` and `daily_budget` map to `max_per_call` and `daily_limit` on that agent's storage row (`agent_key`) when `register_session` is called. |
 
-- **Owner** — `spend` reverts unless the caller is the owner
+Groq, OpenRouter, and NEAR chat replies are not capped by this contract.
+
+The policy contract checks on each agent's row (`agent_key`):
+
+- **Authorization** — either the Ready owner is the caller and `payee` equals the row's `recipient` (Sepolia **Get STRK** withdrawal), or `check_ecdsa_signature` verifies `session_public_key` over `(agent_key, payee, amount, nonce, contract, chain_id)`
+- **Nonce** — `nonce` must match the row's current nonce and increments on every successful spend
 - **Per-call limit** — one spend cannot exceed `max_per_call`
-- **Daily limit** — the contract’s `spent_today` cannot exceed `daily_limit`
+- **Daily limit** — the row's `spent_today` cannot exceed `daily_limit` (owner **Get STRK** and agent session spends share the same `spent_today` and `nonce`)
 - **Expiry** — session expires at `expires_at`
-- **Revocation** — `revoke_session` sets `revoked` on-chain after the owner transaction is accepted
+- **Revocation** — `revoke_session` sets `revoked` on that agent's row after the owner transaction is accepted
+
+Until `STARKNET_SESSION_KEY_SPEND=1` and `STARKNET_POLICY_CONTRACT` point to the newly deployed per-agent contract class, the backend emits the legacy 8-felt `register_session`, 2-felt `spend(amount)`, and 0-felt `revoke_session` calldata so the existing owner-only contract (`0x04f1882a…`) continues to work without breaking changes.
 
 Spend preflight calls the same checks and does **not** write `spent_today`. Repeating preflight does not reduce the budget. The on-chain counter is the one that counts. A confirmed spend receipt does not write `spent_today` in the database either.
 
@@ -51,10 +62,13 @@ AGENT_AUTH_BRIDGE_SECRET=
 WALLET_ENCRYPTION_KEY=
 QB2_STARKNET_SEPOLIA_RPC_URL=https://starknet-sepolia-rpc.publicnode.com
 STARKNET_POLICY_CONTRACT=
+STARKNET_SESSION_KEY_SPEND=
+STARKNET_RELAYER_ADDRESS=
+STARKNET_RELAYER_PRIVATE_KEY=
 AVNU_PAYMASTER_API_KEY=
 ```
 
-`QB2_STARKNET_SEPOLIA_RPC_URL` must be a live RPC (publicnode or `https://api.cartridge.gg/x/starknet/sepolia/rpc/v0_10`). The registry’s Blast default is dead.
+`QB2_STARKNET_SEPOLIA_RPC_URL` must be a live RPC (publicnode or `https://api.cartridge.gg/x/starknet/sepolia/rpc/v0_10`). The chain registry default is `https://starknet-sepolia-rpc.publicnode.com`. The old Blast URL (`starknet-sepolia.public.blastapi.io`) returns **403** — set the env var explicitly if receipt polling still hits Blast after a restart.
 
 AVNU (`https://sepolia.paymaster.avnu.fi`) may sponsor `register_session` only. The open response includes a `paymaster` JSON body for that call. The app does not submit it. Spend and revoke are paid by Ready. `revoke` returns `paymaster_sponsored: false`.
 
@@ -89,15 +103,19 @@ The card then shows **Starknet Session**:
 
 - **Max / proposal** and **Daily limit** in STRK (`formatStrk` with the session decimals, 18). These are not raw fri.
 - Status **Active**, **Revoking**, **Expired**, or **Revoked**.
-- **Txn History**, **Test Spend**, and **Revoke** while the status is Active.
+- **Txn History**, **Get STRK** (Sepolia only), and **Revoke** while the status is Active. On mainnet (`starknet:SN_MAIN`), only **Register** and **Revoke** are shown.
 
 A successful open redirects to `/agents/chat?agentId=…`.
 
-### 2. Test spend
+### 2. Get STRK (Sepolia owner withdrawal) and Agent Proposal Funding
 
-**Test Spend** asks for an amount in STRK. The backend preflights caps and returns `spend` calldata (amount as a Cairo `u256`: low felt, then high felt). Ready signs `spend`. The hash is stored as `kind: "spend"` with that amount.
+On Sepolia, **Get STRK** asks for an amount in STRK. The backend preflights caps and returns `spend` calldata. Ready signs `spend`, pulling STRK from the policy contract into the connected Ready wallet up to that agent's per-call and daily budget. If preflight returns `daily`, the dialog displays the remaining daily budget and a link to `https://faucet.starknet.io/` (Sepolia only; the faucet funds a wallet and does not reset the policy contract's daily cap).
 
-The dialog copy is: preflight checks caps, and the owner signs `spend`.
+When an agent with an active Starknet session funds a proposal in `ai_agent_service._execute_funding`:
+- The proposal must specify `researcher_starknet_wallet` (a valid Starknet felt address). If `researcher_starknet_wallet` is missing while the session is active, funding raises an error and does **not** fall back to Base USDC.
+- The backend decrypts the agent's session key, signs `(agent_key, payee, amount, nonce, contract, chain_id)`, and submits `spend` via the relayer account (`STARKNET_RELAYER_ADDRESS` / `STARKNET_RELAYER_PRIVATE_KEY`).
+- STRK is transferred from the policy contract to `researcher_starknet_wallet`, recorded on `starknet_session.calls`, and added to `budget_raised_strk` on the proposal (keeping `budget_raised` in USDC separate so currencies are never mixed).
+- Agents without an active Starknet session continue to fund proposals in Base USDC via `agentkit_service.transfer_usdc`.
 
 ### 3. Revoke
 
@@ -122,11 +140,51 @@ A spend row with an amount reads `Spend {amount} STRK`. The hash is a truncated 
 
 Each submitted hash is appended to `starknet_session.calls`. `POST /api/v1/agents/{id}/starknet-session/txs` refreshes calls that are not confirmed or failed, via `StarknetRpcAdapter.verify_transaction` (`starknet_getTransactionReceipt`). Confirmed and failed stop. A confirmed spend does not write `spent_today`. A confirmed revoke sets `revoked` and clears `revocation_pending`.
 
-A mounted session panel schedules two receipt checks from each open call’s `submitted_at`: about 15 seconds later, then about 60 seconds later. After those two, it does not keep polling. Opening Txn History refreshes once. Confirmed means L2 acceptance (`ACCEPTED_ON_L2` or `ACCEPTED_ON_L1`), not the later Ethereum proof. This is not a 30–45 minute poll.
+A mounted session panel checks each open call about 2.5 minutes, 4.5 minutes, and 5.5 minutes after `submitted_at`, so the card can leave **Revoking** without the dialog. While Transaction history is open, it checks about once a minute until Confirmed or Failed. Confirmed means L2 acceptance (`ACCEPTED_ON_L2` or `ACCEPTED_ON_L1`). Block numbers from the RPC may be hex. This is not a 30–45 minute poll.
 
 ### 5. Chat stays on the agent
 
 Chat sessions are per agent. `/agents/chat` lists and restores transcripts whose `agentId` matches the agent in the URL. Switching agents drops another agent’s open transcript. A new agent does not show another agent’s messages.
+
+### 6. How much was spent (which wallet, where to look)
+
+There are three separate balances. Do not mix them when reading chat or Voyager.
+
+| Rail | Wallet row | What spends | Where to see amounts |
+|------|------------|-------------|----------------------|
+| **Base Sepolia (USDC)** | `entity_type: "agent"` — CDP wallet for the agent id | Agent chat **fund proposal** (when no active Starknet session path), or other AgentKit transfers | Agent chat tool **get_wallet** (USDC + ETH). Base Sepolia explorer for the agent address on the card. |
+| **Base Sepolia (USDC)** | `entity_type: "user"` — CDP wallet for the logged-in owner | Not used for Starknet. Required as **researcher wallet** on proposals (escrow metadata). | Created lazily on first `create_proposal`; no charge to submit a proposal. `POST /api/v1/wallet` or first successful proposal create provisions it. |
+| **Starknet STRK** | Policy contract (`STARKNET_POLICY_CONTRACT`) | **Get STRK**, session-key agent funding to `researcher_starknet_wallet`, relayer-submitted spends | **Txn History** on the agent card: each confirmed **Spend {amount} STRK** row. Voyager: policy contract STRK balance down, recipient up. On-chain `spent_today` and `nonce` on that agent row (authoritative for daily cap; DB `spent_today` is not updated on receipt confirm). |
+
+**Creating a proposal in chat** (`create_proposal`) does **not** move USDC or STRK. The table in chat (`0 / 500 USDC raised`) is crowdfunding progress, not a debit from your wallet.
+
+**Ready wallet** pays **gas only** for register / owner Get STRK / revoke invokes you sign in the browser. STRK payout amounts come from the **policy contract** balance, not from Ready’s STRK balance (except gas fees).
+
+---
+
+## Platform pitfalls (researcher wallet and Pending receipts)
+
+Two issues show up often in local dev. Both are backend/configuration, not “insufficient funds” on the agent card.
+
+### Researcher wallet not found (agent chat `create_proposal`)
+
+**Symptom:** Chat tool fails with `Researcher wallet not found for {owner_id}` even though **get_wallet** shows the **agent** has USDC on Base.
+
+**Cause:** Proposals attach to the **owner’s user wallet** (`entity_id` = logged-in user, `entity_type: "user"`). Creating an agent only provisions an **agent** wallet. Signup does not auto-create a user wallet.
+
+**Fix (code):** `ProposalService.create_proposal` calls `AgentKitService.create_wallet(entity_id=researcher_id, entity_type="user")` when that row is missing — same path as `POST /api/v1/wallet`.
+
+**What you should see after fix:** Backend log `No user wallet for researcher …; provisioning via AgentKit`, then `Created wallet … for user:…`. Retry **create_proposal** in chat (no manual wallet UI step required).
+
+### Txn History stuck on Pending while Voyager shows Accepted on L2
+
+**Symptom:** Register / spend rows stay **Pending** in **Txn History**; `POST …/starknet-session/txs` returns **200** but status never becomes **Confirmed**.
+
+**Cause:** Receipt refresh calls `starknet_getTransactionReceipt` through `resolve_rpc_url`. A dead RPC (historically Blast **403**) makes `httpx` fail; `refresh_call_statuses` catches the error and **leaves the call pending** (no 503 on the whole request).
+
+**Fix:** Set `QB2_STARKNET_SEPOLIA_RPC_URL=https://starknet-sepolia-rpc.publicnode.com` (or Cartridge `/rpc/v0_10`) in `backend/.env`, **restart** `quantum-backend`, then open **Txn History** again (~1/min poll while open) or wait for the card’s 2.5 / 4.5 / 5.5 minute receipt timers.
+
+**Verify:** Backend logs should show successful HTTP to publicnode on `/txs`, not `blastapi.io … 403`. Warning lines `Starknet receipt check failed for 0x…` mean RPC still failing.
 
 ---
 
@@ -276,7 +334,9 @@ Optional: submit the open response’s `paymaster` object to [AVNU Sepolia](http
 | **500** `from_random` | starknet.py &lt; 0.30 | `uv add starknet.py` in `backend`, restart |
 | **503** on open | `WALLET_ENCRYPTION_KEY` or `STARKNET_POLICY_CONTRACT` unset, or starknet.py is not installed | Set both env vars, restart |
 | **503** on spend or revoke | `STARKNET_POLICY_CONTRACT` unset | Set the deployed policy address, restart |
-| **503** on `…/txs` | Receipt RPC failed | Set `QB2_STARKNET_SEPOLIA_RPC_URL` to publicnode or Cartridge `/rpc/v0_10` |
+| **503** on `…/txs` | Receipt RPC failed (whole refresh aborted) | Set `QB2_STARKNET_SEPOLIA_RPC_URL` to publicnode or Cartridge `/rpc/v0_10`, restart |
+| Txn History **Pending** forever, Voyager **Accepted on L2** | Receipt RPC failed per hash (often Blast **403**); `/txs` still **200** | Same RPC env + restart; reopen Txn History. See **Platform pitfalls** above |
+| **`Researcher wallet not found`** in chat `create_proposal` | No `entity_type: "user"` wallet for owner | Retry after lazy provision (see **Platform pitfalls**); agent USDC wallet is unrelated |
 | Revert **owner** | Signer is not the constructor owner | Sign with Ready `0x026a…F0fc` |
 | Revert **expired** | `expires_at` is in the past | Open again with a future expiry |
 | Revert **per_call** | Amount or cap is above the per-call max, or caps are inverted | Amount ≤ max/proposal ≤ daily budget |
@@ -331,39 +391,96 @@ AVNU may sponsor `register_session` when you submit the `paymaster` body yoursel
 
 ---
 
-## For Maintainers: Deploying a New Policy Contract
+## For Maintainers: Auditing and Deploying the Updated Policy Contract
 
-The Sepolia contract above is the one the app uses. Deploy a new one only for a new network or a new class. This tree’s Cairo comments were not redeployed.
+The original Sepolia contract (`0x04f1882a…`, class `0x00a4e8f1…`) has no upgrade entrypoint and stores a single session slot. Deploying the updated `SpendingPolicy` contract (`backend/contracts/starknet/src/spending_policy.cairo`) enables per-agent rows (`agent_key`) and session-key ECDSA verification in `spend`.
 
-- **Scarb 2.19.0** (Sierra 1.9.0)
-- **sncast** 0.64.1+
-- **starkli 0.4.2** for the OpenZeppelin deployer account
-- Funded deployer. Constructor argument is the Ready owner.
+### Can you reuse the existing OpenZeppelin deployer account?
+
+**Yes.** Reuse the same deployed OpenZeppelin account (`~/.starkli/sepolia/account.json` and `~/.starkli/sepolia/keystore.json`, e.g. `0x06be8842d0d8cd1660b029018e13cbba161b0db7cf7d687ee9ca36256a2b3d73`) to declare and deploy the new class, and reuse the same account (or a dedicated OpenZeppelin account) for `STARKNET_RELAYER_ADDRESS`. You do **not** need to deploy a new OpenZeppelin account.
+
+### Gas and STRK balances required
+
+1. **OpenZeppelin deployer / relayer account** (`0x06be8842…`): pays L2 gas in STRK for `sncast declare`, `sncast deploy`, and backend relayer `spend` calls. Keep **at least 3–5 STRK** on this account before running `declare` and `deploy`.
+2. **Ready owner wallet** (`0x026a705A…`): pays gas when signing `register_session`, `revoke_session`, and Sepolia **Get STRK** in the browser.
+3. **Deployed `SpendingPolicy` contract**: holds the STRK pool that `spend` transfers to `researcher_starknet_wallet` (for agent proposal funding) or to the Ready recipient (for Sepolia **Get STRK**). Transfer Sepolia STRK to the newly deployed contract address after step 3 below.
+
+### Step 1: Audit and compile the Cairo contract
+
+Verify the contract source and run the unit test suite before compiling:
 
 ```bash
-cd backend/contracts/starknet
+cd distributed-quantum/backend/contracts/starknet
 asdf set scarb 2.19.0
 scarb clean && scarb build
 python3 -c "import json; print(json.load(open('target/dev/spending_policy_SpendingPolicy.contract_class.json'))['sierra_program'][:3])"
 ```
 
-The header must be `0x1 0x9 0x0`. Declare and deploy with publicnode (or Cartridge `/rpc/v0_10`), the same keystore and account as `REVVING_UP_STARKNET.md`, and the Ready address as the only constructor calldata. Point `STARKNET_POLICY_CONTRACT` at the new address. Do not put the address only in a second frontend constant; calls use the env var.
+Confirm the Sierra header output is `['0x1', '0x9', '0x0']` (Sierra 1.9.0, required by Sepolia). Then run the Python policy and calldata verification suite:
 
 ```bash
-cd backend
+cd /path/to/distributed-quantum/backend
 uv run pytest tests/unit/test_starknet_policy.py -v
 ```
 
+### Step 2: Declare the new contract class with `sncast`
+
+`starkli 0.4.2` cannot compile Sierra 1.9.5 CASM hashes for declare; use `sncast` (0.64.1+) with JSON-RPC `v0_10` (publicnode or Cartridge `/rpc/v0_10`) and your existing starkli keystore and account:
+
+```bash
+cd distributed-quantum/backend/contracts/starknet
+
+# Optional fee preview without broadcasting:
+sncast --keystore ~/.starkli/sepolia/keystore.json \
+  --account ~/.starkli/sepolia/account.json \
+  declare --contract-name SpendingPolicy \
+  --url https://starknet-sepolia-rpc.publicnode.com \
+  --dry-run
+
+# Broadcast the declare transaction:
+sncast --keystore ~/.starkli/sepolia/keystore.json \
+  --account ~/.starkli/sepolia/account.json \
+  declare --contract-name SpendingPolicy \
+  --url https://starknet-sepolia-rpc.publicnode.com
+```
+
+Copy the new `class_hash` from the output (it will differ from the legacy `0x00a4e8f1…` hash).
+
+### Step 3: Deploy the new `SpendingPolicy` instance
+
+Pass your Ready owner address as the single constructor argument:
+
+```bash
+cd distributed-quantum/backend/contracts/starknet
+
+sncast --keystore ~/.starkli/sepolia/keystore.json \
+  --account ~/.starkli/sepolia/account.json \
+  deploy --class-hash <NEW_CLASS_HASH> \
+  --constructor-calldata 0x026a705Ae4dB69a318E5b6ce945a7c47776da45f5F281aB0E0A43A13D91FF0fc \
+  --url https://starknet-sepolia-rpc.publicnode.com
+```
+
+Copy the new `contract_address` from the deploy output.
+
+### Step 4: Fund the new contract and cut over `backend/.env`
+
+1. Send Sepolia STRK (`0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d`) from Ready or the Sepolia faucet to `<NEW_CONTRACT_ADDRESS>`.
+2. Update `distributed-quantum/backend/.env`:
+   - Set `STARKNET_POLICY_CONTRACT=<NEW_CONTRACT_ADDRESS>`
+   - Set `STARKNET_SESSION_KEY_SPEND=1`
+   - Set `STARKNET_RELAYER_ADDRESS` and `STARKNET_RELAYER_PRIVATE_KEY` to the funded OpenZeppelin account that submits session-key `spend` calls
+3. Restart `uv run quantum-backend --host 127.0.0.1 --port 8081` and re-open the agent's Starknet session in the UI so `register_session` writes the agent's row (`agent_key`) on the new contract.
+
 ---
 
-## Not in this version
+## Out of Scope in This Version
 
-- The session private key does not sign `spend`, and it is not registered as a Ready session key.
-- Sessions do not auto-renew. Receipt checks run about 15 seconds and 60 seconds after submit, then only when Txn History is opened.
-- Mainnet is not deployed.
+- Mainnet contract deployment (UI already hides **Get STRK** and the faucet link when `chain_id` is `starknet:SN_MAIN`).
+- Automatic paymaster submission on `register_session` (the API returns the AVNU sponsor payload; Ready submits the transaction directly).
+- Capping Groq, OpenRouter, or NEAR AI Cloud inference replies.
 
 ---
 
-**Last Updated:** October 29, 2026
-**Contract:** Sierra 1.9.0 class already on Starknet Sepolia (not redeployed with the latest comments)
+**Last Updated:** October 31, 2026
+**Contract:** Sierra 1.9.0 (`spending_policy.cairo`, per-agent rows + session-key ECDSA `spend`)
 **Network:** Starknet Sepolia
