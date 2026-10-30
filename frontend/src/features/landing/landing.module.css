@@ -299,40 +299,92 @@
   justify-self: end;
 }
 
-/* ── Hero ── */
+/* ── Hero: centred intro over a full-width world map ── */
 
 .hero {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  align-items: center;
-  gap: 2rem;
+  justify-items: center;
+  gap: clamp(1.5rem, 3vw, 2.5rem);
   width: var(--inner);
   margin: 0 auto;
-  padding: clamp(3rem, 6vw, 5rem) 0 1.5rem;
+  padding: clamp(3rem, 5.5vw, 4.5rem) var(--inset) 1.75rem;
+  isolation: isolate;
+  text-align: center;
+}
+
+/* Background motion: a dot field drifting slowly behind a soft glow. */
+.hero::before,
+.hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+
+.hero::before {
+  background: var(--dots);
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 62%, black 20%, transparent 75%);
+  animation: dotDrift 18s linear infinite;
+}
+
+.hero::after {
+  background: radial-gradient(ellipse 45% 35% at 50% 64%, oklch(1 0 0 / 0.045), transparent 70%);
+  animation: glowBreathe 9s ease-in-out infinite;
+}
+
+@keyframes dotDrift {
+  to {
+    background-position: 64px 32px;
+  }
+}
+
+@keyframes glowBreathe {
+  50% {
+    opacity: 0.45;
+  }
 }
 
 .heroIntro {
   display: grid;
-  gap: 1.75rem;
-  justify-items: start;
+  gap: 1.5rem;
+  justify-items: center;
+  max-width: 46rem;
+}
+
+.heroIntro .h1 {
+  font-size: clamp(3rem, 6vw, 5rem);
 }
 
 .heroLead {
   margin: 0;
-  max-width: 30rem;
+  max-width: 38rem;
   font-size: var(--text-lead);
   font-weight: 300;
   line-height: 1.4;
+  text-wrap: balance;
 }
 
 .heroLead span {
   color: var(--ink-muted);
 }
 
+.hero .actions {
+  justify-content: center;
+}
+
+.hero .isoStage {
+  width: min(100%, 64rem);
+  margin-top: 0.5rem;
+}
+
+.hero .isoCaption {
+  text-align: center;
+}
+
 .ribbon {
-  grid-column: 1 / -1;
   justify-self: end;
   display: inline-flex;
   align-items: center;
@@ -1646,7 +1698,7 @@
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 744 / 470;
+  aspect-ratio: 744 / 360;
   overflow: visible;
   cursor: pointer;
 }
@@ -2067,9 +2119,8 @@
     min-height: 34rem;
   }
 
-  .isoStage {
-    width: 140%;
-    margin-inline: -20%;
+  .hero .isoStage {
+    width: 150%;
   }
 
   .isoCaption {
@@ -2110,7 +2161,9 @@
     transform: translateY(calc(var(--digit) * -10%)) !important;
   }
 
-  .wordmarkTrack {
+  .wordmarkTrack,
+  .hero::before,
+  .hero::after {
     animation: none;
   }
 

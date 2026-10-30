@@ -4,12 +4,27 @@ import { useEffect, useRef, useState } from "react";
 
 import styles from "../landing.module.css";
 import { DRAW } from "./devices";
-import { add, clamp, COS, ease, iso, lerp3, plane, pts, SIN, type V3 } from "./iso";
+import { add, clamp, ease, lerp3, type V3 } from "./iso";
 import { hash } from "./pixel-canvas";
 import { LAND, MAP_COLS, MAP_ROWS, toCell } from "./world-map";
 
+// ── Scene projection ──
+// The map lies flat and faces the viewer, tilted back like a table seen from above,
+// so it runs horizontally across the hero. Devices keep their isometric drawings.
+const TILT = 0.5;
+const iso = ([x, y, z]: V3): [number, number] => [x, y * TILT - z];
+const pts = (list: V3[]) => list.map((p) => iso(p).map((n) => n.toFixed(1)).join(",")).join(" ");
+const plane = (o: V3, u: V3, v: V3, w: number, h: number) => {
+  const [ox, oy] = iso(o);
+  const [ux, uy] = iso(add(o, u));
+  const [vx, vy] = iso(add(o, v));
+  return `matrix(${(ux - ox) / w} ${(uy - oy) / w} ${(vx - ox) / h} ${(vy - oy) / h} ${ox} ${oy})`;
+};
+/** A circle of radius r lying on the map, as an ellipse's radii. */
+const flat = (r: number) => ({ rx: r, ry: r * TILT });
+
 // ── The world map slab ──
-const CELL = 5.4; // world units per 3.75° map cell
+const CELL = 7.3; // world units per 3.75° map cell
 const MAP_W = MAP_COLS * CELL;
 const MAP_D = MAP_ROWS * CELL;
 const MAP_T = 10;
@@ -29,7 +44,7 @@ interface Device {
   height: number;
   at: V3;
 }
-const SCALE = 0.62; // devices are drawn smaller over the map
+const SCALE = 0.5; // devices are drawn smaller over the map
 // Ordered so the ring of links travels around the globe.
 const SLOTS: [Kind, string, string, number, number, number][] = [
   ["laptop", "Laptop", "San Francisco", 64, -122.4, 37.8],
@@ -47,11 +62,11 @@ const DEVICES: Device[] = SLOTS.map(([kind, name, city, height, lon, lat]) => ({
   at: onMap(lon, lat),
 }));
 const ORDER = DEVICES.map((_, i) => i).sort((a, b) => iso(DEVICES[a].at)[1] - iso(DEVICES[b].at)[1]);
-const SPHERE = { x: 0, y: -250, r: 50 };
+const SPHERE = { x: 0, y: -196, r: 40 };
 // The sphere's underside, as a world point: fragments leave from here and bits return here.
 const SOURCE: V3 = [0, 0, -(SPHERE.y + SPHERE.r)];
 /** Each peer hovers over its city at its own height and bobs gently. */
-const floatOf = (i: number, now: number) => 34 + (i % 3) * 10 + Math.sin(now * 1.1 + i * 1.7) * 4;
+const floatOf = (i: number, now: number) => 26 + (i % 3) * 8 + Math.sin(now * 1.1 + i * 1.7) * 3;
 
 /** The slab and its dotted continents. Built once: it never changes. */
 const MAP_SLAB = (() => {
@@ -66,7 +81,6 @@ const MAP_SLAB = (() => {
   }
   return (
     <g aria-hidden="true">
-      <polygon className={styles.mapSide} points={pts([c(MAP_W, 0, 0), c(MAP_W, MAP_D, 0), c(MAP_W, MAP_D, MAP_T), c(MAP_W, 0, MAP_T)])} />
       <polygon className={styles.mapSide} points={pts([c(0, MAP_D, 0), c(MAP_W, MAP_D, 0), c(MAP_W, MAP_D, MAP_T), c(0, MAP_D, MAP_T)])} />
       <polygon className={styles.mapTop} points={pts([c(0, 0, MAP_T), c(MAP_W, 0, MAP_T), c(MAP_W, MAP_D, MAP_T), c(0, MAP_D, MAP_T)])} />
       <g transform={plane(c(0, 0, MAP_T), [MAP_W, 0, 0], [0, MAP_D, 0], MAP_COLS, MAP_ROWS)}>
@@ -140,7 +154,7 @@ export function IsoMesh({ label, caption }: { label: string; caption: string }) 
 
   return (
     <figure ref={ref} className={styles.isoStage}>
-      <svg className={styles.isoSvg} viewBox="-372 -330 744 545" role="img" aria-label={label} onClick={restart}>
+      <svg className={styles.isoSvg} viewBox="-372 -252 744 360" role="img" aria-label={label} onClick={restart}>
         {MAP_SLAB}
         <Pins now={join} joining={joining} />
         <Links t={t} now={join} joining={joining} entangle={entangle} />
@@ -198,7 +212,7 @@ function Pins({ now, joining }: { now: number; joining: boolean }) {
         const shown = clamp((now - joinAt(i)) / 0.7);
         return (
           <g key={d.name} style={{ opacity: joining ? shown : 1 }}>
-            <ellipse className={styles.mapPin} cx={gx} cy={gy} rx={9 * Math.SQRT2 * COS} ry={9 * Math.SQRT2 * SIN} />
+            <ellipse className={styles.mapPin} cx={gx} cy={gy} {...flat(11)} />
             <circle className={styles.mapPinDot} cx={gx} cy={gy} r={2} />
             <line className={styles.isoTether} x1={gx} y1={gy} x2={gx} y2={ty} />
           </g>
@@ -299,8 +313,7 @@ function DeviceView({
         className={styles.isoShadow}
         cx={x}
         cy={y}
-        rx={28 * Math.SQRT2 * COS}
-        ry={28 * Math.SQRT2 * SIN}
+        {...flat(34)}
         style={{ opacity: clamp(arrive * 1.6) * 0.6 }}
       />
       {arrive > 0 && arrive < 1 ? (
@@ -308,8 +321,7 @@ function DeviceView({
           className={styles.isoLand}
           cx={x}
           cy={y}
-          rx={40 * arrive * Math.SQRT2 * COS}
-          ry={40 * arrive * Math.SQRT2 * SIN}
+          {...flat(48 * arrive)}
           style={{ opacity: 1 - arrive }}
         />
       ) : null}
