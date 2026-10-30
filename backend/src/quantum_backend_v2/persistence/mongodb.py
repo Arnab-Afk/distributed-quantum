@@ -89,10 +89,68 @@ class ProvenanceBundleDocument(Document):
     payload: dict[str, Any] = Field(default_factory=dict)
     content_hash: str | None = None
     created_at: datetime = Field(default_factory=_utc_now)
+    # Set when an anchor batch claims the bundle (#21); released if that batch fails.
+    anchor_batch_id: str | None = None
 
     class Settings:
         name = "provenance_bundles"
-        indexes = [IndexModel("bundle_id", unique=True)]
+        indexes = [
+            IndexModel("bundle_id", unique=True),
+            IndexModel([("anchor_batch_id", 1), ("created_at", 1)]),
+        ]
+
+
+class AnchorBatchDocument(Document):
+    """One Merkle-root anchor transaction (#21).
+
+    prepared -> signed -> submitted -> anchored, or failed. Each signed transaction is
+    stored before broadcast, so a retry re-sends the identical transaction.
+    """
+
+    id: str  # type: ignore[assignment]
+    status: str
+    # True until anchored or failed; a unique partial index allows one open batch.
+    open: bool | None = True
+    chain_id: str
+    sender: str
+    bundle_ids: list[str]
+    bundle_hashes: list[str]
+    merkle_root: str
+    nonce: int | None = None
+    # Every signed transaction for this nonce (a fee bump adds one); any can be mined.
+    attempts: list[dict[str, Any]] = Field(default_factory=list)
+    # Latest attempt, or the mined one once anchored.
+    tx_hash: str | None = None
+    block_number: int | None = None
+    broadcasts: int = 0
+    last_broadcast_at: datetime | None = None
+    # When no attempt was found although the nonce was used; see REPLACED_GRACE_SECONDS.
+    missing_since: datetime | None = None
+    error: str | None = None
+    # Set once a failed batch's bundles are free again; a crash before that is retried.
+    released: bool = False
+    # Incremented by every write; a runner holding an older snapshot cannot save it.
+    revision: int = 0
+    created_at: datetime = Field(default_factory=_utc_now)
+    updated_at: datetime = Field(default_factory=_utc_now)
+
+    class Settings:
+        name = "provenance_anchor_batches"
+        indexes = [
+            IndexModel("open", unique=True, partialFilterExpression={"open": True}),
+            IndexModel("status"),
+        ]
+
+
+class AnchorLeaseDocument(Document):
+    """Lets one backend replica run the anchor scheduler at a time."""
+
+    id: str  # type: ignore[assignment]
+    holder: str
+    expires_at: datetime
+
+    class Settings:
+        name = "provenance_anchor_leases"
 
 
 class FragmentDescriptorDocument(Document):
@@ -409,6 +467,8 @@ def build_mongo_runtime(settings: MongoSettings) -> MongoRuntime | None:
             TopologyProjectionDocument,
             BenchmarkResultDocument,
             ProvenanceBundleDocument,
+            AnchorBatchDocument,
+            AnchorLeaseDocument,
             FragmentDescriptorDocument,
             # Platform entity documents (migrated from Postgres)
             PlatformUserDocument,
