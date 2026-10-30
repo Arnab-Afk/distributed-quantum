@@ -204,7 +204,16 @@ function AgentsChatInner() {
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
-    if (!urlNew && !urlAgentName && !urlSessionId && !activeSessionId && (!sessionsReady || sessions.length > 0)) return;
+    // Wait for session restore (effect below) before first send when this agent already has sessions.
+    if (
+      !urlNew &&
+      !urlAgentName &&
+      !urlSessionId &&
+      !activeSessionId &&
+      (!sessionsReady || agentSessions.length > 0)
+    ) {
+      return;
+    }
     storage.decision.reset();
 
     const pending = storage.data?.find(p => p.status === "pending");
