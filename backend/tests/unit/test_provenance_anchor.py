@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import os
+import subprocess
+import sys
 from dataclasses import replace
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -31,6 +36,8 @@ SENDER = "0x" + "a1" * 20
 TX = "0x" + "ab" * 32
 ROOT = "11" * 32
 PAYLOAD = AnchorPayload(ROOT, 3)
+BLOCK = "0x" + "cd" * 32
+SCRIPT = Path(__file__).parents[2] / "scripts" / "verify_anchor.py"
 
 
 class AnchorNode(BaseProvider):
@@ -46,7 +53,7 @@ class AnchorNode(BaseProvider):
             "value": "0x0",
             "input": "0x" + PAYLOAD.encode().hex(),
             "blockNumber": hex(100),
-            "blockHash": "0x" + "cd" * 32,
+            "blockHash": BLOCK,
             "nonce": "0x0",
             "gas": "0x5555",
             "gasPrice": "0x1",
@@ -54,6 +61,9 @@ class AnchorNode(BaseProvider):
         }
         self.status = 1
         self.finalized = 120
+        # The receipt and canonical chain can disagree with the transaction snapshot.
+        self.receipt: dict[str, Any] | None = {"blockNumber": hex(100), "blockHash": BLOCK}
+        self.canonical = {100: BLOCK}
         self.error: Exception | None = None
 
     def make_request(self, method: str, params: Any) -> dict[str, Any]:
@@ -64,11 +74,10 @@ class AnchorNode(BaseProvider):
         elif method == "eth_getTransactionByHash":
             result = self.transaction
         elif method == "eth_getTransactionReceipt":
-            result = {
+            result = self.receipt and {
+                **self.receipt,
                 "transactionHash": TX,
                 "transactionIndex": "0x0",
-                "blockHash": "0x" + "cd" * 32,
-                "blockNumber": hex(100),
                 "from": SENDER,
                 "to": SENDER,
                 "cumulativeGasUsed": "0x5555",
@@ -76,9 +85,11 @@ class AnchorNode(BaseProvider):
                 "logs": [],
                 "status": hex(self.status),
             }
-        elif method == "eth_getBlockByNumber":
-            assert params[0] == "finalized"
+        elif method == "eth_getBlockByNumber" and params[0] == "finalized":
             result = {"number": hex(self.finalized), "hash": "0x" + "ef" * 32}
+        elif method == "eth_getBlockByNumber":
+            number = int(params[0], 16)
+            result = {"number": params[0], "hash": self.canonical.get(number, "0x" + "00" * 32)}
         else:
             raise AssertionError(method)
         return {"jsonrpc": "2.0", "id": 1, "result": result}
@@ -155,6 +166,38 @@ def test_only_the_exact_finalized_anchor_is_confirmed(mutate, status):
     node = AnchorNode()
     mutate(node)
     assert check(node).status == status
+
+
+def receipt(**fields):
+    def apply(node):
+        node.receipt.update(fields)
+
+    return apply
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        # Older transaction snapshot at block 100, newer receipt at 130, finalized 120.
+        receipt(blockNumber=hex(130), blockHash="0x" + "ee" * 32),
+        receipt(blockHash="0x" + "ee" * 32),
+        lambda node: setattr(node, "receipt", None),
+        change("blockHash", None),
+        # The finalized chain holds a different block at height 100.
+        lambda node: node.canonical.update({100: "0x" + "ee" * 32}),
+    ],
+)
+def test_inconsistent_snapshots_are_pending_not_confirmed(mutate):
+    node = AnchorNode()
+    mutate(node)
+    assert check(node).status == "pending"
+
+
+def test_a_failure_needs_a_consistent_receipt_too():
+    node = AnchorNode()
+    node.status = 0
+    receipt(blockNumber=hex(130))(node)
+    assert check(node).status == "pending"
 
 
 def test_sender_comparison_ignores_checksum_case():
@@ -391,3 +434,23 @@ def test_a_misconfigured_rpc_is_unavailable_not_failed(node):
     node.chain_id = 84532  # The override points at another network.
     with pytest.raises(AnchorUnavailableError):
         contains(anchor())
+
+
+def test_script_reads_bundles_as_utf8_under_any_locale(tmp_path):
+    bundle = build_result_bundle(
+        evidence("workflow-1"), created_at=datetime(2026, 10, 29, tzinfo=timezone.utc)
+    ).model_copy(update={"summary": {"note": "café"}})
+    path = tmp_path / "bundle.json"
+    document = {"bundle": bundle.model_dump(mode="json"), "bundle_hash": bundle_hash(bundle)}
+    path.write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
+    # A Latin-1 default encoding (as on some Windows setups) must not change the bundle.
+    done = subprocess.run(
+        [sys.executable, "-X", "utf8=0", str(SCRIPT), str(path), "--sender", SENDER],
+        env={**os.environ, "LC_ALL": "en_US.ISO8859-1", "PYTHONUTF8": "0"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    # Without anchors the script stops after the local commitment check, before any RPC.
+    assert f"commitment {bundle_hash(bundle)}" in done.stdout, done.stdout + done.stderr
+    assert "FAIL no anchors recorded" in done.stdout

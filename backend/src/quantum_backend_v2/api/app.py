@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, Response
 
 from api.v1.agents import router as agents_router
+from api.v1.starknet_sessions import router as starknet_sessions_router
 from api.v1.chat_sessions import router as chat_sessions_router
 from api.v1.marketplace import router as marketplace_router
 from api.v1.notifications import router as notifications_router
@@ -248,6 +249,7 @@ def create_app(
 
     # Register AgentKit integration routers (v1 API)
     app.include_router(wallet_router)
+    app.include_router(starknet_sessions_router)
     app.include_router(agents_router)
     app.include_router(proposals_router)
     app.include_router(notifications_router)
