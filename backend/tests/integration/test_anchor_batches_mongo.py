@@ -21,6 +21,7 @@ from quantum_backend_v2.application.anchoring import (
     REPLACED_GRACE_SECONDS,
     STUCK_SECONDS,
     UNANCHORABLE,
+    AnchorConflictError,
     AnchorUnavailableError,
     ProvenanceAnchorService,
 )
@@ -45,6 +46,7 @@ MONGODB_URI = os.environ.get("QMESH_TEST_MONGODB_URI")
 pytestmark = pytest.mark.skipif(not MONGODB_URI, reason="set QMESH_TEST_MONGODB_URI")
 CHAIN_ID = "eip155:11155111"
 SENDER = "0x" + "a1" * 20
+NEW_SENDER = "0x" + "c3" * 20
 START = datetime(2026, 10, 29, 12, tzinfo=timezone.utc)
 
 
@@ -64,11 +66,13 @@ class FakeChain:
         # tx hash -> "mempool" | "mined" | "final" | "reverted"; overrides `final`.
         self.states: dict[str, str] = {}
         self.checked_senders: list[str] = []
+        self.nonce_queries: list[str] = []
 
     def next_nonce(self) -> int:
         return self.nonce
 
-    def mined_nonce(self) -> int:
+    def mined_nonce(self, address: str) -> int:
+        self.nonce_queries.append(address)
         return self.mined
 
     def sign(self, payload, nonce, replacing=None) -> SignedAnchor:
@@ -507,5 +511,125 @@ def test_a_key_rotation_mid_batch_checks_the_batch_sender():
         assert await rotated.run_once() == "anchored"
         assert set(chain.checked_senders) == {old_sender}
         await assert_anchored(ids, chain.signed[0].tx_hash)
+
+    with_database(test)
+
+
+def rotated(chain: FakeChain, clock: Clock) -> ProvenanceAnchorService:
+    return ProvenanceAnchorService(
+        chain, chain_id=CHAIN_ID, sender=NEW_SENDER, now=clock, holder="a"
+    )
+
+
+def test_a_rotated_key_never_replaces_an_old_batch_nonce():
+    async def test():
+        chain = FakeChain()
+        clock = Clock()
+        ids = await add_bundles(2)
+        assert await service(chain, clock, holder="a").run_once() == "pending"
+        (original,) = chain.signed
+        clock.now += timedelta(seconds=STUCK_SECONDS + 1)
+        assert await rotated(chain, clock).run_once() == "pending"
+        # The new account cannot replace the old account's nonce, so it signs nothing.
+        assert chain.signed == [original]
+        # A lost transaction is re-sent as signed, and its nonce is the old account's.
+        chain.broadcasts = []
+        assert await rotated(chain, clock).run_once() == "pending"
+        assert chain.broadcasts == [original.tx_hash]
+        assert chain.nonce_queries == [SENDER]
+        chain.states = {original.tx_hash: "final"}
+        assert await rotated(chain, clock).run_once() == "anchored"
+        await assert_anchored(ids, original.tx_hash)
+
+    with_database(test)
+
+
+def test_an_unsigned_batch_is_signed_by_the_current_account_after_rotation():
+    async def test():
+        chain = FakeChain()
+        clock = Clock()
+        ids = await add_bundles(2)
+        chain.fee_too_high = True
+        assert await service(chain, clock, holder="a").run_once() == "fee_too_high"
+        chain.fee_too_high = False
+        chain.final = True
+        assert await rotated(chain, clock).run_once() == "anchored"
+        batch = await AnchorBatchDocument.find_one({"status": "anchored"})
+        assert batch.sender == NEW_SENDER and set(chain.checked_senders) == {NEW_SENDER}
+        await assert_anchored(ids, chain.signed[0].tx_hash)
+
+    with_database(test)
+
+
+def payload_of(batch: AnchorBatchDocument) -> AnchorPayload:
+    return AnchorPayload(batch.merkle_root, len(batch.bundle_ids))
+
+
+def test_a_runner_whose_lease_expired_cannot_overwrite_its_successor():
+    async def test():
+        chain = FakeChain()
+        clock = Clock()
+        first, second = service(chain, clock, holder="a"), service(chain, clock, holder="b")
+        await add_bundles(2)
+        assert await first.run_once() == "pending"
+        # The first runner pauses holding this snapshot, beyond its lease.
+        stale = await AnchorBatchDocument.find_one({"open": True})
+        clock.now += timedelta(seconds=STUCK_SECONDS + 1)
+        assert await second.run_once() == "pending"
+        original, replacement = chain.signed
+        # Resuming, it would outbid again; the lost lease stops it before any write.
+        with pytest.raises(AnchorConflictError):
+            await first._settle(stale, payload_of(stale))
+        with pytest.raises(AnchorConflictError):
+            await first._fail(stale, "stale runner")
+        batch = await AnchorBatchDocument.find_one({"open": True})
+        assert [a["tx_hash"] for a in batch.attempts] == [original.tx_hash, replacement.tx_hash]
+        assert chain.broadcasts == [original.tx_hash, replacement.tx_hash]
+        assert all(
+            doc.anchor_batch_id == batch.id
+            for doc in await ProvenanceBundleDocument.find_all().to_list()
+        )
+        assert await first.run_once() == "busy"
+
+    with_database(test)
+
+
+def test_a_stale_snapshot_is_rejected_even_while_the_lease_is_held():
+    async def test():
+        chain = FakeChain()
+        clock = Clock()
+        anchors = service(chain, clock, holder="a")
+        await add_bundles(2)
+        assert await anchors.run_once() == "pending"
+        stale = await AnchorBatchDocument.find_one({"open": True})
+        clock.now += timedelta(seconds=STUCK_SECONDS + 1)
+        assert await anchors.run_once() == "pending"
+        # The batch revision moved on, so the older snapshot cannot be saved.
+        with pytest.raises(AnchorConflictError):
+            await anchors._settle(stale, payload_of(stale))
+        batch = await AnchorBatchDocument.find_one({"open": True})
+        assert len(batch.attempts) == 2
+
+    with_database(test)
+
+
+def test_bundles_of_a_failed_batch_are_released_after_a_crash():
+    async def test():
+        chain = FakeChain()
+        ids = await add_bundles(2)
+        chain.forced_status = "failed"
+        assert await service(chain, holder="a").run_once() == "failed"
+        failed = await AnchorBatchDocument.find_one({"status": "failed"})
+        # Simulate a crash between closing the batch and releasing its bundles.
+        await ProvenanceBundleDocument.get_pymongo_collection().update_many(
+            {}, {"$set": {"anchor_batch_id": failed.id}}
+        )
+        await AnchorBatchDocument.get_pymongo_collection().update_one(
+            {"_id": failed.id}, {"$set": {"released": False}}
+        )
+        chain.forced_status = None
+        chain.final = True
+        assert await service(chain, holder="a").run_once() == "anchored"
+        await assert_anchored(ids, chain.signed[-1].tx_hash)
 
     with_database(test)

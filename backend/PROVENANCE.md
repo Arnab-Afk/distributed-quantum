@@ -307,7 +307,9 @@ A batch moves `prepared -> signed -> submitted -> anchored`, or to `failed`:
   whichever is mined anchors the batch. If the cap prevents a bump, the batch waits and
   a warning is logged; raise `QB2_ANCHOR_MAX_FEE_GWEI` to clear it.
 - A unique index allows one open batch, and a 10-minute lease lets one replica run the
-  scheduler at a time.
+  scheduler at a time. The lease is renewed before every write and broadcast, and each
+  batch write must match the batch's revision, so a runner that paused past its lease
+  stops instead of overwriting its successor's work.
 - Anchors are excluded from `bundle_hash`, so anchoring never changes a commitment.
 
 Runs repeat every `QB2_ANCHOR_INTERVAL_SECONDS` (default hourly), every minute while a
@@ -331,8 +333,11 @@ deployer wallet. Fund it with a small Sepolia balance and refill as needed. Set
 `QB2_ANCHOR_SENDER` to its public address and `QB2_ANCHOR_PRIVATE_KEY` privately; startup
 fails if they do not match. The key is held only in process memory, is not logged, and
 never appears in bundles or responses. To rotate, set the new key and sender and add the
-old address to `QB2_ANCHOR_PAST_SENDERS`; older anchors keep verifying, and a batch in
-flight is still checked against the account that signed it.
+old address to `QB2_ANCHOR_PAST_SENDERS`; older anchors keep verifying. A batch already
+signed by the old account finishes with that account: it is checked and its nonce is
+read against that account, and it is never replaced by the new key, whose nonces are
+unrelated. Keep the old account funded until that batch closes; an unsigned batch is
+signed by the new account.
 
 Publishing a bundle to Kubo now pushes its storage reference atomically instead of
 saving the whole document, so it cannot overwrite an anchor or claim written meanwhile.

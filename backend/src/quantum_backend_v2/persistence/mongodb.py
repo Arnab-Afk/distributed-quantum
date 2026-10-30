@@ -127,6 +127,10 @@ class AnchorBatchDocument(Document):
     # When no attempt was found although the nonce was used; see REPLACED_GRACE_SECONDS.
     missing_since: datetime | None = None
     error: str | None = None
+    # Set once a failed batch's bundles are free again; a crash before that is retried.
+    released: bool = False
+    # Incremented by every write; a runner holding an older snapshot cannot save it.
+    revision: int = 0
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
 

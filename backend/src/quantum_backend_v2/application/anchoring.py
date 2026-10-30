@@ -54,6 +54,10 @@ _LOOKUP_UNAVAILABLE = (
 )
 
 
+class AnchorConflictError(RuntimeError):
+    """Another runner took over the lease or moved the batch; this one must stop."""
+
+
 class AnchorUnavailableError(OSError):
     """Not final yet, not found or not reachable; verification reports `unavailable`."""
 
@@ -123,7 +127,7 @@ class AnchorChain(Protocol):
 
     def next_nonce(self) -> int: ...
 
-    def mined_nonce(self) -> int: ...
+    def mined_nonce(self, address: str) -> int: ...
 
     def sign(
         self, payload: AnchorPayload, nonce: int, replacing: SignedAnchor | None = None
@@ -168,8 +172,8 @@ class EvmAnchorChain:
     def next_nonce(self) -> int:
         return self._call(lambda sender: sender.next_nonce(self._account.address))
 
-    def mined_nonce(self) -> int:
-        return self._call(lambda sender: sender.mined_nonce(self._account.address))
+    def mined_nonce(self, address: str) -> int:
+        return self._call(lambda sender: sender.mined_nonce(address))
 
     def sign(
         self, payload: AnchorPayload, nonce: int, replacing: SignedAnchor | None = None
@@ -233,12 +237,17 @@ class ProvenanceAnchorService:
         """Advance anchoring as far as possible; returns the batch state reached."""
         if not await self._acquire_lease():
             return "busy"
-        batch = await AnchorBatchDocument.find_one({"open": True})
-        if batch is None:
-            batch = await self._prepare()
+        try:
+            batch = await AnchorBatchDocument.find_one({"open": True})
             if batch is None:
-                return "idle"
-        return await self._advance(batch)
+                batch = await self._prepare()
+                if batch is None:
+                    return "idle"
+            return await self._advance(batch)
+        except AnchorConflictError:
+            # A paused runner whose lease expired must not overwrite its successor.
+            logger.warning("anchor run stopped: another runner took over the batch")
+            return "busy"
 
     async def _acquire_lease(self) -> bool:
         now = self._now()
@@ -257,8 +266,21 @@ class ProvenanceAnchorService:
             return False  # Another replica holds an unexpired lease.
         return True
 
+    async def _renew_lease(self) -> None:
+        """Extend the lease only while this runner still holds it, before any write."""
+        now = self._now()
+        renewed = await AnchorLeaseDocument.get_pymongo_collection().find_one_and_update(
+            {"_id": LEASE_ID, "holder": self._holder, "expires_at": {"$gt": now}},
+            {"$set": {"expires_at": now + timedelta(seconds=LEASE_SECONDS)}},
+        )
+        if renewed is None:
+            raise AnchorConflictError("anchor lease lost")
+
     async def _prepare(self) -> AnchorBatchDocument | None:
         bundles = ProvenanceBundleDocument.get_pymongo_collection()
+        # A crash after closing a failed batch can leave its bundles claimed.
+        async for failed in AnchorBatchDocument.find({"status": "failed", "released": False}):
+            await self._release(failed.id)
         while True:
             candidates = (
                 await ProvenanceBundleDocument.find(
@@ -329,6 +351,8 @@ class ProvenanceAnchorService:
         if batch.status == "prepared":
             if not await self._claim(batch):
                 return "failed"
+            # Nothing is signed yet, so a batch prepared before a key rotation can move.
+            batch.sender = self._sender
             try:
                 nonce = await asyncio.to_thread(self._chain.next_nonce)
                 signed = await asyncio.to_thread(self._chain.sign, payload, nonce)
@@ -377,7 +401,11 @@ class ProvenanceAnchorService:
             batch.missing_since = None
             latest = batch.attempts[-1]
             if now - _aware(latest["signed_at"]) > timedelta(seconds=STUCK_SECONDS):
-                await self._replace(batch, payload)
+                if self._signs_for(batch):
+                    await self._replace(batch, payload)
+                else:
+                    # Only the batch's own account can replace its nonce.
+                    logger.warning("anchor batch from a previous key is unmined; not replacing")
         elif await self._nonce_taken(batch):
             batch.missing_since = batch.missing_since or now
             if now - _aware(batch.missing_since) > timedelta(seconds=REPLACED_GRACE_SECONDS):
@@ -392,6 +420,8 @@ class ProvenanceAnchorService:
 
     async def _replace(self, batch: AnchorBatchDocument, payload: AnchorPayload) -> None:
         """Outbid an unmined attempt at the same nonce; earlier attempts stay valid."""
+        if not self._signs_for(batch):
+            return
         latest = batch.attempts[-1]
         previous = SignedAnchor(
             int(batch.nonce or 0),
@@ -410,7 +440,11 @@ class ProvenanceAnchorService:
         await self._update(batch, "submitted")
         await self._broadcast(batch)
 
+    def _signs_for(self, batch: AnchorBatchDocument) -> bool:
+        return batch.sender.lower() == self._sender.lower()
+
     async def _broadcast(self, batch: AnchorBatchDocument) -> None:
+        await self._renew_lease()
         latest = batch.attempts[-1]
         signed = SignedAnchor(int(batch.nonce or 0), latest["raw_transaction"], latest["tx_hash"])
         await asyncio.to_thread(self._chain.broadcast, signed)
@@ -418,19 +452,31 @@ class ProvenanceAnchorService:
         batch.last_broadcast_at = self._now()
 
     async def _nonce_taken(self, batch: AnchorBatchDocument) -> bool:
-        return await asyncio.to_thread(self._chain.mined_nonce) > int(batch.nonce or 0)
+        # The batch's own account, which differs from the signer after a key rotation.
+        mined = await asyncio.to_thread(self._chain.mined_nonce, batch.sender)
+        return mined > int(batch.nonce or 0)
 
     async def _update(self, batch: AnchorBatchDocument, expected: str) -> None:
         """Save only if no other runner moved the batch since this one read it."""
+        await self._write(batch, {"status": expected, "open": True})
+
+    async def _write(self, batch: AnchorBatchDocument, match: dict[str, Any]) -> None:
+        # The lease stops a paused runner; the revision catches any write it races.
+        await self._renew_lease()
         batch.updated_at = self._now()
         result = await AnchorBatchDocument.get_pymongo_collection().update_one(
-            {"_id": batch.id, "status": expected, "open": True},
-            {"$set": batch.model_dump(exclude={"id", "revision_id"})},
+            {"_id": batch.id, "revision": batch.revision, **match},
+            {
+                "$set": batch.model_dump(exclude={"id", "revision_id", "revision"}),
+                "$inc": {"revision": 1},
+            },
         )
         if result.matched_count != 1:
-            raise RuntimeError("anchor batch changed concurrently")
+            raise AnchorConflictError("anchor batch changed concurrently")
+        batch.revision += 1
 
     async def _apply(self, batch: AnchorBatchDocument, tx_hash: str, block: int | None) -> None:
+        await self._renew_lease()
         tree = MerkleTree(batch.bundle_hashes)
         url = self._chain.explorer_url(tx_hash)
         operations = [
@@ -465,11 +511,18 @@ class ProvenanceAnchorService:
         await self._close(batch, "anchored")
 
     async def _fail(self, batch: AnchorBatchDocument, error: str) -> None:
-        # Failed attempts never wrote anchors; release the bundles for the next batch.
-        await ProvenanceBundleDocument.get_pymongo_collection().update_many(
-            {"anchor_batch_id": batch.id}, {"$set": {"anchor_batch_id": None}}
-        )
+        # Close first: a runner that lost the batch must not release its successor's claim.
         await self._close(batch, "failed", error=error)
+        await self._release(batch.id)
+
+    async def _release(self, batch_id: str) -> None:
+        # Failed attempts never wrote anchors; free the bundles for the next batch.
+        await ProvenanceBundleDocument.get_pymongo_collection().update_many(
+            {"anchor_batch_id": batch_id}, {"$set": {"anchor_batch_id": None}}
+        )
+        await AnchorBatchDocument.get_pymongo_collection().update_one(
+            {"_id": batch_id}, {"$set": {"released": True}}
+        )
 
     async def _close(
         self, batch: AnchorBatchDocument, status: str, *, error: str | None = None
@@ -477,13 +530,7 @@ class ProvenanceAnchorService:
         batch.status = status
         batch.open = None
         batch.error = error
-        batch.updated_at = self._now()
-        result = await AnchorBatchDocument.get_pymongo_collection().update_one(
-            {"_id": batch.id, "open": True},
-            {"$set": batch.model_dump(exclude={"id", "revision_id"})},
-        )
-        if result.matched_count != 1:
-            raise RuntimeError("anchor batch changed concurrently")
+        await self._write(batch, {"open": True})
 
 
 def _attempt(signed: SignedAnchor, signed_at: datetime) -> dict[str, Any]:
