@@ -20,6 +20,7 @@ import pytest
 from eth_account import Account
 from web3 import Web3
 
+from quantum_backend_v2 import chains
 from quantum_backend_v2.application.anchoring import AnchorUnavailableError, RegistryAnchorAdapter
 from quantum_backend_v2.chains.anchor import AnchorPayload, EvmAnchorAdapter
 from quantum_backend_v2.chains.loader import load_chain_registry
@@ -160,3 +161,52 @@ def test_script_and_adapter_verify_a_real_batch(web3, tmp_path):
     assert verify(tampered).returncode == 1
     wrong_leaf = bundles[3].model_copy(update={"anchors": (anchor_of(2),)})
     assert verify(wrong_leaf).returncode == 1
+
+
+def test_script_uses_the_configured_chain_registry(web3, tmp_path):
+    bundle = build_result_bundle(run("workflow-registry"), created_at=datetime.now(timezone.utc))
+    tree = MerkleTree([bundle_hash(bundle)])
+    account = funded_account(web3)
+    tx_hash = send_anchor(web3, account, AnchorPayload(tree.root, 1))
+    finalize(web3)
+    anchored = bundle.model_copy(
+        update={
+            "anchors": (
+                ChainAnchor(
+                    chain=SEPOLIA.chain_id,
+                    tx_hash=tx_hash,
+                    merkle_root=tree.root,
+                    leaf_index=0,
+                    leaf_count=1,
+                    proof=(),
+                ),
+            )
+        }
+    )
+    path = tmp_path / "bundle.json"
+    path.write_text(json.dumps({"bundle": anchored.model_dump(mode="json")}))
+    # Only the custom registry knows to reach this node through QB2_CUSTOM_ANCHOR_RPC_URL.
+    packaged = Path(chains.__file__).parent / "registry.toml"
+    custom = tmp_path / "registry.toml"
+    custom.write_text(
+        packaged.read_text(encoding="utf-8").replace(
+            'rpc_env_var = "QB2_ETHEREUM_SEPOLIA_RPC_URL"',
+            'rpc_env_var = "QB2_CUSTOM_ANCHOR_RPC_URL"',
+        ),
+        encoding="utf-8",
+    )
+    done = subprocess.run(
+        [sys.executable, str(SCRIPT), str(path), "--sender", account.address],
+        env={
+            **os.environ,
+            "QB2_CHAIN_REGISTRY_PATH": str(custom),
+            "QB2_CUSTOM_ANCHOR_RPC_URL": RPC_URL or "",
+            # The packaged registry would use this unreachable node instead.
+            "QB2_ETHEREUM_SEPOLIA_RPC_URL": "http://127.0.0.1:9",
+        },
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "PASS eip155:11155111" in done.stdout

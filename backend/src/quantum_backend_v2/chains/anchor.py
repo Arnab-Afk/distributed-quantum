@@ -26,6 +26,15 @@ _ADDRESS = re.compile(r"0x[0-9a-fA-F]{40}")
 AnchorStatus = Literal["confirmed", "pending", "not_found", "failed", "mismatch"]
 
 
+def _hex(value: object) -> str | None:
+    """Normalize a block hash that web3 may return as bytes or a hex string."""
+    if value is None:
+        return None
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).hex()
+    return str(value).lower().removeprefix("0x")
+
+
 @dataclass(frozen=True)
 class AnchorPayload:
     merkle_root: str
@@ -86,7 +95,20 @@ class EvmAnchorAdapter(EvmRpcAdapter):
         block = transaction.get("blockNumber")
         if block is None:
             return AnchorCheck(status="pending")
-        receipt = self.web3.eth.get_transaction_receipt(HexStr(tx_hash))
+        try:
+            receipt = self.web3.eth.get_transaction_receipt(HexStr(tx_hash))
+        except TransactionNotFound:
+            return AnchorCheck(status="pending")
+        # A load-balanced RPC can serve the transaction and receipt from different
+        # snapshots around a reorganization. Trust neither until both name one block.
+        block_hash = _hex(transaction.get("blockHash"))
+        if (
+            receipt.get("blockNumber") is None
+            or int(receipt["blockNumber"]) != int(block)
+            or block_hash is None
+            or _hex(receipt.get("blockHash")) != block_hash
+        ):
+            return AnchorCheck(status="pending")
         if int(receipt["status"]) != 1:
             return AnchorCheck(status="failed", block_number=int(block))
         account = sender.lower()
@@ -99,5 +121,8 @@ class EvmAnchorAdapter(EvmRpcAdapter):
             return AnchorCheck(status="mismatch", block_number=int(block))
         # A finalized block cannot be reorganized out; earlier confirmations can.
         if int(block) > int(self.web3.eth.get_block("finalized")["number"]):
+            return AnchorCheck(status="pending", block_number=int(block))
+        # The finalized chain must hold this exact block at that height, not a sibling.
+        if _hex(self.web3.eth.get_block(int(block)).get("hash")) != block_hash:
             return AnchorCheck(status="pending", block_number=int(block))
         return AnchorCheck(status="confirmed", block_number=int(block))

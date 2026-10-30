@@ -6,7 +6,8 @@ Usage, from backend/:
 BUNDLE.json is the bundle JSON (or the `{"bundle": ..., "bundle_hash": ...}` download).
 For each anchor it recomputes the bundle commitment and Merkle proof locally, then
 checks the transaction through the chain registry's RPC (overridable with the
-network's env var, e.g. QB2_ETHEREUM_SEPOLIA_RPC_URL). Exits 0 only if all pass.
+network's env var, e.g. QB2_ETHEREUM_SEPOLIA_RPC_URL). Like the application, it
+loads QB2_CHAIN_REGISTRY_PATH when set. Exits 0 only if all pass.
 """
 
 from __future__ import annotations
@@ -34,7 +35,8 @@ def main() -> int:
     parser.add_argument("--sender", required=True, help="published anchor account address")
     args = parser.parse_args()
 
-    document = json.loads(args.bundle.read_text())
+    # Bundles are UTF-8 JSON; the platform default encoding (e.g. on Windows) may not be.
+    document = json.loads(args.bundle.read_text(encoding="utf-8"))
     bundle = ProvenanceBundle.model_validate(document.get("bundle", document))
     digest = bundle_hash(bundle)
     claimed = document.get("bundle_hash")
@@ -46,7 +48,8 @@ def main() -> int:
         print("FAIL no anchors recorded")
         return 1
 
-    registry = load_chain_registry()
+    # Same registry the application loads, including a QB2_CHAIN_REGISTRY_PATH override.
+    registry = load_chain_registry(os.environ.get("QB2_CHAIN_REGISTRY_PATH", "").strip() or None)
     ok = True
     for anchor in bundle.anchors:
         label = f"{anchor.chain} {anchor.tx_hash}"
