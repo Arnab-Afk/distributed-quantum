@@ -12,17 +12,24 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import Response
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import not_found
+from quantum_backend_v2.api.finance_download import finance_provenance_download
 from quantum_backend_v2.api.models.financial import (
     FinancialComparisonResponse,
     FinancialJobResponse,
     FinancialJobSummary,
     FinancialSubmitResponse,
+    TokenizedAssetInfo,
+    TokenizedAssetsResponse,
+    TokenizedPortfolioRequest,
 )
 from quantum_backend_v2.application.financial_portfolio import PortfolioOptimizationConfig
 from quantum_backend_v2.application.parity import FinancialJobService
+from quantum_backend_v2.application.tokenized_portfolio import DATA_SOURCE, DISCLAIMER
+from quantum_backend_v2.chains.price_history import MAX_HISTORY_DAYS, MIN_ALIGNED_DAYS, SAMPLING
 from quantum_backend_v2.chains.prices import PriceUnavailableError
 from quantum_backend_v2.chains.rpc import RpcConfigurationError
 
@@ -119,6 +126,73 @@ def build_financial_router(*, financial_job_service: FinancialJobService) -> API
         )
 
     @router.get(
+        "/tokenized-assets",
+        response_model=TokenizedAssetsResponse,
+        summary="List Robinhood tokenized stocks available for analysis",
+    )
+    async def list_tokenized_assets(current_user: CurrentUser) -> TokenizedAssetsResponse:
+        market_data = financial_job_service.tokenized_market_data
+        if market_data is None:
+            raise HTTPException(status_code=503, detail="price history is unavailable")
+        return TokenizedAssetsResponse(
+            chain_id=market_data.chain_id,
+            display_name=market_data.display_name,
+            data_source=DATA_SOURCE,
+            price_unit="token_usd",
+            sampling=SAMPLING,
+            min_aligned_days=MIN_ALIGNED_DAYS,
+            max_history_days=MAX_HISTORY_DAYS,
+            disclaimer=DISCLAIMER,
+            assets=[
+                TokenizedAssetInfo(
+                    symbol=asset.symbol,
+                    name=asset.name,
+                    isin=asset.isin,
+                    token_address=asset.token_address,
+                    feed_address=asset.feed_address,
+                )
+                for asset in market_data.assets
+            ],
+        )
+
+    @router.post(
+        "/tokenized-portfolio",
+        response_model=FinancialSubmitResponse,
+        status_code=status.HTTP_201_CREATED,
+        summary="Optimize Robinhood tokenized stocks from Chainlink price history",
+    )
+    async def submit_tokenized_portfolio(
+        request: TokenizedPortfolioRequest,
+        background_tasks: BackgroundTasks,
+        current_user: CurrentUser,
+    ) -> FinancialSubmitResponse:
+        try:
+            record = await financial_job_service.submit_tokenized(
+                owner_user_id=current_user.user_id,
+                symbols=request.symbols,
+                start=request.start_date,
+                end=request.end_date,
+                config=PortfolioOptimizationConfig(
+                    budget=request.budget,
+                    risk_aversion=request.risk_aversion,
+                    max_assets_considered=request.max_assets_considered,
+                    qaoa_reps=request.qaoa_reps,
+                    date_column="date",
+                    value_mode="prices",
+                    parameter_search_steps=request.parameter_search_steps,
+                ),
+            )
+        except PriceUnavailableError:
+            raise HTTPException(status_code=503, detail="price history is unavailable") from None
+        except ValueError as exc:
+            # Validation messages are fixed strings that never echo the request.
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        background_tasks.add_task(financial_job_service.process, job_id=record.id, csv_bytes=b"")
+        return FinancialSubmitResponse(
+            job_id=record.id, status=record.status, problem_type="portfolio_optimization"
+        )
+
+    @router.get(
         "/{job_id}",
         response_model=FinancialJobResponse,
         summary="Get financial job status and results",
@@ -127,10 +201,14 @@ def build_financial_router(*, financial_job_service: FinancialJobService) -> API
         job_id: str,
         current_user: CurrentUser,
         result_detail: str = Query(default="full", pattern="^(full|summary)$"),
-    ) -> FinancialJobResponse:
+        download: str | None = Query(default=None, pattern="^provenance$"),
+    ) -> FinancialJobResponse | Response:
         record = await financial_job_service.get_job(job_id, current_user=current_user)
         if record is None:
             raise not_found("Financial job", job_id)
+
+        if download == "provenance":
+            return finance_provenance_download(record.result_payload)
 
         return FinancialJobResponse(
             job_id=record.id,

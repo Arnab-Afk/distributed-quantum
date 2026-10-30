@@ -45,7 +45,7 @@ enabled = true
 aliases = ["ethereum-sepolia"]
 rpc_env_var = "QB2_ETHEREUM_SEPOLIA_RPC_URL"
 public_rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
-capabilities = ["explorer_url", "verify_transaction", "get_price"]
+capabilities = ["explorer_url", "verify_transaction", "get_price", "anchor_root"]
 
 [chains.provider_aliases]
 agentkit = "ethereum-sepolia"
@@ -70,6 +70,27 @@ address = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
 address = "0x694AA1769357215DE4FAC081bf1f309aDC325306"
 max_age_seconds = 3600
 max_deviation_bps = 2000
+
+# Part of #18: metadata only. Stock-token price history comes from market_data.toml.
+[[chains]]
+chain_id = "eip155:46630"
+family = "evm"
+display_name = "Robinhood Chain Testnet"
+testnet = true
+enabled = true
+aliases = ["robinhood-testnet"]
+rpc_env_var = "QB2_ROBINHOOD_TESTNET_RPC_URL"
+public_rpc_url = "https://rpc.testnet.chain.robinhood.com"
+capabilities = ["explorer_url", "verify_transaction"]
+
+[chains.explorers]
+transaction = "https://explorer.testnet.chain.robinhood.com/tx/{tx_hash}"
+address = "https://explorer.testnet.chain.robinhood.com/address/{address}"
+block = "https://explorer.testnet.chain.robinhood.com/block/{block_number}"
+
+[chains.native_token]
+symbol = "ETH"
+decimals = 18
 
 [[chains]]
 chain_id = "starknet:SN_SEPOLIA"
