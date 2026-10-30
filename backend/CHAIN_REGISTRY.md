@@ -18,6 +18,9 @@ Ethereum-compatible family and the number identifies the network.
 | --- | --- | --- | --- |
 | Base Sepolia | `eip155:84532` | `base-sepolia` | `base-sepolia` |
 | Ethereum Sepolia | `eip155:11155111` | `ethereum-sepolia` | `ethereum-sepolia` |
+| Starknet Sepolia | `starknet:SN_SEPOLIA` | — | — |
+
+Starknet Sepolia is a read-only registry entry (`explorer_url`, `verify_transaction`) plus an opt-in session policy. Base USDC funding stays on the Coinbase path. Alias: `starknet-sepolia`. Native token: STRK, 18 decimals. Explorer templates point at Voyager Sepolia. `QB2_STARKNET_SEPOLIA_RPC_URL` overrides the public RPC.
 
 `registry.resolve()` returns the configured default; `registry.resolve(name)`
 accepts a canonical ID, legacy alias, or provider alias. An empty, unknown, or
@@ -180,6 +183,14 @@ entry contains exactly:
 
 RPC configuration, provider aliases, and escrow configuration are excluded from
 responses and OpenAPI.
+
+## Starknet session policies
+
+Ready (Argent) is the owner wallet. In this version the owner signs `register_session`, `spend`, and `revoke_session` on `backend/contracts/starknet`. The backend stores only the session private key, encrypted with `WALLET_ENCRYPTION_KEY`. That key is not registered on the Ready account and `spend` does not check it. `spend` reverts on-chain when the amount exceeds `max_per_proposal` (`per_call`), the UTC day total exceeds `daily_budget` (`daily`), the session is past `expires_at` (`expired`), or it has been revoked (`revoked`).
+
+AVNU's Sepolia paymaster (`https://sepolia.paymaster.avnu.fi`, header `x-paymaster-api-key` from `AVNU_PAYMASTER_API_KEY`) may sponsor `deploy_account` and `register_session` only. Spends and revokes are not sponsored.
+
+Contributor toolchain, not imported by the running API until a session is created: [Scarb](https://docs.swmansion.com/scarb/) to build the contract (`scarb build` in `backend/contracts/starknet`, Cairo 2.8) and [`starknet.py`](https://pypi.org/project/starknet.py/) (`uv add starknet.py` from `backend`) to generate the session key. Scarb is a separate install of a few hundred megabytes. `starknet.py` is an extra Python dependency used only for the Stark curve keypair. Policy decisions and the paymaster gate are covered by `tests/unit/test_starknet_policy.py` without either tool and without a funded account.
 
 ## Adding another EVM testnet
 

@@ -91,3 +91,23 @@ block = "https://explorer.testnet.chain.robinhood.com/block/{block_number}"
 [chains.native_token]
 symbol = "ETH"
 decimals = 18
+
+[[chains]]
+chain_id = "starknet:SN_SEPOLIA"
+family = "starknet"
+display_name = "Starknet Sepolia"
+testnet = true
+enabled = true
+aliases = ["starknet-sepolia"]
+rpc_env_var = "QB2_STARKNET_SEPOLIA_RPC_URL"
+public_rpc_url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_8"
+capabilities = ["explorer_url", "verify_transaction"]
+
+[chains.explorers]
+transaction = "https://sepolia.voyager.online/tx/{tx_hash}"
+address = "https://sepolia.voyager.online/contract/{address}"
+block = "https://sepolia.voyager.online/block/{block_number}"
+
+[chains.native_token]
+symbol = "STRK"
+decimals = 18
