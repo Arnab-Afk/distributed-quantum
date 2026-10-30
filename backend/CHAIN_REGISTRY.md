@@ -79,9 +79,15 @@ outside the Base Sepolia wallet mapping. The explorer adapter and the legacy
 `utils.basescan` wrappers perform no network I/O. They validate reference shape,
 not checksums, existence, ownership, or transaction success.
 
-Robinhood Chain Testnet (`eip155:46630`, #18) declares the same two read-only
-capabilities and no stablecoin. Official Stock Tokens and Chainlink feeds exist only
-on Robinhood Chain mainnet, which stays out of this registry; see
+`anchor_root` (#21) marks a network that may carry provenance Merkle-root anchors. It
+is allowed only on testnets with `verify_transaction`, and it does not use the wallet
+provider: anchors come from a dedicated low-balance account, never a user or platform
+wallet. Ethereum Sepolia declares it. See
+[Anchor transactions](PROVENANCE.md#anchor-transactions-21).
+
+Robinhood Chain Testnet (`eip155:46630`, #18) declares `explorer_url` and
+`verify_transaction` only, with no stablecoin. Official Stock Tokens and Chainlink
+feeds exist only on Robinhood Chain mainnet, which stays out of this registry; see
 [Robinhood Chain market data](#robinhood-chain-market-data).
 
 The faucet endpoint returns manual instructions; it does not send funds. Balance

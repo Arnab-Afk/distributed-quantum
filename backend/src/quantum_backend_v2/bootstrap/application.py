@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from fastapi import FastAPI
 
 from quantum_backend_v2.api.app import create_app
+from quantum_backend_v2.application.anchoring import RegistryAnchorAdapter
 from quantum_backend_v2.application.parity import (
     CircuitJobService,
     FinancialJobService,
@@ -14,7 +15,10 @@ from quantum_backend_v2.application.parity import (
     RiskJobService,
 )
 from quantum_backend_v2.application.price_sources import ChainlinkPriceSource
-from quantum_backend_v2.application.provenance import KuboBundlePublisher
+from quantum_backend_v2.application.provenance import (
+    KuboBundlePublisher,
+    MongoProvenanceRepository,
+)
 from quantum_backend_v2.application.tokenized_portfolio import ChainlinkHistorySource
 from quantum_backend_v2.bootstrap.libp2p import create_libp2p_plan, create_libp2p_runtime
 from quantum_backend_v2.bootstrap.persistence import create_persistence_runtime
@@ -24,6 +28,7 @@ from quantum_backend_v2.config import load_settings
 from quantum_backend_v2.config.loader import load_environment
 from quantum_backend_v2.discovery.service import build_discovery_service
 from quantum_backend_v2.observability import configure_logging
+from quantum_backend_v2.provenance.service import ProvenanceService
 from quantum_backend_v2.reservations.service import ReservationService
 from quantum_backend_v2.runtime.recovery import RuntimeRecoveryService
 
@@ -64,6 +69,18 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     risk_job_service = RiskJobService(price_source=ChainlinkPriceSource(chain_registry, env))
     reservation_service = ReservationService()
     runtime_recovery_service = RuntimeRecoveryService()
+    provenance_service = None
+    if settings.anchor.network is not None and settings.anchor.sender is not None:
+        # Unknown, disabled or non-anchoring networks fail startup instead of skipping checks.
+        anchor_chain = chain_registry.resolve(settings.anchor.network)
+        provenance_service = ProvenanceService(
+            MongoProvenanceRepository(),
+            anchor_adapters={
+                anchor_chain.chain_id: RegistryAnchorAdapter(
+                    anchor_chain, settings.anchor.sender, env
+                )
+            },
+        )
     return create_app(
         settings,
         chain_registry=chain_registry,
@@ -77,4 +94,5 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
         risk_job_service=risk_job_service,
         reservation_service=reservation_service,
         runtime_recovery_service=runtime_recovery_service,
+        provenance_service=provenance_service,
     )
