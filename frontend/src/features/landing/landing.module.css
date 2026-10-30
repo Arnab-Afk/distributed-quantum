@@ -299,22 +299,23 @@
   justify-self: end;
 }
 
-/* ── Hero: centred intro over a full-width world map ── */
+/* ── Hero: intro on the left, the world map on the right, bleeding off the page edge ── */
 
 .hero {
   position: relative;
   z-index: 1;
   display: grid;
-  justify-items: center;
-  gap: clamp(1.5rem, 3vw, 2.5rem);
+  grid-template-columns: minmax(0, 0.78fr) minmax(0, 1.22fr);
+  align-items: center;
+  column-gap: clamp(1rem, 3vw, 3rem);
+  row-gap: 1rem;
   width: var(--inner);
   margin: 0 auto;
-  padding: clamp(3rem, 5.5vw, 4.5rem) var(--inset) 1.75rem;
+  padding: clamp(2.5rem, 5vw, 4rem) 0 1.75rem var(--inset);
   isolation: isolate;
-  text-align: center;
 }
 
-/* Background motion: a dot field drifting slowly behind a soft glow. */
+/* Background motion: a dot field drifting slowly behind a soft glow, centred on the map. */
 .hero::before,
 .hero::after {
   content: "";
@@ -326,12 +327,12 @@
 
 .hero::before {
   background: var(--dots);
-  mask-image: radial-gradient(ellipse 70% 60% at 50% 62%, black 20%, transparent 75%);
+  mask-image: radial-gradient(ellipse 55% 70% at 72% 52%, black 15%, transparent 72%);
   animation: dotDrift 18s linear infinite;
 }
 
 .hero::after {
-  background: radial-gradient(ellipse 45% 35% at 50% 64%, oklch(1 0 0 / 0.045), transparent 70%);
+  background: radial-gradient(ellipse 38% 40% at 70% 55%, oklch(1 0 0 / 0.05), transparent 70%);
   animation: glowBreathe 9s ease-in-out infinite;
 }
 
@@ -349,18 +350,17 @@
 
 .heroIntro {
   display: grid;
-  gap: 1.5rem;
-  justify-items: center;
-  max-width: 46rem;
+  gap: 1.75rem;
+  justify-items: start;
 }
 
 .heroIntro .h1 {
-  font-size: clamp(3rem, 6vw, 5rem);
+  font-size: clamp(3rem, 5.2vw, 4.75rem);
 }
 
 .heroLead {
   margin: 0;
-  max-width: 38rem;
+  max-width: 30rem;
   font-size: var(--text-lead);
   font-weight: 300;
   line-height: 1.4;
@@ -371,20 +371,19 @@
   color: var(--ink-muted);
 }
 
-.hero .actions {
-  justify-content: center;
-}
-
+/* The map runs past the column toward the page edge; the page clips it. */
 .hero .isoStage {
-  width: min(100%, 64rem);
-  margin-top: 0.5rem;
+  width: calc(100% + var(--inset));
+  max-width: none;
 }
 
 .hero .isoCaption {
-  text-align: center;
+  padding-right: var(--inset);
+  text-align: right;
 }
 
 .ribbon {
+  grid-column: 1 / -1;
   justify-self: end;
   display: inline-flex;
   align-items: center;
@@ -1698,7 +1697,7 @@
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 744 / 360;
+  aspect-ratio: 744 / 365;
   overflow: visible;
   cursor: pointer;
 }
@@ -2119,8 +2118,17 @@
     min-height: 34rem;
   }
 
+  .hero {
+    padding-right: var(--inset);
+  }
+
   .hero .isoStage {
-    width: 150%;
+    width: 100%;
+  }
+
+  .hero .isoCaption {
+    padding: 0;
+    text-align: center;
   }
 
   .isoCaption {

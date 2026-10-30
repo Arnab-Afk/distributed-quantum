@@ -11,7 +11,7 @@ import { LAND, MAP_COLS, MAP_ROWS, toCell } from "./world-map";
 // ── Scene projection ──
 // The map lies flat and faces the viewer, tilted back like a table seen from above,
 // so it runs horizontally across the hero. Devices keep their isometric drawings.
-const TILT = 0.5;
+const TILT = 0.62;
 const iso = ([x, y, z]: V3): [number, number] => [x, y * TILT - z];
 const pts = (list: V3[]) => list.map((p) => iso(p).map((n) => n.toFixed(1)).join(",")).join(" ");
 const plane = (o: V3, u: V3, v: V3, w: number, h: number) => {
@@ -44,7 +44,7 @@ interface Device {
   height: number;
   at: V3;
 }
-const SCALE = 0.5; // devices are drawn smaller over the map
+const SCALE = 0.56; // devices are drawn smaller over the map
 // Ordered so the ring of links travels around the globe.
 const SLOTS: [Kind, string, string, number, number, number][] = [
   ["laptop", "Laptop", "San Francisco", 64, -122.4, 37.8],
@@ -62,9 +62,8 @@ const DEVICES: Device[] = SLOTS.map(([kind, name, city, height, lon, lat]) => ({
   at: onMap(lon, lat),
 }));
 const ORDER = DEVICES.map((_, i) => i).sort((a, b) => iso(DEVICES[a].at)[1] - iso(DEVICES[b].at)[1]);
-const SPHERE = { x: 0, y: -196, r: 40 };
-// The sphere's underside, as a world point: fragments leave from here and bits return here.
-const SOURCE: V3 = [0, 0, -(SPHERE.y + SPHERE.r)];
+// The laptop in San Francisco submits the job: fragments leave it and bits return to it.
+const HOME = 0;
 /** Each peer hovers over its city at its own height and bobs gently. */
 const floatOf = (i: number, now: number) => 26 + (i % 3) * 8 + Math.sin(now * 1.1 + i * 1.7) * 3;
 
@@ -154,10 +153,10 @@ export function IsoMesh({ label, caption }: { label: string; caption: string }) 
 
   return (
     <figure ref={ref} className={styles.isoStage}>
-      <svg className={styles.isoSvg} viewBox="-372 -252 744 360" role="img" aria-label={label} onClick={restart}>
+      <svg className={styles.isoSvg} viewBox="-372 -165 744 365" role="img" aria-label={label} onClick={restart}>
         {MAP_SLAB}
         <Pins now={join} joining={joining} />
-        <Links t={t} now={join} joining={joining} entangle={entangle} />
+        <Links t={t} joining={joining} entangle={entangle} />
         {ORDER.map((i) => (
           <DeviceView
             key={DEVICES[i].name}
@@ -170,7 +169,7 @@ export function IsoMesh({ label, caption }: { label: string; caption: string }) 
             onHover={setHovered}
           />
         ))}
-        <Machine t={t} joining={joining} bits={bits} />
+        <Readout t={t} joining={joining} bits={bits} />
         {hovered !== null ? <Tag index={hovered} t={t} joining={joining} /> : null}
       </svg>
       <figcaption className={styles.isoCaption}>{caption}</figcaption>
@@ -180,11 +179,6 @@ export function IsoMesh({ label, caption }: { label: string; caption: string }) 
 
 // ── Links and packets ──
 
-const topOf = (i: number, now: number): V3 => add(DEVICES[i].at, [0, 0, DEVICES[i].height + floatOf(i, now)]);
-/** Fragments swing out from under the sphere before dropping onto their peer. */
-const arcMid = (i: number): V3 => [DEVICES[i].at[0] * 0.75, DEVICES[i].at[1] * 0.75, SOURCE[2] * 0.8];
-const onArc = (i: number, now: number, f: number): V3 =>
-  lerp3(lerp3(SOURCE, arcMid(i), f), lerp3(arcMid(i), topOf(i, now), f), f);
 const N = DEVICES.length;
 /** Peer-to-peer link between neighbours: a raised arc over the map, like a flight path. */
 const linkMid = (i: number, j: number): V3 => {
@@ -222,7 +216,7 @@ function Pins({ now, joining }: { now: number; joining: boolean }) {
   );
 }
 
-function Links({ t, now, joining, entangle }: { t: number; now: number; joining: boolean; entangle: number }) {
+function Links({ t, joining, entangle }: { t: number; joining: boolean; entangle: number }) {
   return (
     <g aria-hidden="true">
       {DEVICES.map((d, i) => (
@@ -241,28 +235,27 @@ function Links({ t, now, joining, entangle }: { t: number; now: number; joining:
             );
           })
         : null}
-      {DEVICES.map((d, i) => {
-        const [sx, sy] = iso(SOURCE);
-        const [mx, my] = iso(arcMid(i));
-        const [px, py] = iso(topOf(i, now));
-        return (
+      {/* Job routes: from the requesting laptop out to every other peer. */}
+      {DEVICES.map((d, i) =>
+        i === HOME ? null : (
           <path
-            key={`arc-${d.name}`}
+            key={`route-${d.name}`}
             className={styles.isoArc}
             style={{ opacity: joining ? 0.12 : 0.45 }}
-            d={`M ${sx} ${sy} Q ${mx} ${my} ${px} ${py}`}
+            d={linkPath(HOME, i)}
           />
-        );
-      })}
+        ),
+      )}
       {joining
         ? null
         : DEVICES.map((d, i) => {
+            if (i === HOME) return null;
             const out = t - (ARRIVE(i) - 0.9);
             const back = t - MEASURE(i) - 0.3;
             const outgoing = out > 0 && out < 0.9;
             const returning = back > 0 && back < 0.9;
             if (!outgoing && !returning) return null;
-            const [x, y] = iso(onArc(i, now, outgoing ? ease(out / 0.9) : 1 - ease(back / 0.9)));
+            const [x, y] = iso(onLink(HOME, i, outgoing ? ease(out / 0.9) : 1 - ease(back / 0.9)));
             return (
               <g key={`p-${d.name}`}>
                 <circle className={outgoing ? styles.isoPacketGlow : styles.isoPacketGlowBack} cx={x} cy={y} r={9} />
@@ -380,49 +373,25 @@ function Badge({ index, t, joining, bit, lift }: { index: number; t: number; joi
   );
 }
 
-/** The mesh seen as one machine: a large qubit register that fills as results come home. */
-function Machine({ t, joining, bits }: { t: number; joining: boolean; bits: number[] }) {
-  const { x, y, r } = SPHERE;
-  const spin = t * 0.6;
+/** The result as one machine: bits arrive from each peer, then the receipt. */
+function Readout({ t, joining, bits }: { t: number; joining: boolean; bits: number[] }) {
   const live = !joining && t < LOOP - 0.4;
   const verified = live && t >= VERIFY;
-  const home = DEVICES.map((_, i) => live && t >= RETURNED(i));
-  const nodes = DEVICES.map((_, i) => {
-    const a = spin + (i * Math.PI) / 3;
-    return { i, nx: x + r * Math.cos(a), ny: y + r * 0.3 * Math.sin(a), front: Math.sin(a) > 0 };
-  });
-  const theta = verified ? 0.9 : 0.6 + Math.sin(t * 1.3) * 0.5;
-  const tipX = x + r * 0.8 * Math.sin(theta) * Math.cos(spin * 2);
-  const tipY = y - r * 0.8 * Math.cos(theta);
-  const node = (n: (typeof nodes)[number], size: number) => (
-    <circle key={n.i} className={home[n.i] ? styles.isoNodeOn : styles.isoNode} cx={n.nx} cy={n.ny} r={size} />
-  );
+  const home = DEVICES.map((_, i) => live && (i === HOME ? t >= MEASURE(i) : t >= RETURNED(i)));
   return (
-    <g aria-hidden="true">
-      <circle className={styles.isoSphereHalo} cx={x} cy={y} r={r + 18} style={{ opacity: verified ? 1 : 0.35 }} />
-      {nodes.filter((n) => !n.front).map((n) => node(n, 3))}
-      <circle className={styles.isoSphere} cx={x} cy={y} r={r} />
-      <ellipse className={styles.isoSphereLine} cx={x} cy={y} rx={r} ry={r * 0.3} />
-      <ellipse className={styles.isoSphereLine} cx={x} cy={y} rx={r * Math.abs(Math.cos(spin))} ry={r} />
-      <ellipse className={styles.isoSphereFaint} cx={x} cy={y - r * 0.55} rx={r * 0.83} ry={r * 0.25} />
-      <ellipse className={styles.isoSphereFaint} cx={x} cy={y + r * 0.55} rx={r * 0.83} ry={r * 0.25} />
-      <line className={styles.isoVector} x1={x} y1={y} x2={tipX} y2={tipY} />
-      <circle className={styles.isoTip} cx={tipX} cy={tipY} r={3.4} />
-      {nodes.filter((n) => n.front).map((n) => node(n, 3.6))}
-      <g transform={`translate(${x + r + 30} ${y - 50})`}>
-        <text className={styles.isoResultLabel}>one machine</text>
-        <text className={styles.isoResultBits} y={24}>
-          {bits.map((b, i) => (home[i] ? b : "·")).join(" ")}
-        </text>
-        {verified ? (
-          <g className={styles.isoReceipt}>
-            <path d="M 0 38 l 4 4 l 8 -9" />
-            <text x={16} y={42}>
-              receipt · bundle pinned
-            </text>
-          </g>
-        ) : null}
-      </g>
+    <g className={styles.readout} transform="translate(-352 150)" aria-hidden="true">
+      <text className={styles.isoResultLabel}>one machine</text>
+      <text className={styles.isoResultBits} y={24}>
+        {bits.map((b, i) => (home[i] ? b : "·")).join(" ")}
+      </text>
+      {verified ? (
+        <g className={styles.isoReceipt}>
+          <path d="M 0 38 l 4 4 l 8 -9" />
+          <text x={16} y={42}>
+            receipt · bundle pinned
+          </text>
+        </g>
+      ) : null}
     </g>
   );
 }
