@@ -407,11 +407,13 @@ def _sample_closes(
 
     Feeds publish on deviation or heartbeat, so a quiet day keeps its last round's price.
     """
-    in_window = [current for current in rounds if start_ts <= current.updated_at < end_ts]
+    # Validate every fetched round before filtering on its timestamp: a corrupt
+    # `updatedAt` would otherwise drop the round and let an older price stand in.
     previous: _Round | None = None
-    for current in in_window:
+    for current in rounds:
         _validate_round(current, previous, block_time)
         previous = current
+    in_window = [current for current in rounds if start_ts <= current.updated_at < end_ts]
     closes: dict[date, DailyClose] = {}
     index = -1
     for day in days:
