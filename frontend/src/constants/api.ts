@@ -46,6 +46,8 @@ export const API = {
   FINANCE: {
     LIST: "/api/finance",
     CREATE: "/api/finance",
+    TOKENIZED_ASSETS: "/api/finance/tokenized-assets",
+    TOKENIZED_PORTFOLIO: "/api/finance/tokenized-portfolio",
     JOB: (jobId: string) => `/api/finance/${jobId}` as const,
     COMPARISON: (jobId: string) =>
       `/api/finance/${jobId}/comparison` as const,

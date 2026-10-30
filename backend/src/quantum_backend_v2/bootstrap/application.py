@@ -19,9 +19,11 @@ from quantum_backend_v2.application.provenance import (
     KuboBundlePublisher,
     MongoProvenanceRepository,
 )
+from quantum_backend_v2.application.tokenized_portfolio import ChainlinkHistorySource
 from quantum_backend_v2.bootstrap.libp2p import create_libp2p_plan, create_libp2p_runtime
 from quantum_backend_v2.bootstrap.persistence import create_persistence_runtime
 from quantum_backend_v2.chains.loader import load_chain_registry
+from quantum_backend_v2.chains.market_data import load_market_data
 from quantum_backend_v2.config import load_settings
 from quantum_backend_v2.config.loader import load_environment
 from quantum_backend_v2.discovery.service import build_discovery_service
@@ -59,6 +61,7 @@ def create_application(env: Mapping[str, str] | None = None) -> FastAPI:
     )
     financial_job_service = FinancialJobService(
         price_source=ChainlinkPriceSource(chain_registry, env),
+        history_source=ChainlinkHistorySource(load_market_data(), env),
         discovery_service=discovery_service,
         libp2p_runtime=libp2p_runtime,
     )

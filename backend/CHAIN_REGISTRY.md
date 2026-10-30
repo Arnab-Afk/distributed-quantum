@@ -85,6 +85,11 @@ provider: anchors come from a dedicated low-balance account, never a user or pla
 wallet. Ethereum Sepolia declares it. See
 [Anchor transactions](PROVENANCE.md#anchor-transactions-21).
 
+Robinhood Chain Testnet (`eip155:46630`, #18) declares `explorer_url` and
+`verify_transaction` only, with no stablecoin. Official Stock Tokens and Chainlink
+feeds exist only on Robinhood Chain mainnet, which stays out of this registry; see
+[Robinhood Chain market data](#robinhood-chain-market-data).
+
 The faucet endpoint returns manual instructions; it does not send funds. Balance
 queries use Web3 through the registry RPC, not the CDP token-balance endpoint.
 
@@ -121,6 +126,52 @@ Custom explorer URL shapes require a deliberate schema/adapter change.
 Loader errors report validation reasons without raw values, field locations,
 file paths, or parser details. Keep validator messages free of user input; unknown
 field names can also contain secrets. Do not log raw TOML or direct Pydantic errors.
+
+## Robinhood Chain market data
+
+`chains/market_data.toml` is a reviewed allowlist of tokenized stocks on Robinhood
+Chain mainnet (`eip155:4663`) whose Chainlink price history may be read for analysis.
+The maintainers approved this read-only mainnet exception in #18. It is separate from
+the registry and has no capabilities: `TokenPriceHistoryReader` sends only `eth_call`
+through Multicall3, never wallets, signing or transactions. The RPC is resolved like
+registry entries, through `QB2_ROBINHOOD_MAINNET_RPC_URL` or the public endpoint.
+
+Each entry joins Robinhood's asset list with Chainlink's Robinhood feed directory and
+was checked on-chain at `reviewed_block`: the token's `symbol()`, 18 decimals and
+`uiMultiplier()`, and the feed's `description()` and 8 decimals. Feeds report the
+**token** price, which already includes the multiplier; it is never applied again.
+Before reading, the reader compares each feed's description, decimals and phase with
+the allowlist and fails if they changed or the feed has been silent for over 7 days
+(weekends plus a market holiday reach about 104 hours). A Chainlink phase upgrade
+therefore blocks reads until the allowlist is reviewed, even for older windows.
+
+History rules (`chains/price_history.py`):
+
+- Rounds before `first_valid_round` are excluded. Each feed's launch rounds
+  (2026-06-22 to 2026-06-23 13:50 UTC) were published at about 1e8x the price.
+- Every round in the window must have a positive answer, ordered timestamps,
+  `answeredInRound >= roundId`, and move under 50% from the previous round; any
+  violation rejects the request. Missing data is never zero-filled or substituted.
+- Each weekday's price is the last valid round at or before 21:00 UTC (after the
+  16:00 ET close in summer and winter time), if it is at most 36 hours old. Feeds
+  publish on a 0.5% move or a 24-hour heartbeat, so a quiet day keeps the last
+  published price; that is the feed's value at the cutoff, not a substitute.
+- A weekday on which no selected feed published (a market holiday such as
+  2026-07-03 or Labor Day) is dropped rather than adding a zero return. Dates where any
+  selected asset lacks a price are dropped too; fewer than 60 remaining dates is an
+  error. The range is limited to 366 days, must contain at least 60 weekdays, and must
+  not end in the future. A cutoff after the read block is not yet a close.
+- `PriceHistory` records the chain, block number/hash, token and feed addresses,
+  decimals, and the round ID and `updatedAt` of every close. `to_wide_csv()` produces
+  the optimizer's existing wide price format.
+
+Chainlink rounds are immutable, so the recorded round IDs reproduce a series later.
+The public RPC is not an archive node and does not serve old block state.
+
+To add an asset, confirm it in `GET https://api.robinhood.com/rhj/assets` and
+[Chainlink's Robinhood feeds](https://docs.chain.link/data-feeds/price-feeds/addresses?network=robinhood),
+verify the on-chain fields above, read its rounds to find the first valid one, and
+update `reviewed_block`.
 
 ## Public API
 
@@ -169,6 +220,10 @@ Checked October 21, 2026:
   specify Base Sepolia ID `84532`, ETH, and its explorer.
 - [Ethereum client Sepolia metadata](https://github.com/eth-clients/sepolia)
   specifies ID `11155111` and its explorers.
+- [Robinhood Chain's connection page](https://docs.robinhood.com/chain/connecting/)
+  specifies testnet ID `46630`, ETH, its public RPC and explorer (checked October 28,
+  2026; `eth_chainId` returned `0xb626`). Robinhood's asset API lists every Stock
+  Token on mainnet `4663` only.
 - [Ethereum's ether reference](https://ethereum.org/developers/docs/intro-to-ether/)
   defines 18 decimal places. Both entries use ETH as the native token.
 - [Circle's contract list](https://developers.circle.com/stablecoins/usdc-contract-addresses)
@@ -197,7 +252,15 @@ uv run --no-sync pytest tests/unit/test_chain_rpc.py tests/unit/test_chain_rpc_a
 uv run --no-sync pytest tests/unit/test_chains_bootstrap.py tests/unit/test_wallet_registry_service.py tests/unit/test_basescan_registry.py -q
 uv run --no-sync ruff check src/quantum_backend_v2/chains src/quantum_backend_v2/api/routers/chains.py tests/unit/test_chain*.py
 uv run --no-sync mypy --follow-imports=silent src/quantum_backend_v2/chains src/quantum_backend_v2/api/routers/chains.py
+uv run --no-sync pytest tests/unit/test_market_data.py tests/unit/test_token_price_history.py -q
+# Optional read-only mainnet check (eth_call only):
+QB2_ROBINHOOD_LIVE_TEST=1 uv run --no-sync pytest tests/live/test_robinhood_price_history.py -m live_robinhood -q
 ```
+
+`test_token_price_history.py` replays real rounds recorded from Robinhood Chain
+mainnet (`tests/fixtures/robinhood_chainlink_rounds.json`, SPY and QQQ at the block
+it names) through an in-process JSON-RPC provider; the live check compares the same
+rounds with the chain.
 
 The first command runs isolated registry/API tests. Bootstrap tests exercise the
 real app factory and lifespan with persistence, recovery, peers, and legacy external
