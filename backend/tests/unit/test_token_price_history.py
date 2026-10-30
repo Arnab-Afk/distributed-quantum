@@ -225,6 +225,21 @@ def test_invalid_rounds_inside_the_window_reject_the_history(mutate, message):
         read(provider)
 
 
+def spy_round(number):
+    rounds = RecordedChain().rounds("SPY")
+    return next(i for i, item in enumerate(rounds) if int(item[0]) & (2**64 - 1) == number)
+
+
+@pytest.mark.parametrize("updated_at", [0, BLOCK["timestamp"] + 1])
+def test_a_corrupt_timestamp_cannot_drop_a_round_from_the_window(updated_at):
+    # Round 184 is SPY's October 26 close. Filtering on its timestamp before validating
+    # it would quietly substitute round 183's older price for that day.
+    provider = RecordedChain()
+    corrupt(3, updated_at, index=spy_round(184))(provider)
+    with pytest.raises(HistoryRejectedError, match="invalid price round"):
+        read(provider)
+
+
 def test_a_missing_round_is_never_skipped():
     provider = RecordedChain()
     feed = next(f for f in provider.feeds.values() if f["symbol"] == "SPY")
