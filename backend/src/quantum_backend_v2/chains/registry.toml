@@ -70,3 +70,23 @@ address = "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238"
 address = "0x694AA1769357215DE4FAC081bf1f309aDC325306"
 max_age_seconds = 3600
 max_deviation_bps = 2000
+
+[[chains]]
+chain_id = "starknet:SN_SEPOLIA"
+family = "starknet"
+display_name = "Starknet Sepolia"
+testnet = true
+enabled = true
+aliases = ["starknet-sepolia"]
+rpc_env_var = "QB2_STARKNET_SEPOLIA_RPC_URL"
+public_rpc_url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_8"
+capabilities = ["explorer_url", "verify_transaction"]
+
+[chains.explorers]
+transaction = "https://sepolia.voyager.online/tx/{tx_hash}"
+address = "https://sepolia.voyager.online/contract/{address}"
+block = "https://sepolia.voyager.online/block/{block_number}"
+
+[chains.native_token]
+symbol = "STRK"
+decimals = 18

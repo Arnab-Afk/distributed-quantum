@@ -213,7 +213,8 @@ class AIAgentService:
     async def analyze_proposal(
         self,
         agent_id: str,
-        proposal: dict
+        proposal: dict,
+        llm_provider: str | None = None,
     ) -> dict:
         """
         Analyze a research proposal and make funding decision.
@@ -305,7 +306,7 @@ class AIAgentService:
             logger.info("Sending proposal analysis request to configured LLM provider")
 
             # Call configured LLM provider (AGENT_LLM_PROVIDER)
-            response = await self._call_llm(prompt)
+            response = await self._call_llm(prompt, llm_provider)
 
             logger.info("Received analysis response from configured LLM provider")
 
@@ -704,10 +705,10 @@ class AIAgentService:
             logger.error(f"Failed to calculate daily remaining: {e}")
             raise
 
-    async def _call_llm(self, prompt: str) -> str:
+    async def _call_llm(self, prompt: str, llm_provider: str | None = None) -> str:
         # Call the configured LLM provider (AGENT_LLM_PROVIDER) without automatic fallback.
         from services.groq_agent import complete
-        return await complete([{"role": "user", "content": prompt}])
+        return await complete([{"role": "user", "content": prompt}], provider=llm_provider)
 
     def _parse_decision_response(self, response: str) -> dict:
         """
@@ -809,7 +810,7 @@ class AIAgentService:
     async def chat(self, agent_id: str, agent_name: str, message: str,
                    history: list[dict] | None = None, owner_id: str | None = None,
                    session_id: str | None = None,
-                   meta: dict[str, Any] | None = None) -> str:
+                   meta: dict[str, Any] | None = None, llm_provider: str | None = None) -> str:
         from services.groq_agent import complete
         from mcp_server.platform_mcp import create_platform_mcp
         mcp_server = create_platform_mcp(self.db, owner_id or "", agent_id)
@@ -857,4 +858,4 @@ class AIAgentService:
         messages.extend({"role": h["role"], "content": h["content"]}
                         for h in (history or [])[-20:] if h["role"] in ("user", "assistant"))
         messages.append({"role": "user", "content": message})
-        return await complete(messages, tools=definitions, invoke=invoke, meta=meta)
+        return await complete(messages, tools=definitions, invoke=invoke, meta=meta, provider=llm_provider)
