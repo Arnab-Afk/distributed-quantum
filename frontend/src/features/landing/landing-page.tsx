@@ -17,13 +17,13 @@ import {
 import { Inter, Newsreader } from "next/font/google";
 
 import { ArchStack } from "./components/arch-stack";
+import { InfrastructureStrip } from "./components/infrastructure-strip";
 import { Identicon, MeshMark } from "./components/mesh-mark";
 import { GlyphBand, HeroMesh, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
 import { WorkloadSwitcher } from "./components/workload-switcher";
 import {
   ARCHITECTURE,
-  BUILT_ON,
   CLOSING,
   CONSOLE_HREF,
   DEMO_URL,
@@ -134,28 +134,7 @@ export function LandingPage() {
 
         <GlyphBand label={GLYPHS.label} />
 
-        <section className={styles.builtOn} aria-label={BUILT_ON.label}>
-          <div className={styles.logoRow}>
-            {BUILT_ON.first.slice(0, 2).map((name) => (
-              <span key={name} className={styles.logoCell}>
-                {name}
-              </span>
-            ))}
-            <span className={`${styles.logoCell} ${styles.logoLabel}`}>{BUILT_ON.short}</span>
-            {BUILT_ON.first.slice(2).map((name) => (
-              <span key={name} className={styles.logoCell}>
-                {name}
-              </span>
-            ))}
-          </div>
-          <div className={styles.logoRow}>
-            {BUILT_ON.second.map((name) => (
-              <span key={name} className={styles.logoCell}>
-                {name}
-              </span>
-            ))}
-          </div>
-        </section>
+        <InfrastructureStrip />
 
         <section id="architecture" className={styles.architecture} aria-labelledby="architecture-title">
           <ArchStack title={ARCHITECTURE.title} body={ARCHITECTURE.body} layers={ARCHITECTURE.layers} />

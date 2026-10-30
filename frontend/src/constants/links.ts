@@ -4,7 +4,7 @@ export const EXTERNAL_LINKS = {
   REPOSITORY,
   RESEARCH_PAPER:
     "https://github.com/QMeshPy/documentations/blob/main/research/RESEARCH_PAPER_DRAFT.md",
-  DEMO_VIDEO: "https://www.loom.com/share/8c5a546cb99a4a98996e738bf23c3e7a",
+  DEMO_VIDEO: "https://youtu.be/Q6Khh3bJnqU",
   DOCS: {
     OVERVIEW: `${REPOSITORY}#what-this-is`,
     X402: `${REPOSITORY}#algorand-x402-machine-payable-quantum-services`,

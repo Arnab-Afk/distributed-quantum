@@ -36,11 +36,37 @@ export const GLYPHS = {
 } as const;
 
 export const BUILT_ON = {
-  label: "Built on open infrastructure",
+  label: "Infrastructure behind QMesh",
   short: "Built on",
-  // Row one has a label cell in the middle, like a logo wall.
-  first: ["py-libp2p", "Qiskit", "IPFS", "Algorand x402"],
-  second: ["Ethereum Sepolia", "Base Sepolia", "Starknet Sepolia", "Chainlink"],
+  pause: "Pause motion",
+  resume: "Resume motion",
+  rowLabels: ["Network and execution", "Services and integrations"],
+  rows: [
+    [
+      { name: "py-libp2p", role: "Peer networking" },
+      { name: "Qiskit", role: "Quantum simulation" },
+      { name: "PennyLane", role: "Quantum workflows" },
+      { name: "IPFS", role: "Content addressing" },
+      { name: "Helia", role: "Browser vault" },
+      { name: "Kubo", role: "Platform content node" },
+      { name: "Algorand x402", role: "Per-request payments" },
+      { name: "Ethereum Sepolia", role: "Provenance anchoring" },
+      { name: "Base Sepolia", role: "Wallet transactions" },
+      { name: "Starknet Sepolia", role: "Spending policies" },
+    ],
+    [
+      { name: "Chainlink", role: "Verifiable price feeds" },
+      { name: "Robinhood Chain", role: "Tokenized stock data" },
+      { name: "ENS", role: "Name resolution" },
+      { name: "Coinbase CDP", role: "Agent wallets" },
+      { name: "Stripe", role: "Subscriptions and credits" },
+      { name: "NEAR AI Cloud", role: "Private inference" },
+      { name: "Groq", role: "Agent inference" },
+      { name: "OpenRouter", role: "Model routing" },
+      { name: "Lighthouse", role: "Vault pinning" },
+      { name: "Toju", role: "Approved storage exports" },
+    ],
+  ],
 } as const;
 
 export interface Layer {
