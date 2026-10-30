@@ -50,10 +50,15 @@ export function SessionHistoryDialog({
   const calls = [...(session.calls ?? [])].sort(
     (a, b) => (b.submitted_at ?? 0) - (a.submitted_at ?? 0),
   );
+  const waiting = calls.some((call) => call.status !== "confirmed" && call.status !== "failed");
+
   useEffect(() => {
     if (!open) return;
     refresh.mutate(agentId);
-  }, [open, agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!waiting) return;
+    const timer = window.setInterval(() => refresh.mutate(agentId), 60_000);
+    return () => window.clearInterval(timer);
+  }, [open, agentId, waiting]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
