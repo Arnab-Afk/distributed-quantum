@@ -6,9 +6,10 @@ from collections.abc import Mapping
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 def _default_peer_log_directory() -> Path:
@@ -114,6 +115,34 @@ class KuboSettings(BaseModel):
     max_response_bytes: int = Field(default=4 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
 
 
+class AnchorSettings(BaseModel):
+    """Provenance anchoring (#21); off unless a registry network is configured."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
+
+    # Registry alias or CAIP-2 ID of an entry with the anchor_root capability.
+    network: str | None = Field(default=None, min_length=1)
+    # Public anchor account; verifiers check transactions come from it.
+    sender: str | None = Field(default=None, pattern=r"^0x[0-9a-fA-F]{40}$")
+    # Earlier anchor accounts, so anchors sent before a key rotation keep verifying.
+    past_senders: tuple[Annotated[str, Field(pattern=r"^0x[0-9a-fA-F]{40}$")], ...] = ()
+    # Dedicated low-balance key that sends anchors; without it this node only verifies.
+    private_key: SecretStr | None = Field(default=None, repr=False)
+    interval_seconds: int = Field(default=3600, ge=60, le=7 * 86400)
+    # One batch document lists every bundle, so stay far below MongoDB's 16 MB limit.
+    max_batch: int = Field(default=10_000, ge=1, le=20_000)
+    # Skip a run instead of paying more than this per gas unit.
+    max_fee_gwei: int = Field(default=100, ge=1, le=10_000)
+
+    @model_validator(mode="after")
+    def _sender_with_network(self) -> AnchorSettings:
+        if self.network is not None and self.sender is None:
+            raise ValueError("QB2_ANCHOR_SENDER is required with QB2_ANCHOR_NETWORK")
+        if self.private_key is not None and self.network is None:
+            raise ValueError("QB2_ANCHOR_NETWORK is required with QB2_ANCHOR_PRIVATE_KEY")
+        return self
+
+
 class GatewaySettings(BaseModel):
     """Bounded, read-only access to an operator-configured IPFS gateway."""
 
@@ -186,6 +215,7 @@ class AppSettings(BaseModel):
     libp2p: Libp2pSettings = Field(default_factory=Libp2pSettings)
     kubo: KuboSettings = Field(default_factory=KuboSettings)
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
+    anchor: AnchorSettings = Field(default_factory=AnchorSettings)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> AppSettings:
@@ -218,6 +248,21 @@ class AppSettings(BaseModel):
                     "public_url": env.get("IPFS_PUBLIC_GATEWAY_URL") or None,
                     "timeout_seconds": env.get("IPFS_GATEWAY_TIMEOUT_SECONDS", "30"),
                     "max_response_bytes": env.get("IPFS_GATEWAY_MAX_RESPONSE_BYTES", "4194304"),
+                }
+            ),
+            anchor=AnchorSettings.model_validate(
+                {
+                    "network": _optional(env.get("QB2_ANCHOR_NETWORK")),
+                    "sender": _optional(env.get("QB2_ANCHOR_SENDER")),
+                    "past_senders": tuple(
+                        item.strip()
+                        for item in env.get("QB2_ANCHOR_PAST_SENDERS", "").split(",")
+                        if item.strip()
+                    ),
+                    "private_key": _optional(env.get("QB2_ANCHOR_PRIVATE_KEY")),
+                    "interval_seconds": env.get("QB2_ANCHOR_INTERVAL_SECONDS", "3600"),
+                    "max_batch": env.get("QB2_ANCHOR_MAX_BATCH", "10000"),
+                    "max_fee_gwei": env.get("QB2_ANCHOR_MAX_FEE_GWEI", "100"),
                 }
             ),
             logging=LoggingSettings(

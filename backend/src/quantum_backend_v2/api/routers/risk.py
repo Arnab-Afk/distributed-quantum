@@ -8,9 +8,11 @@ import math
 from datetime import date
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import not_found
+from quantum_backend_v2.api.finance_download import finance_provenance_download
 from quantum_backend_v2.api.models.risk import (
     CreditAsset,
     EquityHolding,
@@ -233,10 +235,14 @@ def build_risk_router(*, risk_job_service: RiskJobService) -> APIRouter:
     async def get_risk_job(
         job_id: str,
         current_user: CurrentUser,
-    ) -> RiskJobResponse:
+        download: str | None = Query(default=None, pattern="^provenance$"),
+    ) -> RiskJobResponse | Response:
         record = await risk_job_service.get_job(job_id, current_user=current_user)
         if record is None:
             raise not_found("Risk job", job_id)
+        if download == "provenance":
+            return finance_provenance_download(record.result_payload)
+
         return RiskJobResponse(
             job_id=record.id,
             status=record.status,
