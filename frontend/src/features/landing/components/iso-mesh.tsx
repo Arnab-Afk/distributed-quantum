@@ -4,27 +4,15 @@ import { useEffect, useRef, useState } from "react";
 
 import styles from "../landing.module.css";
 import { DRAW } from "./devices";
-import { add, clamp, ease, lerp3, type V3 } from "./iso";
+import { add, clamp, COS, ease, iso, lerp3, plane, pts, SIN, type V3 } from "./iso";
 import { hash } from "./pixel-canvas";
 import { LAND, MAP_COLS, MAP_ROWS, toCell } from "./world-map";
 
-// ── Scene projection ──
-// The map lies flat and faces the viewer, tilted back like a table seen from above,
-// so it runs horizontally across the hero. Devices keep their isometric drawings.
-const TILT = 0.62;
-const iso = ([x, y, z]: V3): [number, number] => [x, y * TILT - z];
-const pts = (list: V3[]) => list.map((p) => iso(p).map((n) => n.toFixed(1)).join(",")).join(" ");
-const plane = (o: V3, u: V3, v: V3, w: number, h: number) => {
-  const [ox, oy] = iso(o);
-  const [ux, uy] = iso(add(o, u));
-  const [vx, vy] = iso(add(o, v));
-  return `matrix(${(ux - ox) / w} ${(uy - oy) / w} ${(vx - ox) / h} ${(vy - oy) / h} ${ox} ${oy})`;
-};
 /** A circle of radius r lying on the map, as an ellipse's radii. */
-const flat = (r: number) => ({ rx: r, ry: r * TILT });
+const flat = (r: number) => ({ rx: r * Math.SQRT2 * COS, ry: r * Math.SQRT2 * SIN });
 
 // ── The world map slab ──
-const CELL = 7.3; // world units per 3.75° map cell
+const CELL = 5.4; // world units per 3.75° map cell
 const MAP_W = MAP_COLS * CELL;
 const MAP_D = MAP_ROWS * CELL;
 const MAP_T = 10;
@@ -44,7 +32,7 @@ interface Device {
   height: number;
   at: V3;
 }
-const SCALE = 0.56; // devices are drawn smaller over the map
+const SCALE = 0.62; // devices are drawn smaller over the map
 // Ordered so the ring of links travels around the globe.
 const SLOTS: [Kind, string, string, number, number, number][] = [
   ["laptop", "Laptop", "San Francisco", 64, -122.4, 37.8],
@@ -65,7 +53,7 @@ const ORDER = DEVICES.map((_, i) => i).sort((a, b) => iso(DEVICES[a].at)[1] - is
 // The laptop in San Francisco submits the job: fragments leave it and bits return to it.
 const HOME = 0;
 /** Each peer hovers over its city at its own height and bobs gently. */
-const floatOf = (i: number, now: number) => 26 + (i % 3) * 8 + Math.sin(now * 1.1 + i * 1.7) * 3;
+const floatOf = (i: number, now: number) => 34 + (i % 3) * 10 + Math.sin(now * 1.1 + i * 1.7) * 4;
 
 /** The slab and its dotted continents. Built once: it never changes. */
 const MAP_SLAB = (() => {
@@ -80,6 +68,7 @@ const MAP_SLAB = (() => {
   }
   return (
     <g aria-hidden="true">
+      <polygon className={styles.mapSide} points={pts([c(MAP_W, 0, 0), c(MAP_W, MAP_D, 0), c(MAP_W, MAP_D, MAP_T), c(MAP_W, 0, MAP_T)])} />
       <polygon className={styles.mapSide} points={pts([c(0, MAP_D, 0), c(MAP_W, MAP_D, 0), c(MAP_W, MAP_D, MAP_T), c(0, MAP_D, MAP_T)])} />
       <polygon className={styles.mapTop} points={pts([c(0, 0, MAP_T), c(MAP_W, 0, MAP_T), c(MAP_W, MAP_D, MAP_T), c(0, MAP_D, MAP_T)])} />
       <g transform={plane(c(0, 0, MAP_T), [MAP_W, 0, 0], [0, MAP_D, 0], MAP_COLS, MAP_ROWS)}>
@@ -153,7 +142,7 @@ export function IsoMesh({ label, caption }: { label: string; caption: string }) 
 
   return (
     <figure ref={ref} className={styles.isoStage}>
-      <svg className={styles.isoSvg} viewBox="-372 -165 744 365" role="img" aria-label={label} onClick={restart}>
+      <svg className={styles.isoSvg} viewBox="-372 -225 744 440" role="img" aria-label={label} onClick={restart}>
         {MAP_SLAB}
         <Pins now={join} joining={joining} />
         <Links t={t} joining={joining} entangle={entangle} />
@@ -373,25 +362,30 @@ function Badge({ index, t, joining, bit, lift }: { index: number; t: number; joi
   );
 }
 
+// The readout is printed on the slab itself, in the empty South Pacific, so it lies flat in the map's orientation.
+const ON_SLAB = plane(add(MAP_ORIGIN, [0, 0, MAP_T]), [MAP_W, 0, 0], [0, MAP_D, 0], MAP_COLS, MAP_ROWS);
+
 /** The result as one machine: bits arrive from each peer, then the receipt. */
 function Readout({ t, joining, bits }: { t: number; joining: boolean; bits: number[] }) {
   const live = !joining && t < LOOP - 0.4;
   const verified = live && t >= VERIFY;
   const home = DEVICES.map((_, i) => live && (i === HOME ? t >= MEASURE(i) : t >= RETURNED(i)));
   return (
-    <g className={styles.readout} transform="translate(-352 150)" aria-hidden="true">
-      <text className={styles.isoResultLabel}>one machine</text>
-      <text className={styles.isoResultBits} y={24}>
-        {bits.map((b, i) => (home[i] ? b : "·")).join(" ")}
-      </text>
-      {verified ? (
-        <g className={styles.isoReceipt}>
-          <path d="M 0 38 l 4 4 l 8 -9" />
-          <text x={16} y={42}>
-            receipt · bundle pinned
-          </text>
-        </g>
-      ) : null}
+    <g transform={ON_SLAB} aria-hidden="true">
+      <g transform="translate(3 32.5)">
+        <text className={styles.slabLabel}>ONE MACHINE</text>
+        <text className={styles.slabBits} y={4.6}>
+          {bits.map((b, i) => (home[i] ? b : "·")).join(" ")}
+        </text>
+        {verified ? (
+          <g>
+            <path className={styles.slabCheck} d="M 0 7.1 l 0.8 0.8 l 1.6 -1.8" vectorEffect="non-scaling-stroke" />
+            <text className={styles.slabLabel} x={3.2} y={8}>
+              RECEIPT · BUNDLE PINNED
+            </text>
+          </g>
+        ) : null}
+      </g>
     </g>
   );
 }

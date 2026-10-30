@@ -1697,7 +1697,7 @@
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 744 / 365;
+  aspect-ratio: 744 / 440;
   overflow: visible;
   cursor: pointer;
 }
@@ -1835,6 +1835,29 @@
 
 .mapPinDot {
   fill: var(--accent);
+}
+
+/* Readout printed on the map slab (sizes are map-cell units). */
+.slabLabel {
+  font-family: var(--font-data);
+  font-size: 1.15px;
+  letter-spacing: 0.12em;
+  fill: var(--ink-muted);
+}
+
+.slabBits {
+  font-family: var(--font-data);
+  font-size: 3px;
+  letter-spacing: 0.08em;
+  fill: var(--ink);
+}
+
+.slabCheck {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .isoLand {
