@@ -12,9 +12,11 @@ from fastapi import (
     UploadFile,
     status,
 )
+from fastapi.responses import Response
 
 from quantum_backend_v2.api.deps.auth import CurrentUser
 from quantum_backend_v2.api.errors.models import not_found
+from quantum_backend_v2.api.finance_download import finance_provenance_download
 from quantum_backend_v2.api.models.financial import (
     FinancialComparisonResponse,
     FinancialJobResponse,
@@ -199,10 +201,14 @@ def build_financial_router(*, financial_job_service: FinancialJobService) -> API
         job_id: str,
         current_user: CurrentUser,
         result_detail: str = Query(default="full", pattern="^(full|summary)$"),
-    ) -> FinancialJobResponse:
+        download: str | None = Query(default=None, pattern="^provenance$"),
+    ) -> FinancialJobResponse | Response:
         record = await financial_job_service.get_job(job_id, current_user=current_user)
         if record is None:
             raise not_found("Financial job", job_id)
+
+        if download == "provenance":
+            return finance_provenance_download(record.result_payload)
 
         return FinancialJobResponse(
             job_id=record.id,
