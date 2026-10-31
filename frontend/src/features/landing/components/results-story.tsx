@@ -11,34 +11,28 @@ import { hash } from "./pixel-canvas";
 type Story = (typeof RESULTS)["story"];
 type Pt = [number, number];
 
-// ── One story timeline, in seconds ──
-// Scroll only chooses which act you are in; a playhead then travels to the end of that
-// act at a natural pace (faster when rewinding). Every state below is a function of the
-// playhead, so the story always flows and never jumps, in either direction.
-const TL = {
-  strands: [0.2, 2.0],
-  pan: [2.6, 3.4],
-  burst: [3.2, 4.6],
-  cluster: [5.2, 6.6],
-  rows: 7.4, // dots start streaming into rows here; each column waits its turn
-  collapse: [11.0, 12.0],
-  baseline: [11.6, 12.5],
-  curve: [12.5, 14.9],
-  loopOut: [15.4, 16.0],
-  loopIn: [16.0, 17.6],
+// ── Scroll timeline, matched to giga.ai's Build → Observe → Improve → loop ──
+const K = {
+  drawStrands: [0.0, 0.08],
+  meshTitle: [0.0, 0.14],
+  pan: [0.16, 0.22],
+  runTitle: [0.18, 0.26],
+  burst: [0.22, 0.29],
+  rows: [0.42, 0.48],
+  collapse: [0.55, 0.6],
+  scaleTitle: [0.55, 0.66],
+  baseline: [0.6, 0.65],
+  curve: [0.66, 0.78],
+  loopOut: [0.86, 0.9],
+  loopIn: [0.9, 0.97],
 } as const;
-// Where each act comes to rest, and the scroll positions that select it.
-const ACT_END = [2.6, 10.8, 15.2, 17.8];
-const ACT_AT = [0, 0.2, 0.55, 0.85];
-const PHASE_FROM = [0, 2.9, 10.9]; // playhead time at which each tab becomes current
-const FORWARD = 1.0;
-const REWIND = 4;
+const PHASE_AT = [0, 0.18, 0.55];
 const N = 2400;
 const STARS = 900; // background field, present through every act
 const SOURCES = [12, 7, 9]; // dots per source column, like Giga's Knowledge / Tools / Guidance
 
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
-const span = ([a, b]: readonly [number, number], d: number) => clamp((d - a) / (b - a));
+const span = ([a, b]: readonly [number, number], f: number) => clamp((f - a) / (b - a));
 const ease = (n: number) => (n < 0.5 ? 4 * n * n * n : 1 - Math.pow(-2 * n + 2, 3) / 2);
 const mix = (a: number, b: number, k: number) => a + (b - a) * k;
 /** Rises over [a, b] then falls over [c, d]. */
@@ -71,6 +65,8 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
   const { scrollYProgress } = useScroll({ target: track, offset: ["start start", "end end"] });
   useMotionValueEvent(scrollYProgress, "change", (v) => {
     progress.current = v;
+    const next = v >= PHASE_AT[2] ? 2 : v >= PHASE_AT[1] ? 1 : 0;
+    setPhase((prev) => (prev === next ? prev : next));
   });
 
   useEffect(() => {
@@ -123,38 +119,22 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
     });
     io.observe(el);
 
-    let d = 0; // the playhead, in seconds of story
-    let lastT = 0;
-    let shownPhase = 0;
-
     const draw = () => {
       raf = requestAnimationFrame(draw);
       if (!visible) return;
+      const f = progress.current;
       const t = reduce ? 4 : (performance.now() - start) / 1000;
-      const dt = lastT ? Math.min(0.05, t - lastT) : 0.016;
-      lastT = t;
-      const act = ACT_AT.reduce((k, at, i) => (progress.current >= at ? i : k), 0);
-      const target = ACT_END[act];
-      if (reduce) d = target;
-      else if (d < target) d = Math.min(target, d + dt * FORWARD);
-      else d = Math.max(target, d - dt * REWIND);
-      const phaseNow = d >= PHASE_FROM[2] ? 2 : d >= PHASE_FROM[1] ? 1 : 0;
-      if (phaseNow !== shownPhase) {
-        shownPhase = phaseNow;
-        setPhase(phaseNow);
-      }
-      const story01 = d / ACT_END[3];
       const narrow = W < 720;
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, W, H);
 
       // Deep field: a faint galaxy of stars drifting in parallax behind every act,
       // brightest while the run is scattered across the sky.
-      const sky = 0.35 + 0.55 * window4(d, TL.burst[0], TL.burst[1], 8.4, TL.collapse[1]);
+      const sky = 0.35 + 0.55 * window4(f, K.burst[0], K.burst[1], K.rows[1], K.collapse[1]);
       for (let i = 0; i < BG.length; i += 1) {
         const s0 = BG[i];
-        const x = (((s0.x + t * 0.004 * s0.depth + story01 * 0.15 * s0.depth) % 1) + 1) % 1;
-        const y = (((s0.y - story01 * 0.08 * s0.depth) % 1) + 1) % 1;
+        const x = (((s0.x + t * 0.004 * s0.depth + f * 0.15 * s0.depth) % 1) + 1) % 1;
+        const y = (((s0.y - f * 0.08 * s0.depth) % 1) + 1) % 1;
         const tw = 0.45 + 0.55 * Math.sin(t * (0.8 + s0.depth) + s0.tw);
         ctx.globalAlpha = sky * tw * (0.25 + 0.55 * s0.depth);
         ctx.fillStyle = s0.hue > 0.86 ? accents[4] : s0.hue > 0.78 ? accents[1] : ink;
@@ -172,10 +152,10 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
 
       // Titles: each fades in, then out once its act gets going (DOM, driven from here).
       const tOp = [
-        window4(d, -1, 0, 2.8, 3.2),
-        window4(d, 2.9, 3.3, 5.0, 5.6),
-        window4(d, 10.9, 11.3, 12.8, 13.4),
-        window4(d, 16.2, 16.7, 99, 100),
+        window4(f, -1, 0, K.meshTitle[1], K.meshTitle[1] + 0.04),
+        window4(f, K.runTitle[0], K.runTitle[0] + 0.04, K.runTitle[1], K.runTitle[1] + 0.04),
+        window4(f, K.scaleTitle[0], K.scaleTitle[0] + 0.04, K.scaleTitle[1], K.scaleTitle[1] + 0.04),
+        window4(f, K.loopIn[0], K.loopIn[0] + 0.03, 2, 3),
       ];
       titles.current.forEach((node, k) => {
         if (node) {
@@ -185,9 +165,9 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       });
 
       // ── Geometry ──
-      const loopIn = ease(span(TL.loopIn, d));
+      const loopIn = ease(span(K.loopIn, f));
       // The point pans to centre for Run, and back home for the loop.
-      const pan = ease(span(TL.pan, d)) * (1 - loopIn);
+      const pan = ease(span(K.pan, f)) * (1 - loopIn);
       const home = W * (narrow ? 0.72 : 0.66);
       const point: Pt = [mix(home, W * 0.5, pan), mix(H * 0.6, H * 0.55, pan)];
       const shift = point[0] - home;
@@ -196,11 +176,11 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       const dotGap = narrow ? 7 : 9;
 
       // ── Act 1 (and the loop): strands from every source dot into one point ──
-      const drawStrands = ease(span(TL.strands, d));
-      const strandFade = 1 - ease(span(TL.pan, d));
-      const strandsAlpha = Math.max(strandFade * (d < TL.loopOut[0] ? 1 : 0), loopIn);
-      const reveal = d >= TL.loopIn[0] ? loopIn : drawStrands;
-      const tinted = d >= TL.loopIn[0];
+      const drawStrands = ease(span(K.drawStrands, f));
+      const strandFade = 1 - ease(span(K.pan, f));
+      const strandsAlpha = Math.max(strandFade * (f < K.loopOut[0] ? 1 : 0), loopIn);
+      const reveal = f >= K.loopIn[0] ? loopIn : drawStrands;
+      const tinted = f >= K.loopIn[0];
       if (strandsAlpha > 0.01) {
         SOURCES.forEach((count, g) => {
           const x0 = srcX[g];
@@ -269,25 +249,24 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       }
 
       // ── The point (persists from Build through the burst, and returns in the loop) ──
-      const burst = ease(span(TL.burst, d));
-      const pointAlpha = d < TL.collapse[0] ? 1 - ease(clamp((d - TL.rows) / 1.0)) : loopIn;
+      const burst = ease(span(K.burst, f));
+      const pointAlpha = f < K.collapse[0] ? 1 - span([K.rows[0], K.rows[1]], f) : loopIn;
       if (pointAlpha > 0.01) {
         ctx.globalAlpha = pointAlpha;
         ctx.fillStyle = ink;
         ctx.beginPath();
         ctx.roundRect(point[0] - 3.5, point[1] - 3.5, 7, 7, 1.5);
         ctx.fill();
-        const labelAlpha = d < TL.pan[0] ? drawStrands : tinted ? loopIn : 1 - pan;
+        const labelAlpha = f < K.pan[0] ? drawStrands : tinted ? loopIn : 1 - pan;
         ctx.globalAlpha = labelAlpha;
         ctx.font = `${narrow ? 12 : 14}px ${sans}`;
         ctx.textBaseline = "middle";
         ctx.fillText(tinted ? story.pointLoop : story.point, point[0] + 12, point[1]);
       }
 
-      // ── Act 2: burst → clusters → dot-matrix rows ──
-      const cluster = ease(span(TL.cluster, d));
-      const rows = ease(clamp((d - TL.rows) / 1.0));
-      const collapse = ease(span(TL.collapse, d));
+      // ── Act 2: burst → dot-matrix rows ──
+      const rows = ease(span(K.rows, f));
+      const collapse = ease(span(K.collapse, f));
       const field = burst * (1 - collapse);
       const rowX0 = W * (narrow ? 0.3 : 0.2);
       const rowX1 = W * 0.92;
@@ -296,38 +275,12 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       const chart = { x0: W * 0.14, x1: W * 0.76, base: H * 0.74, top: H * 0.22 };
       const ax = (a: number) => mix(chart.x0, chart.x1, (a - 10) / 50);
       const ay = (v: number) => chart.base - ((v - 1) / 8.5) * (chart.base - chart.top);
-      const centers: Pt[] = [
-        [0.2, 0.64],
-        [0.44, 0.72],
-        [0.3, 0.32],
-        [0.66, 0.32],
-        [0.84, 0.6],
-      ].map(([x, y]) => [x * W, y * H]);
 
       if (field > 0.005) {
-        // Nebula glow behind each cluster.
-        const neb = cluster * (1 - rows);
-        if (neb > 0.01) {
-          for (let c = 0; c < cats; c += 1) {
-            const [cx, cy] = centers[c];
-            const r = W * 0.17;
-            const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-            g.addColorStop(0, accents[c]);
-            g.addColorStop(1, "transparent");
-            ctx.globalAlpha = 0.2 * neb;
-            ctx.fillStyle = g;
-            ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
-          }
-        }
         for (const p of P) {
-          // A: born at the point, B: flung across the stage, C: a cluster, D: a matrix row, E: the baseline.
+          // A: born at the point, B: flung across the stage, C: a matrix row, D: the baseline.
           const bx = W * (0.04 + 0.92 * p.h1);
           const by = H * (0.12 + 0.76 * p.h2);
-          const rr = Math.pow(p.h3, 1.3) * W * 0.12;
-          // Inner stars orbit faster than outer ones, so each cluster turns like a small galaxy.
-          const th = p.h1 * Math.PI * 2 + t * (0.32 - p.h3 * 0.24) + Math.sqrt(p.h3) * 2.4;
-          const cxp = centers[p.c][0] + Math.cos(th) * rr;
-          const cyp = centers[p.c][1] + Math.sin(th) * rr * 0.62;
           const gap = hash(Math.floor(p.col / 4), p.c * 7 + p.sub) > 0.82 || p.h3 > 0.9;
           const dx = rowX0 + p.col * step;
           const dy = rowY(p.c) + (p.sub - 1) * (narrow ? 5 : 7);
@@ -335,19 +288,15 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
 
           let x = mix(point[0], bx, burst);
           let y = mix(point[1], by, burst);
-          x = mix(x, cxp, cluster);
-          y = mix(y, cyp, cluster);
-          // Each dot joins its row after a delay set by its column, so the bars fill left to right.
-          const rowsP = ease(clamp((d - TL.rows - (p.col / perCat) * 2.2) / 0.8));
-          x = mix(x, dx, rowsP);
-          y = mix(y, dy, rowsP);
+          x = mix(x, dx, rows);
+          y = mix(y, dy, rows);
           x = mix(x, ex, collapse);
           y = mix(y, chart.base, collapse);
 
           const twinkle = 0.5 + 0.5 * Math.sin(t * 1.7 + p.h2 * 40);
           const bright = p.lum > 0.93 && rows < 0.5;
           let a = field * (0.35 + 0.65 * twinkle);
-          if (rowsP > 0.5) a = gap ? 0 : 0.8 * (1 - collapse);
+          if (rows > 0.5) a = gap ? 0 : 0.8 * (1 - collapse);
           if (a < 0.02) continue;
           if (bright) {
             const glow = ctx.createRadialGradient(x, y, 0, x, y, 7);
@@ -365,24 +314,9 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
           ctx.fill();
         }
 
-        // Legend while clustered; row labels once lined up.
+        // Row labels once lined up.
         ctx.font = `${narrow ? 10 : 12}px ${sans}`;
         ctx.textBaseline = "middle";
-        const legend = cluster * (1 - rows);
-        if (legend > 0.01) {
-          ctx.globalAlpha = legend;
-          const widths = story.rows.map((r) => ctx.measureText(r).width + 26);
-          let lx = W / 2 - widths.reduce((s, w) => s + w, 0) / 2;
-          story.rows.forEach((r, c) => {
-            ctx.fillStyle = accents[c];
-            ctx.beginPath();
-            ctx.arc(lx + 3, H * 0.13, 2.5, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = muted;
-            ctx.fillText(r, lx + 10, H * 0.13);
-            lx += widths[c];
-          });
-        }
         const lbl = rows * (1 - collapse);
         if (lbl > 0.01) {
           ctx.globalAlpha = lbl;
@@ -398,9 +332,9 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       }
 
       // ── Act 3: baseline draws to a point, then the glowing curve rises ──
-      const base = ease(span(TL.baseline, d));
-      const curve = ease(span(TL.curve, d));
-      const loopOut = ease(span(TL.loopOut, d));
+      const base = ease(span(K.baseline, f));
+      const curve = ease(span(K.curve, f));
+      const loopOut = ease(span(K.loopOut, f));
       const chartAlpha = base * (1 - loopOut);
       if (chartAlpha > 0.01) {
         ctx.font = `${narrow ? 10 : 12}px ${sans}`;
@@ -517,7 +451,7 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
     if (!el) return;
     const top = el.getBoundingClientRect().top + window.scrollY;
     const range = el.offsetHeight - window.innerHeight;
-    window.scrollTo({ top: top + range * (ACT_AT[k] + 0.04), behavior: "smooth" });
+    window.scrollTo({ top: top + range * (PHASE_AT[k] + 0.06), behavior: "smooth" });
   };
 
   const heads = [...story.phases, story.loop];
