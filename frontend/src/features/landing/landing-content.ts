@@ -376,6 +376,7 @@ export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMem
     { name: "Ishika Bhoyar", role: "Contributor", github: "ishikabhoyar" },
     { name: "Vinay Sitaram Kanse", role: "Contributor" },
     { name: "K Shan", role: "Contributor" },
+    { name: "Arnab Bhowmik", role: "Contributor" },
   ],
 };
 
