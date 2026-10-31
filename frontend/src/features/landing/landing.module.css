@@ -2479,6 +2479,7 @@
 
 .member {
   display: grid;
+  align-content: start;
   justify-items: start;
   gap: 0.3rem;
   padding: 1.25rem;
