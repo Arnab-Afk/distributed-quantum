@@ -120,11 +120,27 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
     });
     io.observe(el);
 
+    // Scroll sets the act; once an act starts it plays through on its own clock,
+    // so the story flows instead of holding single frames between scroll steps.
+    let fs = 0;
+    let lastT = 0;
+    let runStart: number | null = null;
+    let scaleStart: number | null = null;
+
     const draw = () => {
       raf = requestAnimationFrame(draw);
       if (!visible) return;
-      const f = progress.current;
       const t = reduce ? 4 : (performance.now() - start) / 1000;
+      const dt = lastT ? Math.min(0.05, t - lastT) : 0.016;
+      lastT = t;
+      fs += (progress.current - fs) * Math.min(1, dt * 5);
+      const f = reduce ? progress.current : fs;
+      if (f >= K.burst[0] && runStart === null) runStart = t;
+      if (f < K.pan[0]) runStart = null;
+      if (f >= K.collapse[0] && scaleStart === null) scaleStart = t;
+      if (f < K.collapse[0] - 0.02) scaleStart = null;
+      const rt = reduce ? (runStart === null ? 0 : 99) : runStart === null ? 0 : t - runStart;
+      const st = reduce ? (scaleStart === null ? 0 : 99) : scaleStart === null ? 0 : t - scaleStart;
       const narrow = W < 720;
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, W, H);
@@ -250,8 +266,8 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       }
 
       // ── The point (persists from Build through the burst, and returns in the loop) ──
-      const burst = ease(span(K.burst, f));
-      const pointAlpha = f < K.collapse[0] ? 1 - span([K.rows[0], K.rows[1]], f) : loopIn;
+      const burst = ease(clamp(rt / 1.4));
+      const pointAlpha = f < K.collapse[0] ? 1 - ease(clamp((rt - 4.2) / 1.0)) : loopIn;
       if (pointAlpha > 0.01) {
         ctx.globalAlpha = pointAlpha;
         ctx.fillStyle = ink;
@@ -266,9 +282,9 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       }
 
       // ── Act 2: burst → clusters → dot-matrix rows ──
-      const cluster = ease(span(K.cluster, f));
-      const rows = ease(span(K.rows, f));
-      const collapse = ease(span(K.collapse, f));
+      const cluster = ease(clamp((rt - 2.0) / 1.4));
+      const rows = ease(clamp((rt - 4.2) / 1.0));
+      const collapse = ease(clamp(st / 1.0));
       const field = burst * (1 - collapse);
       const rowX0 = W * (narrow ? 0.3 : 0.2);
       const rowX1 = W * 0.92;
@@ -318,15 +334,17 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
           let y = mix(point[1], by, burst);
           x = mix(x, cxp, cluster);
           y = mix(y, cyp, cluster);
-          x = mix(x, dx, rows);
-          y = mix(y, dy, rows);
+          // Each dot joins its row after a delay set by its column, so the bars fill left to right.
+          const rowsP = ease(clamp((rt - 4.2 - (p.col / perCat) * 2.2) / 0.8));
+          x = mix(x, dx, rowsP);
+          y = mix(y, dy, rowsP);
           x = mix(x, ex, collapse);
           y = mix(y, chart.base, collapse);
 
           const twinkle = 0.5 + 0.5 * Math.sin(t * 1.7 + p.h2 * 40);
           const bright = p.lum > 0.93 && rows < 0.5;
           let a = field * (0.35 + 0.65 * twinkle);
-          if (rows > 0.5) a = gap ? 0 : 0.8 * (1 - collapse);
+          if (rowsP > 0.5) a = gap ? 0 : 0.8 * (1 - collapse);
           if (a < 0.02) continue;
           if (bright) {
             const glow = ctx.createRadialGradient(x, y, 0, x, y, 7);
@@ -377,8 +395,8 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       }
 
       // ── Act 3: baseline draws to a point, then the glowing curve rises ──
-      const base = ease(span(K.baseline, f));
-      const curve = ease(span(K.curve, f));
+      const base = ease(clamp((st - 0.6) / 0.9));
+      const curve = ease(clamp((st - 1.5) / 2.4));
       const loopOut = ease(span(K.loopOut, f));
       const chartAlpha = base * (1 - loopOut);
       if (chartAlpha > 0.01) {
