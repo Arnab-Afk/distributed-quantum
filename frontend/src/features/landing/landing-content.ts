@@ -474,5 +474,7 @@ export const FOOTER = {
       ],
     },
   ],
-  copy: "© 2026 QMesh · Apache 2.0",
+  wordmark: "QMESH",
+  wordmarkHint: "Move to ink",
+  copy: "©2026 QMesh. Open source under Apache 2.0. Simulated qubits, real network.",
 } as const;

@@ -28,7 +28,8 @@ const K = {
   loopIn: [0.9, 0.97],
 } as const;
 const PHASE_AT = [0, 0.18, 0.55];
-const N = 1300;
+const N = 2400;
+const STARS = 900; // background field, present through every act
 const SOURCES = [12, 7, 9]; // dots per source column, like Giga's Knowledge / Tools / Guidance
 
 const clamp = (n: number) => Math.min(1, Math.max(0, n));
@@ -103,6 +104,13 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       return { c, h1: hash(i, 1), h2: hash(i, 2), h3: hash(i, 3), lum: hash(i, 7), sub: j % 3, col: Math.floor(j / 3) };
     });
     const perCat = Math.ceil(N / cats / 3); // grid columns per category
+    const BG = Array.from({ length: STARS }, (_, i) => ({
+      x: hash(i, 11),
+      y: hash(i, 12),
+      depth: 0.2 + hash(i, 13) * 0.8,
+      tw: hash(i, 14) * 40,
+      hue: hash(i, 15),
+    }));
 
     let raf = 0;
     let visible = true;
@@ -120,6 +128,28 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
       const narrow = W < 720;
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, W, H);
+
+      // Deep field: a faint galaxy of stars drifting in parallax behind every act,
+      // brightest while the run is scattered across the sky.
+      const sky = 0.35 + 0.55 * window4(f, K.burst[0], K.burst[1], K.rows[1], K.collapse[1]);
+      for (let i = 0; i < BG.length; i += 1) {
+        const s0 = BG[i];
+        const x = (((s0.x + t * 0.004 * s0.depth + f * 0.15 * s0.depth) % 1) + 1) % 1;
+        const y = (((s0.y - f * 0.08 * s0.depth) % 1) + 1) % 1;
+        const tw = 0.45 + 0.55 * Math.sin(t * (0.8 + s0.depth) + s0.tw);
+        ctx.globalAlpha = sky * tw * (0.25 + 0.55 * s0.depth);
+        ctx.fillStyle = s0.hue > 0.86 ? accents[4] : s0.hue > 0.78 ? accents[1] : ink;
+        const r = 0.35 + s0.depth * 0.9;
+        ctx.fillRect(x * W - r, y * H - r, r * 2, r * 2);
+      }
+      // A soft milky band across the stage.
+      const band = ctx.createLinearGradient(0, H * 0.2, W, H * 0.85);
+      band.addColorStop(0, "transparent");
+      band.addColorStop(0.5, "rgba(170, 185, 220, 0.045)");
+      band.addColorStop(1, "transparent");
+      ctx.globalAlpha = sky;
+      ctx.fillStyle = band;
+      ctx.fillRect(0, 0, W, H);
 
       // Titles: each fades in, then out once its act gets going (DOM, driven from here).
       const tOp = [
@@ -261,11 +291,11 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
         if (neb > 0.01) {
           for (let c = 0; c < cats; c += 1) {
             const [cx, cy] = centers[c];
-            const r = W * 0.14;
+            const r = W * 0.17;
             const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
             g.addColorStop(0, accents[c]);
             g.addColorStop(1, "transparent");
-            ctx.globalAlpha = 0.16 * neb;
+            ctx.globalAlpha = 0.2 * neb;
             ctx.fillStyle = g;
             ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
           }
@@ -274,8 +304,9 @@ export function ResultsStory({ story, paperHref }: { story: Story; paperHref: st
           // A: born at the point, B: flung across the stage, C: a cluster, D: a matrix row, E: the baseline.
           const bx = W * (0.04 + 0.92 * p.h1);
           const by = H * (0.12 + 0.76 * p.h2);
-          const rr = Math.pow(p.h3, 1.3) * W * 0.1;
-          const th = p.h1 * Math.PI * 2 + t * 0.03;
+          const rr = Math.pow(p.h3, 1.3) * W * 0.12;
+          // Inner stars orbit faster than outer ones, so each cluster turns like a small galaxy.
+          const th = p.h1 * Math.PI * 2 + t * (0.32 - p.h3 * 0.24) + Math.sqrt(p.h3) * 2.4;
           const cxp = centers[p.c][0] + Math.cos(th) * rr;
           const cyp = centers[p.c][1] + Math.sin(th) * rr * 0.62;
           const gap = hash(Math.floor(p.col / 4), p.c * 7 + p.sub) > 0.82 || p.h3 > 0.9;

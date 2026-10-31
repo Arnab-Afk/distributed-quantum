@@ -19,7 +19,7 @@ import { Inter, Newsreader } from "next/font/google";
 import { ArchStack } from "./components/arch-stack";
 import { InfrastructureStrip } from "./components/infrastructure-strip";
 import { Identicon, MeshMark } from "./components/mesh-mark";
-import { GlyphBand, HeroMesh, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
+import { GlyphBand, HeroMesh, InkWordmark, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
 import { ReceiptScroll } from "./components/receipt-scroll";
 import { WorkloadSwitcher } from "./components/workload-switcher";
@@ -68,15 +68,6 @@ function External({ href, className, children }: { href: string; className?: str
     <a href={href} target="_blank" rel="noreferrer" className={className}>
       {children}
     </a>
-  );
-}
-
-/** Wordmark set for the footer marquee: the name and the mark, twice. */
-function WordmarkSet({ hidden }: { hidden?: boolean }) {
-  return (
-    <span className={styles.wordmarkSet} aria-hidden={hidden}>
-      QMesh <MeshMark className={styles.wordmarkMark} /> QMesh <MeshMark className={styles.wordmarkMark} />
-    </span>
   );
 }
 
@@ -318,12 +309,6 @@ export function LandingPage() {
       </main>
 
       <footer className={styles.footer}>
-        <div className={styles.wordmark} aria-label="QMesh">
-          <div className={styles.wordmarkTrack}>
-            <WordmarkSet />
-            <WordmarkSet hidden />
-          </div>
-        </div>
         <div className={styles.footerGrid}>
           <div className={styles.footerBrand}>
             <span className={styles.brand}>
@@ -349,6 +334,13 @@ export function LandingPage() {
               </ul>
             </div>
           ))}
+        </div>
+        <div className={styles.inkFrame}>
+          <span className={styles.inkRuler} aria-hidden="true" />
+          <InkWordmark word={FOOTER.wordmark} />
+          <span className={styles.inkHint} aria-hidden="true">
+            {FOOTER.wordmarkHint}
+          </span>
         </div>
         <p className={styles.footerMeta}>{FOOTER.copy}</p>
       </footer>

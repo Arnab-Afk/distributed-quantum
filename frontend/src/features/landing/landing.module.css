@@ -1297,12 +1297,16 @@
   margin-top: 1rem;
 }
 
+/* Full bleed: the story fills the viewport edge to edge while pinned. */
 .storyStage {
   position: sticky;
   top: 0;
+  width: 100vw;
   height: 100svh;
   min-height: 560px;
+  margin-left: calc(50% - 50vw);
   overflow: hidden;
+  background: radial-gradient(ellipse 80% 70% at 50% 55%, oklch(0.14 0.01 270), var(--ground) 75%);
 }
 
 .storyCanvas {
@@ -1336,7 +1340,7 @@
 .storyTitle h3 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(2.75rem, 4.6vw, 4rem);
+  font-size: clamp(3rem, 6vw, 5.5rem);
   font-weight: 300;
   line-height: 1;
   letter-spacing: -0.03em;
@@ -1980,43 +1984,10 @@
   z-index: 1;
 }
 
-.wordmark {
-  overflow: hidden;
-  border-block: 1px solid var(--hairline-soft);
-}
 
-.wordmarkTrack {
-  display: flex;
-  width: max-content;
-  animation: marquee 48s linear infinite;
-}
 
-.wordmarkSet {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25em;
-  padding-right: 0.25em;
-  font-family: var(--font-display);
-  font-size: var(--text-wordmark);
-  font-weight: 300;
-  line-height: 1.1;
-  letter-spacing: -0.04em;
-  color: transparent;
-  -webkit-text-stroke: 1px var(--hairline);
-  white-space: nowrap;
-}
 
-.wordmarkMark {
-  width: 0.55em;
-  height: 0.55em;
-  opacity: 0.6;
-}
 
-@keyframes marquee {
-  to {
-    transform: translateX(-50%);
-  }
-}
 
 .footerGrid {
   display: grid;
@@ -2068,14 +2039,73 @@
   text-underline-offset: 3px;
 }
 
+/* Blueprint wordmark: rulers with "+" corners framing a canvas that inks under the pointer. */
+.inkFrame {
+  position: relative;
+  width: var(--inner);
+  margin: 0 auto;
+  padding: 1.5rem 0 1.5rem 1.25rem;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.inkRuler {
+  position: absolute;
+  inset: 0.75rem 0 0.75rem 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(90deg, var(--hairline) 0 1px, transparent 1px 8px) 1.25rem 0 / calc(100% - 2.5rem) 7px no-repeat,
+    repeating-linear-gradient(90deg, var(--hairline) 0 1px, transparent 1px 8px) 1.25rem 100% / calc(100% - 2.5rem) 7px no-repeat,
+    repeating-linear-gradient(0deg, var(--hairline) 0 1px, transparent 1px 8px) 0 1.25rem / 7px calc(100% - 2.5rem) no-repeat;
+}
+
+.inkRuler::before,
+.inkRuler::after {
+  content: "+";
+  position: absolute;
+  font-family: var(--font-data);
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--ink-muted);
+}
+
+.inkRuler::before {
+  top: -0.35rem;
+  left: -0.2rem;
+}
+
+.inkRuler::after {
+  right: -0.2rem;
+  bottom: -0.45rem;
+}
+
+.inkCanvas {
+  display: block;
+  width: 100%;
+  height: clamp(9rem, 22vw, 20rem);
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.inkHint {
+  position: absolute;
+  right: 1.25rem;
+  top: 1.75rem;
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
 .footerMeta {
   width: var(--inner);
   margin: 0 auto;
-  padding: 1.5rem 0 3rem;
+  padding: 1rem 0 2.5rem;
   border-top: 1px solid var(--hairline-soft);
   font-family: var(--font-data);
   font-size: var(--text-label);
   letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--ink-muted);
 }
 
@@ -2648,7 +2678,6 @@
     transform: translateY(calc(var(--digit) * -10%)) !important;
   }
 
-  .wordmarkTrack,
   .hero::before,
   .hero::after {
     animation: none;
