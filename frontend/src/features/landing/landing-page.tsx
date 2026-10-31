@@ -1,40 +1,31 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  BookMarked,
-  ChartNoAxesColumn,
-  Check,
-  Coins,
-  FileText,
-  MonitorDot,
-  Network,
-  PackageCheck,
-  Plus,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowRight, ArrowUpRight, Globe, Plus } from "lucide-react";
 import { Inter, Newsreader } from "next/font/google";
 
 import { ArchStack } from "./components/arch-stack";
 import { InfrastructureStrip } from "./components/infrastructure-strip";
 import { Identicon, MeshMark } from "./components/mesh-mark";
-import { GlyphBand, HeroMesh, Reveal, RollingNumber } from "./components/motion-bits";
+import { LinkedInIcon, XIcon } from "./components/social-icons";
+import { GlyphBand, HeroMesh, InkWordmark, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
-import { WorkloadSwitcher } from "./components/workload-switcher";
+import { ReceiptScroll } from "./components/receipt-scroll";
+import { RepoLab, StartLab } from "./components/build-variants";
+import { WorkloadIndex } from "./components/workloads";
 import {
   ARCHITECTURE,
   CLOSING,
   CONSOLE_HREF,
   DEMO_URL,
-  DEVELOPERS,
+  START,
   FAQ,
   FOOTER,
   GLYPHS,
   HERO,
   NAV,
-  PRODUCTS,
+  REPO,
+  RECEIPT,
   REPOSITORY_URL,
+  RESEARCH_URL,
   RESULTS,
   TEAM,
   WORKLOADS,
@@ -49,31 +40,11 @@ const display = Newsreader({
 });
 const text = Inter({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--landing-text" });
 
-const ICONS: Record<(typeof PRODUCTS.groups)[number]["items"][number]["icon"], LucideIcon> = {
-  console: MonitorDot,
-  coordinator: Workflow,
-  peer: Network,
-  registry: BookMarked,
-  payment: Coins,
-  bundle: PackageCheck,
-  benchmark: ChartNoAxesColumn,
-  paper: FileText,
-};
-
 function External({ href, className, children }: { href: string; className?: string; children: React.ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className={className}>
       {children}
     </a>
-  );
-}
-
-/** Wordmark set for the footer marquee: the name and the mark, twice. */
-function WordmarkSet({ hidden }: { hidden?: boolean }) {
-  return (
-    <span className={styles.wordmarkSet} aria-hidden={hidden}>
-      QMesh <MeshMark className={styles.wordmarkMark} /> QMesh <MeshMark className={styles.wordmarkMark} />
-    </span>
   );
 }
 
@@ -84,10 +55,10 @@ export function LandingPage() {
       <div className={styles.rails} aria-hidden="true" />
 
       <header className={styles.nav}>
-        <Link href="/" className={styles.brand} aria-label="QMesh home">
+        <a href="#top" className={styles.brand} aria-label="QMesh, back to top">
           <MeshMark className={styles.brandMark} />
           <span>QMesh</span>
-        </Link>
+        </a>
         <nav className={styles.navLinks} aria-label="Sections">
           {NAV.links.map((link) => (
             <a key={link.href} href={link.href}>
@@ -146,36 +117,17 @@ export function LandingPage() {
               {WORKLOADS.title}
             </h2>
           </Reveal>
-          <WorkloadSwitcher items={WORKLOADS.items} />
+          <WorkloadIndex items={WORKLOADS.items} />
         </section>
 
-        <section className={styles.section} aria-labelledby="products-title">
-          <h2 id="products-title" className={styles.h2Sans}>
-            {PRODUCTS.title}
-          </h2>
-          <div className={styles.products}>
-            {PRODUCTS.groups.map((group) => (
-              <div key={group.title} className={styles.productGroup}>
-                <h3 className={styles.productGroupTitle}>{group.title}</h3>
-                <ul>
-                  {group.items.map((item) => {
-                    const Icon = ICONS[item.icon];
-                    return (
-                      <li key={item.title} className={styles.product}>
-                        <span className={styles.productIcon}>
-                          <Icon aria-hidden="true" />
-                        </span>
-                        <span>
-                          <strong>{item.title}</strong>
-                          <small>{item.body}</small>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
+        <section id="repository" className={styles.section} aria-labelledby="products-title">
+          <div className={styles.sectionHead}>
+            <h2 id="products-title" className={styles.h2}>
+              {REPO.title}
+            </h2>
+            <p className={styles.lead}>{REPO.body}</p>
           </div>
+          <RepoLab repo={REPO} />
         </section>
 
         <section id="results" className={styles.section} aria-labelledby="results-title">
@@ -187,20 +139,7 @@ export function LandingPage() {
               {RESULTS.action} <ArrowRight aria-hidden="true" />
             </External>
           </div>
-          <div className={styles.stories}>
-            {RESULTS.stories.map((story, index) => (
-              <Reveal key={story.tag} delay={index * 0.08}>
-                <a href={story.href} className={styles.story}>
-                  <span className={styles.storyImage}>
-                    <span className={styles.storyMetric}>{story.metric}</span>
-                    <span className={styles.storyMetricLabel}>{story.metricLabel}</span>
-                  </span>
-                  <span className={styles.storyTitle}>{story.title}</span>
-                  <span className={styles.storyTag}>{story.tag}</span>
-                </a>
-              </Reveal>
-            ))}
-          </div>
+          <ResultsStory story={RESULTS.story} paperHref={RESEARCH_URL} />
           <dl className={styles.stats}>
             {RESULTS.stats.map((stat) => (
               <div key={stat.title} className={styles.stat}>
@@ -217,60 +156,18 @@ export function LandingPage() {
           <p className={styles.footnote}>{RESULTS.footnote}</p>
         </section>
 
+        <section id="receipt" className={`${styles.section} ${styles.receiptSection}`} aria-labelledby="receipt-title">
+          <ReceiptScroll receipt={RECEIPT} />
+        </section>
+
         <section id="developers" className={styles.section} aria-labelledby="developers-title">
-          <div className={styles.developers}>
-            <div className={styles.devIntro}>
-              <h2 id="developers-title" className={styles.h2Sans}>
-                {DEVELOPERS.title}
-              </h2>
-              <p className={styles.devSubtitle}>{DEVELOPERS.subtitle}</p>
-              <ul className={styles.devChecks}>
-                {DEVELOPERS.checks.map((check) => (
-                  <li key={check.title}>
-                    <Check aria-hidden="true" />
-                    <span>
-                      <strong>{check.title}</strong>
-                      {check.body}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <div className={styles.actions}>
-                <Link href={CONSOLE_HREF} className={styles.pill}>
-                  {DEVELOPERS.primary} <ArrowRight aria-hidden="true" />
-                </Link>
-                <External href={REPOSITORY_URL} className={styles.pillGhost}>
-                  {DEVELOPERS.secondary}
-                </External>
-              </div>
-            </div>
-            <div className={styles.codePanel}>
-              <div className={styles.codeCard}>
-                <span className={styles.codeLabel}>{"// Request"}</span>
-                <pre>
-                  <code>{DEVELOPERS.request}</code>
-                </pre>
-                <span className={styles.codeLabel}>{"// Challenge"}</span>
-                <pre>
-                  <code>{DEVELOPERS.challenge}</code>
-                </pre>
-                <span className={styles.codeLabel}>{"// Response, once paid"}</span>
-                <pre>
-                  <code>{DEVELOPERS.response}</code>
-                </pre>
-              </div>
-            </div>
+          <div className={styles.sectionHead}>
+            <h2 id="developers-title" className={styles.h2}>
+              {START.title}
+            </h2>
+            <p className={styles.lead}>{START.body}</p>
           </div>
-          <div className={styles.linkCards}>
-            {DEVELOPERS.cards.map((card) => (
-              <External key={card.title} href={card.href} className={styles.linkCard}>
-                <span className={styles.linkCardTitle}>
-                  {card.title} <ArrowUpRight aria-hidden="true" />
-                </span>
-                <span>{card.body}</span>
-              </External>
-            ))}
-          </div>
+          <StartLab start={START} />
         </section>
 
         <section id="team" className={styles.section} aria-labelledby="team-title">
@@ -283,7 +180,14 @@ export function LandingPage() {
           <ul className={styles.team}>
             {TEAM.members.map((member) => (
               <li key={member.name} className={styles.member}>
-                <Identicon seed={member.name} />
+                <span className={styles.memberPhoto}>
+                  {member.photo ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- small local profile photos
+                    <img src={member.photo} alt="" width={56} height={56} />
+                  ) : (
+                    <Identicon seed={member.name} />
+                  )}
+                </span>
                 <span className={styles.memberName}>{member.name}</span>
                 <span className={styles.memberRole}>{member.role}</span>
                 {member.github ? (
@@ -291,6 +195,26 @@ export function LandingPage() {
                     @{member.github} <ArrowUpRight aria-hidden="true" />
                   </External>
                 ) : null}
+                <span className={styles.memberSocial}>
+                  {(
+                    [
+                      ["X", member.x, XIcon, `${member.name} on X`],
+                      ["LinkedIn", member.linkedin, LinkedInIcon, `${member.name} on LinkedIn`],
+                      ["Website", member.website, Globe, `${member.name}'s website`],
+                    ] as const
+                  ).map(([label, href, Icon, name]) =>
+                    href ? (
+                      <External key={label} href={href} className={styles.memberSocialLink}>
+                        <Icon aria-hidden="true" />
+                        <span className={styles.srOnly}>{name}</span>
+                      </External>
+                    ) : (
+                      <span key={label} className={styles.memberSocialEmpty} title={`${label} link coming soon`}>
+                        <Icon aria-hidden="true" />
+                      </span>
+                    ),
+                  )}
+                </span>
               </li>
             ))}
           </ul>
@@ -313,25 +237,24 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className={styles.closing} aria-labelledby="closing-title">
-          <h2 id="closing-title" className={styles.h2}>
-            {CLOSING.title}
-          </h2>
-          <Link href={CONSOLE_HREF} className={styles.pill}>
-            {CLOSING.primary} <ArrowRight aria-hidden="true" />
-          </Link>
-        </section>
       </main>
 
       <footer className={styles.footer}>
-        <div className={styles.wordmark} aria-label="QMesh">
-          <div className={styles.wordmarkTrack}>
-            <WordmarkSet />
-            <WordmarkSet hidden />
+        <div className={styles.footerTop}>
+          <div className={styles.footerCta}>
+            <h2 id="closing-title" className={styles.footerHeading}>
+              {CLOSING.title}
+            </h2>
+            <Link href={CONSOLE_HREF} className={styles.pill}>
+              {CLOSING.primary} <ArrowRight aria-hidden="true" />
+            </Link>
+          </div>
+          <div className={styles.inkFrame}>
+            <InkWordmark word={FOOTER.wordmark} />
           </div>
         </div>
-        <div className={styles.footerGrid}>
-          <div className={styles.footerBrand}>
+        <div className={styles.footerBottom}>
+          <div className={styles.footerNote}>
             <span className={styles.brand}>
               <MeshMark className={styles.brandMark} />
               <span>QMesh</span>

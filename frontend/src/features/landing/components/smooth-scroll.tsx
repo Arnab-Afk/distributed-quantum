@@ -14,7 +14,13 @@ export function SmoothScroll() {
     const lenis = new Lenis({
       lerp: 0.09,
       wheelMultiplier: 0.95,
-      anchors: { offset: -72 },
+      // Anchor jumps (nav links, the logo back to top) glide for a fixed time with an
+      // ease-in-out, so a long trip does not flash through the pinned sections.
+      anchors: {
+        offset: -72,
+        duration: 1.4,
+        easing: (t: number) => (t < 0.5 ? 8 * t ** 4 : 1 - (-2 * t + 2) ** 4 / 2),
+      },
       autoRaf: true,
     });
     // Lenis owns easing; the CSS smooth-scroll fallback would double it.

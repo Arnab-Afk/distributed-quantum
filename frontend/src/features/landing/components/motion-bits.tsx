@@ -111,3 +111,23 @@ const FlowBand = dynamic(() => import("./flow-band").then((m) => m.FlowBand), {
 export function GlyphBand({ label }: { label: string }) {
   return <FlowBand label={label} />;
 }
+
+// The results story is a canvas scroll scene: client only, with a placeholder that keeps its height.
+const ResultsStoryScene = dynamic(() => import("./results-story").then((m) => m.ResultsStory), {
+  ssr: false,
+  loading: () => <div className={styles.storyTrack} aria-hidden="true" />,
+});
+
+export function ResultsStory(props: React.ComponentProps<typeof ResultsStoryScene>) {
+  return <ResultsStoryScene {...props} />;
+}
+
+// The footer's ink wordmark is a canvas: client only, with a placeholder that keeps its height.
+const InkWordmarkScene = dynamic(() => import("./ink-wordmark").then((m) => m.InkWordmark), {
+  ssr: false,
+  loading: () => <div className={styles.inkCanvas} aria-hidden="true" />,
+});
+
+export function InkWordmark(props: React.ComponentProps<typeof InkWordmarkScene>) {
+  return <InkWordmarkScene {...props} />;
+}
