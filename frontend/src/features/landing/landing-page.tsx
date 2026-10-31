@@ -198,7 +198,7 @@ export function LandingPage() {
           <p className={styles.footnote}>{RESULTS.footnote}</p>
         </section>
 
-        <section id="receipt" className={styles.section} aria-labelledby="receipt-title">
+        <section id="receipt" className={`${styles.section} ${styles.receiptSection}`} aria-labelledby="receipt-title">
           <ReceiptScroll receipt={RECEIPT} />
         </section>
 

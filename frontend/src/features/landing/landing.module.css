@@ -1658,6 +1658,11 @@
 
 /* ── Receipt: printed line by line on scroll (contentarchitecture.dev's estimate) ── */
 
+/* The pinned stage carries its own top spacing, so the section adds none. */
+.receiptSection {
+  padding-top: 0;
+}
+
 .receiptTrack {
   position: relative;
   height: 280vh;
@@ -1668,17 +1673,23 @@
   top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: end;
-  padding-bottom: 12vh;
+  align-items: stretch;
+  padding-block: 6.5rem 10vh;
   gap: clamp(2rem, 5vw, 5rem);
   height: 100svh;
   min-height: 640px;
 }
 
+/* The heading sits at the top of the stage; the receipt grows upward from the bottom. */
 .receiptIntro {
   display: grid;
   gap: 1.25rem;
-  align-content: end;
+  align-content: start;
+  align-self: start;
+}
+
+.receipt {
+  align-self: end;
 }
 
 .receiptCounter {
