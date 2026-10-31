@@ -1297,15 +1297,15 @@
   margin-top: 1rem;
 }
 
-/* Full bleed: the story fills the viewport edge to edge while pinned. */
+/* The story fills the page frame (between the rails) and the full viewport height while pinned. */
 .storyStage {
   position: sticky;
   top: 0;
-  width: 100vw;
+  width: 100%;
   height: 100svh;
   min-height: 560px;
-  margin-left: calc(50% - 50vw);
   overflow: hidden;
+  border-inline: 1px solid var(--hairline-soft);
   background: radial-gradient(ellipse 80% 70% at 50% 55%, oklch(0.14 0.01 270), var(--ground) 75%);
 }
 
@@ -2086,16 +2086,6 @@
   touch-action: pan-y;
 }
 
-.inkHint {
-  position: absolute;
-  right: 1.25rem;
-  top: 1.75rem;
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-}
 
 .footerMeta {
   width: var(--inner);

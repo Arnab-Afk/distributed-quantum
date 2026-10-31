@@ -3,14 +3,89 @@
 import { useEffect, useRef } from "react";
 
 import styles from "../landing.module.css";
-import { hash } from "./pixel-canvas";
 
-type Blot = { x: number; y: number; r: number; max: number; born: number; seed: number };
+// ── A small stable-fluids solver (Stam, 1999) on a coarse grid ──
+// The pointer pushes velocity and drops dye; dye advects, swirls and fades.
+// The dye field is the mask that floods the letters with ink.
+const NX = 180;
+const NY = 64;
+const SIZE = (NX + 2) * (NY + 2);
+const IX = (i: number, j: number) => i + (NX + 2) * j;
+
+function setBounds(b: number, x: Float32Array) {
+  for (let i = 1; i <= NX; i += 1) {
+    x[IX(i, 0)] = b === 2 ? -x[IX(i, 1)] : x[IX(i, 1)];
+    x[IX(i, NY + 1)] = b === 2 ? -x[IX(i, NY)] : x[IX(i, NY)];
+  }
+  for (let j = 1; j <= NY; j += 1) {
+    x[IX(0, j)] = b === 1 ? -x[IX(1, j)] : x[IX(1, j)];
+    x[IX(NX + 1, j)] = b === 1 ? -x[IX(NX, j)] : x[IX(NX, j)];
+  }
+}
+
+function advect(b: number, d: Float32Array, d0: Float32Array, u: Float32Array, v: Float32Array, dt: number) {
+  const dtx = dt * NX;
+  const dty = dt * NY;
+  for (let j = 1; j <= NY; j += 1) {
+    for (let i = 1; i <= NX; i += 1) {
+      const x = Math.min(NX + 0.5, Math.max(0.5, i - dtx * u[IX(i, j)]));
+      const y = Math.min(NY + 0.5, Math.max(0.5, j - dty * v[IX(i, j)]));
+      const i0 = Math.floor(x);
+      const j0 = Math.floor(y);
+      const s1 = x - i0;
+      const t1 = y - j0;
+      d[IX(i, j)] =
+        (1 - s1) * ((1 - t1) * d0[IX(i0, j0)] + t1 * d0[IX(i0, j0 + 1)]) +
+        s1 * ((1 - t1) * d0[IX(i0 + 1, j0)] + t1 * d0[IX(i0 + 1, j0 + 1)]);
+    }
+  }
+  setBounds(b, d);
+}
+
+function project(u: Float32Array, v: Float32Array, p: Float32Array, div: Float32Array) {
+  for (let j = 1; j <= NY; j += 1) {
+    for (let i = 1; i <= NX; i += 1) {
+      div[IX(i, j)] = -0.5 * ((u[IX(i + 1, j)] - u[IX(i - 1, j)]) / NX + (v[IX(i, j + 1)] - v[IX(i, j - 1)]) / NY);
+      p[IX(i, j)] = 0;
+    }
+  }
+  setBounds(0, div);
+  setBounds(0, p);
+  for (let k = 0; k < 14; k += 1) {
+    for (let j = 1; j <= NY; j += 1) {
+      for (let i = 1; i <= NX; i += 1) {
+        p[IX(i, j)] = (div[IX(i, j)] + p[IX(i - 1, j)] + p[IX(i + 1, j)] + p[IX(i, j - 1)] + p[IX(i, j + 1)]) / 4;
+      }
+    }
+    setBounds(0, p);
+  }
+  for (let j = 1; j <= NY; j += 1) {
+    for (let i = 1; i <= NX; i += 1) {
+      u[IX(i, j)] -= 0.5 * NX * (p[IX(i + 1, j)] - p[IX(i - 1, j)]);
+      v[IX(i, j)] -= 0.5 * NY * (p[IX(i, j + 1)] - p[IX(i, j - 1)]);
+    }
+  }
+  setBounds(1, u);
+  setBounds(2, v);
+}
+
+// The logo's 5×5 pixel mark.
+const MARK: ReadonlyArray<[number, number]> = [
+  [0, 0],
+  [4, 0],
+  [1, 1],
+  [3, 1],
+  [2, 2],
+  [1, 3],
+  [3, 3],
+  [0, 4],
+  [4, 4],
+];
 
 /**
- * The footer wordmark as blueprint line art: hairline letter outlines with
- * construction ticks and a crosshair in each letter. Moving over it floods the
- * letters with ink that spreads in organic blots, then slowly recedes.
+ * The footer wordmark, set like the logo (pixel mark + "QMesh") and extruded in
+ * 3D. Its face is a hairline outline that floods with ink wherever the pointer
+ * stirs the fluid; the ink swirls, spreads and fades on its own.
  */
 export function InkWordmark({ word }: { word: string }) {
   const ref = useRef<HTMLCanvasElement>(null);
@@ -22,174 +97,168 @@ export function InkWordmark({ word }: { word: string }) {
     const css = getComputedStyle(el);
     const ink = css.getPropertyValue("--ink").trim();
     const line = css.getPropertyValue("--ink-muted").trim();
-    const faint = css.getPropertyValue("--ink-faint").trim();
-    const mark = css.getPropertyValue("--accent-4").trim();
+    const edge = css.getPropertyValue("--hairline").trim();
+    const ground = css.getPropertyValue("--ground").trim();
     const family = css.getPropertyValue("--font-text").trim() || "sans-serif";
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // Offscreen layers: the ink mask, and the solid letters it reveals.
-    const mask = document.createElement("canvas");
-    const mctx = mask.getContext("2d");
-    const solid = document.createElement("canvas");
-    const sctx = solid.getContext("2d");
-    if (!mctx || !sctx) return;
+    const u = new Float32Array(SIZE);
+    const v = new Float32Array(SIZE);
+    const u0 = new Float32Array(SIZE);
+    const v0 = new Float32Array(SIZE);
+    const d = new Float32Array(SIZE);
+    const d0 = new Float32Array(SIZE);
+
+    // The dye field becomes an alpha mask at grid resolution, then scales up smoothly.
+    const field = document.createElement("canvas");
+    field.width = NX;
+    field.height = NY;
+    const fctx = field.getContext("2d");
+    const pixels = fctx?.createImageData(NX, NY);
+    const face = document.createElement("canvas");
+    const sctx = face.getContext("2d");
+    if (!fctx || !pixels || !sctx) return;
 
     let W = 0;
     let H = 0;
     let ratio = 1;
     let size = 0;
-    let glyphs: { x: number; w: number; ch: string }[] = [];
+    let textX = 0;
     let baseline = 0;
-    let capTop = 0;
+    let depth = 0;
+    let markX = 0;
+    let markCell = 0;
+    let markTop = 0;
 
     const layout = () => {
       ratio = Math.min(window.devicePixelRatio || 1, 2);
       W = el.clientWidth;
       H = el.clientHeight;
-      for (const c of [el, mask, solid]) {
+      for (const c of [el, face]) {
         c.width = Math.round(W * ratio);
         c.height = Math.round(H * ratio);
       }
-      // Fit the word to the width, with letter spacing like the reference.
-      size = H * 1.08;
-      ctx.font = `500 ${size}px ${family}`;
-      const gap = size * 0.07;
-      let total = [...word].reduce((s, ch) => s + ctx.measureText(ch).width, 0) + gap * (word.length - 1);
-      const fit = (W * 0.95) / total;
-      size *= Math.min(1, fit);
-      ctx.font = `500 ${size}px ${family}`;
-      const g2 = size * 0.07;
-      total = [...word].reduce((s, ch) => s + ctx.measureText(ch).width, 0) + g2 * (word.length - 1);
-      let x = (W - total) / 2;
-      glyphs = [...word].map((ch) => {
-        const w = ctx.measureText(ch).width;
-        const g = { x, w, ch };
-        x += w + g2;
-        return g;
-      });
-      const m = ctx.measureText("H");
-      const cap = m.actualBoundingBoxAscent;
-      baseline = H / 2 + cap / 2;
-      capTop = baseline - cap;
+      // Fit mark + word inside the frame, like the logo lockup, leaving room for the extrusion.
+      size = H * 0.9;
+      ctx.font = `600 ${size}px ${family}`;
+      const lockW = ctx.measureText(word).width + size * 0.95 + size * 0.07;
+      size *= Math.min(1, (W * 0.9) / lockW);
+      ctx.font = `600 ${size}px ${family}`;
+      const m = ctx.measureText("Q");
+      const cap = ctx.measureText("H").actualBoundingBoxAscent;
+      const total = ctx.measureText(word).width + size * 0.95;
+      depth = Math.max(5, size * 0.07);
+      markCell = cap / 5;
+      markX = (W - total - depth * 0.7) / 2;
+      textX = markX + size * 0.95;
+      // Centre the cap height plus extrusion vertically; descenders ("Q" tail) stay inside.
+      baseline = (H - depth - m.actualBoundingBoxDescent) / 2 + cap / 2;
+      markTop = baseline - cap;
     };
 
-    let blots: Blot[] = [];
-    let pointer: { x: number; y: number; t: number } | null = null;
-    let last = 0;
-    const start = performance.now();
-
-    const blotPath = (c: CanvasRenderingContext2D, b: Blot, t: number) => {
-      // An organic edge: radius wobbles with low-frequency noise around the circle.
-      const steps = 36;
-      c.beginPath();
-      for (let k = 0; k <= steps; k += 1) {
-        const a = (k / steps) * Math.PI * 2;
-        const wob =
-          0.78 +
-          0.22 * Math.sin(a * 3 + b.seed * 9 + t * 0.4) +
-          0.12 * Math.sin(a * 7 + b.seed * 21) +
-          0.08 * Math.sin(a * 13 + b.seed * 5);
-        const r = b.r * wob;
-        const px = b.x + Math.cos(a) * r;
-        const py = b.y + Math.sin(a) * r;
-        if (k === 0) c.moveTo(px, py);
-        else c.lineTo(px, py);
+    const drawMark = (c: CanvasRenderingContext2D, dx: number, dy: number, mode: "fill" | "stroke") => {
+      const s = markCell * 0.84;
+      for (const [mx, my] of MARK) {
+        const x = markX + mx * markCell + dx;
+        const y = markTop + my * markCell + dy;
+        if (mode === "fill") c.fillRect(x, y, s, s);
+        else c.strokeRect(x, y, s, s);
       }
-      c.closePath();
     };
 
-    const draw = (now: number) => {
-      const t = (now - start) / 1000;
-      const dt = last ? Math.min(0.05, t - last) : 0;
-      last = t;
+    let pointer: { x: number; y: number; px: number; py: number; moved: boolean } | null = null;
+    const start = performance.now();
+    let last = 0;
 
-      // Grow while the pointer is near, recede once it has gone.
-      const active = pointer && t - pointer.t < 0.15;
-      blots.forEach((b) => {
-        const age = t - b.born;
-        if (age < 1.2) b.r += (b.max - b.r) * Math.min(1, dt * 4);
-        else if (!active || age > 2.5) b.r -= dt * b.max * 0.35;
-      });
-      blots = blots.filter((b) => b.r > 1);
-
-      // Ink mask.
-      mctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-      mctx.clearRect(0, 0, W, H);
-      mctx.fillStyle = "#000";
-      for (const b of blots) {
-        blotPath(mctx, b, t);
-        mctx.fill();
-        // Splash droplets around the rim.
-        for (let k = 0; k < 4; k += 1) {
-          const a = hash(b.seed * 13, k) * Math.PI * 2;
-          const d = b.r * (1.05 + hash(k, b.seed * 7) * 0.35);
-          const rr = b.r * (0.06 + hash(b.seed, k * 3) * 0.08);
-          mctx.beginPath();
-          mctx.arc(b.x + Math.cos(a) * d, b.y + Math.sin(a) * d, rr, 0, Math.PI * 2);
-          mctx.fill();
+    const splat = (gx: number, gy: number, fx: number, fy: number, amount: number, radius: number) => {
+      const r2 = radius * radius;
+      const i0 = Math.max(1, Math.floor(gx - radius * 2));
+      const i1 = Math.min(NX, Math.ceil(gx + radius * 2));
+      const j0 = Math.max(1, Math.floor(gy - radius * 2));
+      const j1 = Math.min(NY, Math.ceil(gy + radius * 2));
+      for (let j = j0; j <= j1; j += 1) {
+        for (let i = i0; i <= i1; i += 1) {
+          const k = Math.exp(-((i - gx) ** 2 + (j - gy) ** 2) / r2);
+          u[IX(i, j)] += fx * k;
+          v[IX(i, j)] += fy * k;
+          d[IX(i, j)] += amount * k;
         }
       }
+    };
 
-      // Solid letters, kept only where the ink mask has paint.
+    const step = (dt: number) => {
+      if (pointer && pointer.moved) {
+        const fx = ((pointer.x - pointer.px) / W) * 6;
+        const fy = ((pointer.y - pointer.py) / H) * 6;
+        splat((pointer.x / W) * NX, (pointer.y / H) * NY, fx, fy, 1.5, 4.2);
+        pointer.px = pointer.x;
+        pointer.py = pointer.y;
+        pointer.moved = false;
+      }
+      u0.set(u);
+      v0.set(v);
+      advect(1, u, u0, u0, v0, dt);
+      advect(2, v, v0, u0, v0, dt);
+      project(u, v, u0, v0);
+      d0.set(d);
+      advect(0, d, d0, u, v, dt);
+      for (let k = 0; k < SIZE; k += 1) {
+        u[k] *= 0.992;
+        v[k] *= 0.992;
+        d[k] *= 0.985; // the ink slowly lets go
+      }
+    };
+
+    const draw = () => {
+      // Dye → alpha with a soft threshold, so the ink reads as a liquid edge.
+      const data = pixels.data;
+      for (let j = 0; j < NY; j += 1) {
+        for (let i = 0; i < NX; i += 1) {
+          const x = Math.min(1, Math.max(0, (d[IX(i + 1, j + 1)] - 0.08) / 0.32));
+          data[(i + j * NX) * 4 + 3] = Math.round(x * x * (3 - 2 * x) * 255);
+        }
+      }
+      fctx.putImageData(pixels, 0, 0);
+
+      // Ink-filled face, kept only where there is dye.
       sctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       sctx.globalCompositeOperation = "source-over";
       sctx.clearRect(0, 0, W, H);
-      sctx.font = `500 ${size}px ${family}`;
-      sctx.textBaseline = "alphabetic";
       sctx.fillStyle = ink;
-      for (const g of glyphs) sctx.fillText(g.ch, g.x, baseline);
+      sctx.font = `600 ${size}px ${family}`;
+      sctx.textBaseline = "alphabetic";
+      sctx.fillText(word, textX, baseline);
+      drawMark(sctx, 0, 0, "fill");
       sctx.globalCompositeOperation = "destination-in";
-      sctx.setTransform(1, 0, 0, 1, 0, 0);
-      sctx.drawImage(mask, 0, 0);
+      sctx.imageSmoothingEnabled = true;
+      sctx.drawImage(field, 0, 0, W, H);
 
-      // Compose: blueprint outlines, construction marks, then the ink.
       ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
       ctx.clearRect(0, 0, W, H);
-      ctx.font = `500 ${size}px ${family}`;
+      ctx.font = `600 ${size}px ${family}`;
       ctx.textBaseline = "alphabetic";
+
+      // Extrusion: stacked copies stepping down and right, darkest at the back.
+      const steps = Math.ceil(depth);
+      for (let s = steps; s >= 1; s -= 1) {
+        const k = s / steps;
+        ctx.fillStyle = `oklch(${(0.1 + 0.12 * (1 - k)).toFixed(3)} 0.003 80)`;
+        ctx.fillText(word, textX + s * 0.7, baseline + s);
+        drawMark(ctx, s * 0.7, s, "fill");
+      }
       ctx.lineWidth = 1;
+      ctx.strokeStyle = edge;
+      ctx.strokeText(word, textX + steps * 0.7, baseline + steps);
+      drawMark(ctx, steps * 0.7, steps, "stroke");
+      // Face: ground colour with a hairline outline, then the ink on top.
+      ctx.fillStyle = ground;
+      ctx.fillText(word, textX, baseline);
+      drawMark(ctx, 0, 0, "fill");
       ctx.strokeStyle = line;
-      for (const g of glyphs) ctx.strokeText(g.ch, g.x, baseline);
-
-      // Construction ticks at each glyph's box corners and mid-height, and a centre crosshair.
-      ctx.strokeStyle = faint;
-      const narrow = W < 640;
-      const tick = narrow ? 3 : Math.max(6, size * 0.035);
-      const mid = (capTop + baseline) / 2;
-      for (const g of glyphs) {
-        const xs = [g.x + size * 0.02, g.x + g.w - size * 0.02];
-        for (const x of xs) {
-          for (const y of narrow ? [capTop, baseline] : [capTop, mid, baseline]) {
-            ctx.beginPath();
-            ctx.moveTo(x - tick, y);
-            ctx.lineTo(x + tick, y);
-            ctx.moveTo(x, y - tick * 0.6);
-            ctx.lineTo(x, y + tick * 0.6);
-            ctx.stroke();
-          }
-        }
-        const cx = g.x + g.w / 2;
-        ctx.beginPath();
-        ctx.moveTo(cx - tick * 0.6, mid);
-        ctx.lineTo(cx + tick * 0.6, mid);
-        ctx.moveTo(cx, mid - tick * 0.6);
-        ctx.lineTo(cx, mid + tick * 0.6);
-        ctx.stroke();
-      }
-
+      ctx.strokeText(word, textX, baseline);
+      drawMark(ctx, 0, 0, "stroke");
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.drawImage(solid, 0, 0);
-      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-      // The small marker square at the pointer, as in the reference.
-      if (pointer && t - pointer.t < 1.2) {
-        ctx.globalAlpha = 1 - Math.max(0, t - pointer.t - 0.6) / 0.6;
-        ctx.fillStyle = mark;
-        ctx.fillRect(pointer.x - 5, pointer.y - 5, 10, 10);
-        ctx.strokeStyle = mark;
-        ctx.strokeRect(pointer.x - 9, pointer.y - 9, 18, 18);
-        ctx.globalAlpha = 1;
-      }
+      ctx.drawImage(face, 0, 0);
     };
 
     let raf = 0;
@@ -197,21 +266,24 @@ export function InkWordmark({ word }: { word: string }) {
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (!visible) return;
-      draw(now);
+      const t = (now - start) / 1000;
+      const dt = last ? Math.min(0.033, t - last) : 0.016;
+      last = t;
+      step(dt * 0.6);
+      draw();
     };
 
     const onMove = (e: PointerEvent) => {
       const box = el.getBoundingClientRect();
       const x = e.clientX - box.left;
       const y = e.clientY - box.top;
-      const t = (performance.now() - start) / 1000;
-      const prev = blots[blots.length - 1];
-      // Lay a new blot every few pixels of travel; each grows into its neighbours.
-      if (!prev || Math.hypot(prev.x - x, prev.y - y) > size * 0.08 || t - prev.born > 0.35) {
-        blots.push({ x, y, r: 2, max: size * (0.16 + Math.random() * 0.12), born: t, seed: Math.random() * 100 });
-        if (blots.length > 60) blots.shift();
-      }
-      pointer = { x, y, t };
+      if (!pointer) pointer = { x, y, px: x, py: y, moved: false };
+      pointer.x = x;
+      pointer.y = y;
+      pointer.moved = true;
+    };
+    const onLeave = () => {
+      pointer = null;
     };
 
     layout();
@@ -221,18 +293,18 @@ export function InkWordmark({ word }: { word: string }) {
     io.observe(el);
     const ro = new ResizeObserver(() => {
       layout();
-      draw(performance.now());
+      draw();
     });
     ro.observe(el);
-    // Fonts load late; re-measure once they are ready.
     void document.fonts.ready.then(() => {
       layout();
-      draw(performance.now());
+      draw();
     });
     if (reduce) {
-      draw(performance.now());
+      draw();
     } else {
       el.addEventListener("pointermove", onMove);
+      el.addEventListener("pointerleave", onLeave);
       raf = requestAnimationFrame(loop);
     }
     return () => {
@@ -240,6 +312,7 @@ export function InkWordmark({ word }: { word: string }) {
       io.disconnect();
       ro.disconnect();
       el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerleave", onLeave);
     };
   }, [word]);
 

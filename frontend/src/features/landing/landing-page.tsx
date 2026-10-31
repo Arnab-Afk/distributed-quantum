@@ -338,9 +338,6 @@ export function LandingPage() {
         <div className={styles.inkFrame}>
           <span className={styles.inkRuler} aria-hidden="true" />
           <InkWordmark word={FOOTER.wordmark} />
-          <span className={styles.inkHint} aria-hidden="true">
-            {FOOTER.wordmarkHint}
-          </span>
         </div>
         <p className={styles.footerMeta}>{FOOTER.copy}</p>
       </footer>
