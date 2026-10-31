@@ -224,6 +224,7 @@ function Block({
   z = 0,
   tone = "dark",
   front,
+  ghost,
 }: {
   x: number;
   y: number;
@@ -233,12 +234,14 @@ function Block({
   z?: number;
   tone?: "dark" | "light";
   front?: "bays" | "ports" | "keys";
+  /** Dashed outline, for parts that are still in review. */
+  ghost?: boolean;
 }) {
   const c = (dx: number, dy: number, dz: number) => raised(x + dx, y + dy, z + dz);
   const reach = Math.min(18, h * 0.45 + 4);
   const inset = Math.min(4, w * 0.12, d * 0.12);
   return (
-    <g className={styles.block} data-tone={tone}>
+    <g className={styles.block} data-tone={tone} data-ghost={ghost}>
       {z === 0 ? (
         <polygon
           className={styles.blockShadow}
@@ -312,6 +315,11 @@ function Wire({ a, b, live }: { a: V3; b: V3; live?: boolean }) {
   return <polyline className={live ? styles.wireLive : styles.wire} points={pts([raised(...a), raised(...b)])} />;
 }
 
+/** A trace printed flat on the plate, through plate-local points. */
+function Trace({ points, live }: { points: ReadonlyArray<[number, number]>; live?: boolean }) {
+  return <polyline className={live ? styles.traceLive : styles.trace} points={pts(points.map(([x, y]) => raised(x, y, 0)))} />;
+}
+
 /** A device from the hero, standing on a node box. */
 function DeviceOn({ kind, x, y, scale = 0.72 }: { kind: Kind; x: number; y: number; scale?: number }) {
   const Draw = DRAW[kind];
@@ -344,7 +352,7 @@ const ANCHORS: Record<Layer["key"], V3[]> = {
     raised(212, 210, 30),
     raised(133, 55, 18),
   ],
-  provenance: [raised(135, 39, 66), raised(85, 110, 40), raised(120, 190, 18), raised(40, 245, 2)],
+  provenance: [raised(171, 53, 48), raised(146, 130, 26), raised(54, 76, 18), raised(60, 245, 0)],
 };
 
 function Objects({ kind }: { kind: Layer["key"] }) {
@@ -406,25 +414,33 @@ function Objects({ kind }: { kind: Layer["key"] }) {
         </>
       );
     case "provenance": {
-      // A Merkle tree in cubes: leaves low, branches higher, the root tallest.
-      const leaf = 16;
-      const mid = 38;
-      const root = 64;
+      // Bundles → Merkle tree → anchor chain, connected by traces printed flat on the plate.
+      const leaves = [120, 150, 180, 210];
       return (
         <>
-          <Block x={118} y={22} w={34} d={34} h={root} tone="light" />
-          <Wire a={[135, 40, root]} b={[85, 110, mid]} />
-          <Wire a={[135, 40, root]} b={[185, 110, mid]} />
-          <Block x={70} y={95} w={30} d={30} h={mid} />
-          <Block x={170} y={95} w={30} d={30} h={mid} />
-          {[50, 120].map((x) => (
-            <Wire key={x} a={[85, 110, mid]} b={[x, 190, leaf]} />
+          {/* Traces first, so the blocks sit on top of them. */}
+          <Trace points={[[54, 112], [54, 205], [109, 205]]} live />
+          <Trace points={[[131, 194], [131, 141], [135, 141]]} />
+          <Trace points={[[161, 194], [161, 152]]} />
+          <Trace points={[[191, 194], [191, 152]]} />
+          <Trace points={[[221, 194], [221, 141], [217, 141]]} />
+          <Trace points={[[146, 119], [146, 92], [165, 92], [165, 79]]} />
+          <Trace points={[[206, 119], [206, 92], [176, 92], [176, 79]]} />
+          <Trace points={[[188, 56], [218, 56]]} live />
+          {/* Result bundles: a stack of sheets. */}
+          {[0, 5, 10, 15].map((z) => (
+            <Block key={z} x={24} y={40} w={60} d={72} h={3} z={z} tone={z === 15 ? "light" : "dark"} />
           ))}
-          {[150, 220].map((x) => (
-            <Wire key={x} a={[185, 110, mid]} b={[x, 190, leaf]} />
+          {/* Anchor chain on Sepolia, still in review. */}
+          {[22, 56, 90].map((y) => (
+            <Block key={y} x={218} y={y} w={26} d={26} h={14} ghost />
           ))}
-          {[50, 120, 150, 220].map((x) => (
-            <Block key={x} x={x - 14} y={176} w={28} d={28} h={leaf} />
+          {/* Merkle tree: root tallest, at the back. */}
+          <Block x={154} y={36} w={34} d={34} h={48} tone="light" />
+          <Block x={135} y={119} w={22} d={22} h={26} />
+          <Block x={195} y={119} w={22} d={22} h={26} />
+          {leaves.map((x) => (
+            <Block key={x} x={x - 11} y={194} w={22} d={22} h={10} />
           ))}
         </>
       );

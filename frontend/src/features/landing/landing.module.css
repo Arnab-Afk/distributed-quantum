@@ -823,6 +823,34 @@
   stroke: var(--step-accent, var(--accent));
 }
 
+.block[data-ghost="true"] .blockTop,
+.block[data-ghost="true"] .blockSide,
+.block[data-ghost="true"] .blockFront,
+.block[data-ghost="true"] .blockBevel {
+  stroke-dasharray: 3 3;
+}
+
+.trace,
+.traceLive {
+  fill: none;
+  stroke: oklch(0.34 0.004 80);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.traceLive {
+  stroke-dasharray: 4 4;
+}
+
+.plate[data-lit="true"] .trace {
+  stroke: oklch(0.62 0.006 80);
+}
+
+.plate[data-lit="true"] .traceLive {
+  stroke: var(--step-accent, var(--accent));
+  animation: wireFlow 1.4s linear infinite;
+}
+
 .coinRidge {
   fill: none;
   stroke: oklch(0.3 0.004 80);
