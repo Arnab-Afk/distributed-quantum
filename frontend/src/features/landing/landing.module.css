@@ -1233,71 +1233,133 @@
 
 /* ── Results ── */
 
-.stories {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1.5rem;
-}
 
-.story {
-  display: block;
-}
 
-.storyImage {
+
+
+
+
+
+
+
+/* Results story: a pinned canvas told in three acts (giga.ai's Build/Observe/Improve rhythm). */
+.storyTrack {
   position: relative;
-  display: block;
-  aspect-ratio: 4 / 3;
+  height: 360vh;
+  margin-top: 1rem;
+}
+
+.storyStage {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  min-height: 560px;
   overflow: hidden;
-  border-radius: var(--radius);
-  background: var(--ground-sunk);
 }
 
-.storyImage {
-  display: grid !important;
-  align-content: center;
-  justify-items: center;
-  gap: 0.6rem;
-  border: 1px solid var(--hairline-soft);
-  background: var(--dots), var(--ground-sunk) !important;
-  transition: border-color 300ms var(--ease-out);
-}
-
-.story:hover .storyImage {
-  border-color: var(--hairline);
-}
-
-.storyMetric {
-  font-family: var(--font-display);
-  font-size: clamp(2.25rem, 3.4vw, 3rem);
-  font-weight: 300;
-  letter-spacing: -0.03em;
-  line-height: 1;
-}
-
-.storyMetricLabel {
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-muted);
+.storyCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
 
 .storyTitle {
-  display: block;
-  margin-top: 1.1rem;
-  font-size: var(--text-body);
-  font-weight: 500;
-  line-height: 1.4;
+  position: absolute;
+  top: 9%;
+  left: 50%;
+  z-index: 1;
+  width: min(32rem, 90%);
+  translate: -50% 0;
+  text-align: center;
+  pointer-events: none;
+  animation: storyIn 600ms var(--ease-out) both;
 }
 
-.storyTag {
-  display: block;
-  margin-top: 0.85rem;
+.storyTitle h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.75rem, 4.6vw, 4rem);
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.storyTitle p {
+  margin: 0.85rem auto 0;
+  max-width: 26rem;
+  color: var(--ink-muted);
+  font-size: var(--text-body);
+  font-weight: 300;
+}
+
+@keyframes storyIn {
+  from {
+    opacity: 0;
+    translate: -50% 12px;
+  }
+}
+
+.storyTabs {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  translate: -50% 0;
+  border: 1px solid var(--hairline);
+  border-radius: 9999px;
+  background: oklch(0.13 0.002 100 / 0.85);
+  backdrop-filter: blur(10px);
+}
+
+.storyTabs button,
+.storyTabLink {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 1.75rem;
+  padding: 0 0.8rem;
+  border: 0;
+  border-radius: 9999px;
+  background: none;
+  color: var(--ink-faint);
   font-family: var(--font-data);
   font-size: var(--text-label);
   letter-spacing: 0.06em;
-  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    background 250ms var(--ease-out),
+    color 250ms var(--ease-out);
+}
+
+.storyTabs button[aria-pressed="true"] {
+  background: var(--ground-raised);
+  color: var(--ink);
+}
+
+.storyTabs button:hover {
+  color: var(--ink);
+}
+
+.storyTabLink {
+  margin-left: 0.2rem;
+  border-left: 1px solid var(--hairline);
+  border-radius: 0 9999px 9999px 0;
   color: var(--ink-muted);
+}
+
+.storyTabLink svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.storyTabLink:hover {
+  color: var(--ink);
 }
 
 .stats {
@@ -1376,6 +1438,183 @@
 
 .rollingColumn > span {
   height: 1em;
+}
+
+/* ── Receipt: printed line by line on scroll (contentarchitecture.dev's estimate) ── */
+
+.receiptTrack {
+  position: relative;
+  height: 280vh;
+}
+
+.receiptStage {
+  position: sticky;
+  top: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(2rem, 5vw, 5rem);
+  height: 100svh;
+  min-height: 640px;
+}
+
+.receiptIntro {
+  display: grid;
+  gap: 1.25rem;
+  align-content: center;
+}
+
+.receiptCounter {
+  display: grid;
+  gap: 1rem;
+  margin-top: clamp(1.5rem, 4vh, 3rem);
+}
+
+.odometer {
+  display: inline-flex;
+  font-family: var(--font-display);
+  font-size: clamp(7rem, 14vw, 12rem);
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -0.05em;
+  font-variant-numeric: tabular-nums;
+}
+
+.odometerWindow {
+  position: relative;
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+}
+
+.odometerColumn {
+  display: flex;
+  flex-direction: column;
+  transition: transform 700ms cubic-bezier(0.6, 0, 0.2, 1.25);
+}
+
+.odometerColumn > span {
+  height: 1em;
+}
+
+.receiptCounterLabel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  color: var(--ink-muted);
+}
+
+.receiptChip {
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius);
+  background: var(--ground-raised);
+  color: var(--ink);
+}
+
+/* The receipt: dashed frame with "+" corners, mono lines, dotted leaders. */
+.receipt {
+  position: relative;
+  padding: 1.25rem 1.5rem 1.5rem;
+  border: 1px dashed var(--hairline);
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+}
+
+.receipt::before,
+.receipt::after {
+  content: "+";
+  position: absolute;
+  top: -0.6rem;
+  color: var(--ink-faint);
+  line-height: 1;
+}
+
+.receipt::before {
+  left: -0.3rem;
+}
+
+.receipt::after {
+  right: -0.3rem;
+}
+
+.receiptHead {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 0.9rem;
+  margin-bottom: 0.4rem;
+  border-bottom: 1px dashed var(--hairline);
+  color: var(--ink);
+}
+
+.receiptGroup {
+  padding-top: 0.75rem;
+}
+
+.receiptGroupHead {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.3rem 0.5rem;
+  color: var(--ink-faint);
+  transition: color 300ms var(--ease-out);
+}
+
+.receiptGroupHead[data-shown="true"] {
+  color: var(--ink-muted);
+}
+
+.receiptLine {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0.5rem;
+  color: var(--ink);
+  transition:
+    opacity 300ms var(--ease-out),
+    background 250ms var(--ease-out),
+    color 250ms var(--ease-out);
+}
+
+.receiptLine[data-state="pending"] {
+  opacity: 0.12;
+}
+
+.receiptLine[data-state="new"] {
+  background: var(--ink);
+  color: var(--ground);
+}
+
+.receiptLabel {
+  white-space: nowrap;
+}
+
+.receiptLeader {
+  flex: 1;
+  min-width: 1rem;
+  border-bottom: 1px dotted currentColor;
+  opacity: 0.4;
+  translate: 0 -0.25em;
+}
+
+.receiptProgress {
+  position: absolute;
+  right: 1.5rem;
+  bottom: -1px;
+  left: 1.5rem;
+  height: 2px;
+  background: var(--hairline);
+}
+
+.receiptProgress span {
+  display: block;
+  height: 100%;
+  background: var(--ink);
+  transform-origin: left;
+  transition: transform 400ms var(--ease-out);
 }
 
 /* ── Developers ── */
@@ -2154,6 +2393,7 @@
   }
 
   .hero,
+  .receiptStage,
   .workloads,
   .developers,
   .faq {
@@ -2251,6 +2491,11 @@
     width: 100%;
   }
 
+  .storyTabs button,
+  .storyTabLink {
+    padding: 0 0.55rem;
+  }
+
   .hero .isoCaption {
     padding: 0;
     text-align: center;
@@ -2322,8 +2567,15 @@
 
   .wordmarkTrack,
   .hero::before,
-  .hero::after {
+  .hero::after,
+  .storyTitle {
     animation: none;
+  }
+
+  .odometerColumn,
+  .receiptLine,
+  .receiptProgress span {
+    transition: none;
   }
 
   .archStep,

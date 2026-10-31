@@ -19,8 +19,9 @@ import { Inter, Newsreader } from "next/font/google";
 import { ArchStack } from "./components/arch-stack";
 import { InfrastructureStrip } from "./components/infrastructure-strip";
 import { Identicon, MeshMark } from "./components/mesh-mark";
-import { GlyphBand, HeroMesh, Reveal, RollingNumber } from "./components/motion-bits";
+import { GlyphBand, HeroMesh, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
+import { ReceiptScroll } from "./components/receipt-scroll";
 import { WorkloadSwitcher } from "./components/workload-switcher";
 import {
   ARCHITECTURE,
@@ -34,7 +35,9 @@ import {
   HERO,
   NAV,
   PRODUCTS,
+  RECEIPT,
   REPOSITORY_URL,
+  RESEARCH_URL,
   RESULTS,
   TEAM,
   WORKLOADS,
@@ -187,20 +190,7 @@ export function LandingPage() {
               {RESULTS.action} <ArrowRight aria-hidden="true" />
             </External>
           </div>
-          <div className={styles.stories}>
-            {RESULTS.stories.map((story, index) => (
-              <Reveal key={story.tag} delay={index * 0.08}>
-                <a href={story.href} className={styles.story}>
-                  <span className={styles.storyImage}>
-                    <span className={styles.storyMetric}>{story.metric}</span>
-                    <span className={styles.storyMetricLabel}>{story.metricLabel}</span>
-                  </span>
-                  <span className={styles.storyTitle}>{story.title}</span>
-                  <span className={styles.storyTag}>{story.tag}</span>
-                </a>
-              </Reveal>
-            ))}
-          </div>
+          <ResultsStory story={RESULTS.story} paperHref={RESEARCH_URL} />
           <dl className={styles.stats}>
             {RESULTS.stats.map((stat) => (
               <div key={stat.title} className={styles.stat}>
@@ -215,6 +205,10 @@ export function LandingPage() {
             ))}
           </dl>
           <p className={styles.footnote}>{RESULTS.footnote}</p>
+        </section>
+
+        <section id="receipt" className={styles.section} aria-labelledby="receipt-title">
+          <ReceiptScroll receipt={RECEIPT} />
         </section>
 
         <section id="developers" className={styles.section} aria-labelledby="developers-title">

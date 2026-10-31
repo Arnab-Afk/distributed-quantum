@@ -111,3 +111,13 @@ const FlowBand = dynamic(() => import("./flow-band").then((m) => m.FlowBand), {
 export function GlyphBand({ label }: { label: string }) {
   return <FlowBand label={label} />;
 }
+
+// The results story is a canvas scroll scene: client only, with a placeholder that keeps its height.
+const ResultsStoryScene = dynamic(() => import("./results-story").then((m) => m.ResultsStory), {
+  ssr: false,
+  loading: () => <div className={styles.storyTrack} aria-hidden="true" />,
+});
+
+export function ResultsStory(props: React.ComponentProps<typeof ResultsStoryScene>) {
+  return <ResultsStoryScene {...props} />;
+}

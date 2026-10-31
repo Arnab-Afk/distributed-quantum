@@ -272,29 +272,38 @@ export const PRODUCTS = {
 export const RESULTS = {
   title: "Results you can check",
   action: "Watch the demo",
-  stories: [
-    {
-      metric: "43 gates",
-      metricLabel: "5 qubits · depth 24",
-      title: "A tokenized-stock portfolio optimized across peers, with the price rounds behind every allocation.",
-      tag: "Tokenized portfolio",
-      href: DOCS.TOKENIZED_STOCKS_PR,
+  /** The scroll story: one circuit split across peers, run, then where it pays off. */
+  story: {
+    label:
+      "Scroll story in three acts. Split: one circuit fans out along strands to five peers. Run: the fragments scatter, then line up by peer over time. Scale: they collapse onto a chart where QAOA starts below the classical baseline and climbs to 3.2 times faster at 40 assets and 9.5 times faster at 60.",
+    origin: "Your circuit",
+    peers: [
+      "Laptop · San Francisco",
+      "Pi cluster · Cape Town",
+      "Old desktop · London",
+      "Raspberry Pi · Mumbai",
+      "Mini PC · Tokyo",
+    ],
+    phases: [
+      { key: "split", title: "Split.", body: "One circuit, cut into fragments and sent to peers wherever they are." },
+      { key: "run", title: "Run.", body: "Every peer runs its share in parallel, and the mesh records each fragment." },
+      { key: "scale", title: "Scale.", body: "Where it pays off: past about 40 assets, QAOA on the mesh overtakes classical search." },
+    ],
+    runAxis: ["Earlier", "Recent"],
+    runNote: "Illustrative trace",
+    chart: {
+      baseline: "Classical baseline",
+      series: "QAOA on the mesh",
+      points: [
+        { assets: 40, speedup: 3.2, label: "3.2× at 40 assets" },
+        { assets: 60, speedup: 9.5, label: "9.5× at 60 assets" },
+      ],
+      left: "Classical faster at 10–20 assets",
+      axis: "Portfolio size (assets)",
+      note: "Measured at 40 and 60 assets; the line between points is illustrative.",
     },
-    {
-      metric: "≈22.7k gas",
-      metricLabel: "One transaction per batch",
-      title: "Provenance bundles batched into one Merkle root and anchored on Ethereum Sepolia, verified from a terminal.",
-      tag: "Anchoring · in review",
-      href: DOCS.PROVENANCE,
-    },
-    {
-      metric: "|ψ⟩",
-      metricLabel: "State vector per asset",
-      title: "Every asset's qubit inspectable as a Bloch sphere, with its state vector and density matrix.",
-      tag: "Qubit states",
-      href: CONSOLE_HREF,
-    },
-  ],
+    action: "Read the paper",
+  },
   stats: [
     { value: "97", suffix: "%", title: "Run time in classical search", body: "Most of a QAOA run is COBYLA parameter search, not the circuit." },
     { value: "1.03", suffix: "×", title: "Ceiling from more nodes", body: "Amdahl's law caps what extra quantum peers can add to one run." },
@@ -302,6 +311,54 @@ export const RESULTS = {
     { value: "9.5", suffix: "×", title: "Faster at 60 assets", body: "The gap widens as the problem grows." },
   ],
   footnote: "Simulator benchmarks from the QMesh research draft. QMesh runs on Qiskit statevector simulation, not quantum hardware.",
+} as const;
+
+/** A run's receipt, printed line by line on scroll. Every line is a real step in the codebase. */
+export const RECEIPT = {
+  title: ["Every result leaves", "a receipt."],
+  body: "Each run records what was asked, how it was paid, where it ran and how to check it, then pins that record where anyone can fetch it.",
+  counterLabel: "Events on one receipt",
+  chip: "Pinned by CID",
+  head: ["Receipt", "Example job"],
+  groups: [
+    {
+      name: "01 Request",
+      tag: "x402",
+      lines: [
+        ["Submit OpenQASM circuit", "2 qubits"],
+        ["402 Payment Required", "x402"],
+        ["Pay in USDC", "Algorand TestNet"],
+      ],
+    },
+    {
+      name: "02 Plan",
+      tag: "Coordinator",
+      lines: [
+        ["Normalize the circuit", "QASM"],
+        ["Build the execution plan", "Fragments"],
+        ["Reserve peer capacity", "libp2p"],
+      ],
+    },
+    {
+      name: "03 Run",
+      tag: "Peers",
+      lines: [
+        ["Send fragments over streams", "libp2p"],
+        ["Statevector simulation", "Qiskit"],
+        ["Measure and assemble", "Result"],
+      ],
+    },
+    {
+      name: "04 Prove",
+      tag: "Provenance",
+      lines: [
+        ["Hash inputs, plan and results", "Bundle"],
+        ["Pin the bundle to IPFS", "CID"],
+        ["Fetch by CID, hashes match", "Verified"],
+        ["Merkle anchor on Sepolia", "In review"],
+      ],
+    },
+  ],
 } as const;
 
 export const DEVELOPERS = {
