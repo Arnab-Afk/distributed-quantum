@@ -368,14 +368,14 @@ export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMem
   body: "QMesh is built in the open by its founders and contributors.",
   members: [
     { name: "Soham Bhoir", role: "Co-founder", github: "Winter-Soren" },
+    { name: "Johana Moran", role: "Co-founder" },
+    { name: "Manu Sheel Gupta", role: "Co-founder" },
     { name: "Harshal Dulera", role: "Contributor", github: "harshaldulera" },
     { name: "Saish Korgaonkar", role: "Contributor", github: "SaishKorgaonkar" },
     { name: "Neha Kumari", role: "Contributor", github: "Nkovaturient" },
     { name: "Ishika Bhoyar", role: "Contributor", github: "ishikabhoyar" },
     { name: "Vinay Sitaram Kanse", role: "Contributor" },
     { name: "K Shan", role: "Contributor" },
-    { name: "Manu Sheel Gupta", role: "Contributor" },
-    { name: "Johana Moran", role: "Contributor" },
   ],
 };
 
