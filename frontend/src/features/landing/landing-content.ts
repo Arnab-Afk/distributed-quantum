@@ -379,10 +379,10 @@ export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMem
     { name: "Harshal Dulera", role: "Contributor", github: "harshaldulera" },
     { name: "Saish Korgaonkar", role: "Contributor", github: "SaishKorgaonkar" },
     { name: "Ishika Bhoyar", role: "Contributor", github: "ishikabhoyar" },
-    { name: "Arnab Bhowmik", role: "Contributor" },
+    { name: "Arnab Bhowmik", role: "Contributor", github: "Arnab-Afk" },
     { name: "Neha Kumari", role: "Contributor", github: "Nkovaturient" },
-    { name: "Vinay Sitaram Kanse", role: "Contributor" },
-    { name: "K Shan", role: "Contributor" },
+    { name: "Vinay Sitaram Kanse", role: "Contributor", github: "vinayskanse" },
+    { name: "Kritarth Shankar", role: "Contributor", github: "kodykebab" },
   ],
 };
 
