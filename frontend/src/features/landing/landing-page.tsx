@@ -301,38 +301,44 @@ export function LandingPage() {
       </main>
 
       <footer className={styles.footer}>
-        <div className={styles.footerMain}>
-          <div className={styles.footerLeft}>
-            <h2 id="closing-title" className={styles.h2}>
+        <div className={styles.footerTop}>
+          <div className={styles.footerCta}>
+            <h2 id="closing-title" className={styles.footerHeading}>
               {CLOSING.title}
             </h2>
             <Link href={CONSOLE_HREF} className={styles.pill}>
               {CLOSING.primary} <ArrowRight aria-hidden="true" />
             </Link>
-            <div className={styles.footerLinks}>
-              {FOOTER.columns.map((column) => (
-                <div key={column.title} className={styles.footerColumn}>
-                  <h3>{column.title}</h3>
-                  <ul>
-                    {column.links.map((link) => (
-                      <li key={link.label}>
-                        {link.href.startsWith("http") ? (
-                          <External href={link.href}>{link.label}</External>
-                        ) : (
-                          <Link href={link.href}>{link.label}</Link>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
-            </div>
-            <p className={styles.footerScope}>{FOOTER.scope}</p>
           </div>
           <div className={styles.inkFrame}>
-            <span className={styles.inkRuler} aria-hidden="true" />
             <InkWordmark word={FOOTER.wordmark} />
           </div>
+        </div>
+        <div className={styles.footerBottom}>
+          <div className={styles.footerNote}>
+            <span className={styles.brand}>
+              <MeshMark className={styles.brandMark} />
+              <span>QMesh</span>
+            </span>
+            <p>{FOOTER.blurb}</p>
+            <p className={styles.footerScope}>{FOOTER.scope}</p>
+          </div>
+          {FOOTER.columns.map((column) => (
+            <div key={column.title} className={styles.footerColumn}>
+              <h3>{column.title}</h3>
+              <ul>
+                {column.links.map((link) => (
+                  <li key={link.label}>
+                    {link.href.startsWith("http") ? (
+                      <External href={link.href}>{link.label}</External>
+                    ) : (
+                      <Link href={link.href}>{link.label}</Link>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
         <p className={styles.footerMeta}>{FOOTER.copy}</p>
       </footer>
