@@ -1960,22 +1960,7 @@
 
 /* ── Closing ── */
 
-.closing {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  justify-items: center;
-  gap: 2rem;
-  width: var(--inner);
-  margin: 0 auto;
-  padding: calc(var(--space) * 1.2) 0;
-  text-align: center;
-  border-top: 1px solid var(--hairline-soft);
-}
 
-.closing .h2 {
-  max-width: 22ch;
-}
 
 /* ── Footer ── */
 
@@ -1989,31 +1974,9 @@
 
 
 
-.footerGrid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(0, 1fr));
-  gap: 2rem;
-  width: var(--inner);
-  margin: 0 auto;
-  padding: 4rem 0 3rem;
-}
 
-.footerBrand {
-  display: grid;
-  align-content: start;
-  gap: 0.9rem;
-}
 
-.footerBrand p {
-  margin: 0;
-  max-width: 24rem;
-  color: var(--ink-muted);
-  font-size: var(--text-sm);
-}
 
-.footerBrand .footerScope {
-  color: var(--ink-faint);
-}
 
 .footerColumn h3 {
   margin: 0 0 1rem;
@@ -2039,13 +2002,51 @@
   text-underline-offset: 3px;
 }
 
+/* Footer: closing call to action and links on the left, the framed wordmark on the right. */
+.footerMain {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  align-items: stretch;
+  gap: clamp(2rem, 4vw, 4rem);
+  width: var(--inner);
+  margin: 0 auto;
+  padding: var(--space) var(--inset) 3rem;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.footerLeft {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 1.75rem;
+}
+
+.footerLeft .h2 {
+  max-width: 16ch;
+}
+
+.footerLinks {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  width: 100%;
+  margin-top: 1.5rem;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--hairline-soft);
+}
+
+.footerScope {
+  margin: 0;
+  max-width: 28rem;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
 /* Blueprint wordmark: rulers with "+" corners framing a canvas that inks under the pointer. */
 .inkFrame {
   position: relative;
-  width: var(--inner);
-  margin: 0 auto;
-  padding: 1.5rem 0 1.5rem 1.25rem;
-  border-top: 1px solid var(--hairline-soft);
+  align-self: center;
+  padding: 1.5rem 0.75rem 1.5rem 1.5rem;
 }
 
 .inkRuler {
@@ -2081,7 +2082,8 @@
 .inkCanvas {
   display: block;
   width: 100%;
-  height: clamp(9rem, 22vw, 20rem);
+  height: auto;
+  aspect-ratio: 4 / 1.35;
   cursor: crosshair;
   touch-action: pan-y;
 }
@@ -2090,7 +2092,7 @@
 .footerMeta {
   width: var(--inner);
   margin: 0 auto;
-  padding: 1rem 0 2.5rem;
+  padding: 1rem var(--inset) 2.5rem;
   border-top: 1px solid var(--hairline-soft);
   font-family: var(--font-data);
   font-size: var(--text-label);
@@ -2496,6 +2498,7 @@
   }
 
   .hero,
+  .footerMain,
   .receiptStage,
   .workloads,
   .developers,
@@ -2532,9 +2535,6 @@
     border-left: 0;
   }
 
-  .footerGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
 }
 
 @media (max-width: 760px) {
@@ -2616,9 +2616,6 @@
 
 @media (max-width: 480px) {
   .team,
-  .footerGrid {
-    grid-template-columns: minmax(0, 1fr);
-  }
 
   .stats {
     grid-template-columns: minmax(0, 1fr);

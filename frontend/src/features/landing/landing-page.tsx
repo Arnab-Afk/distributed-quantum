@@ -298,46 +298,41 @@ export function LandingPage() {
           </div>
         </section>
 
-        <section className={styles.closing} aria-labelledby="closing-title">
-          <h2 id="closing-title" className={styles.h2}>
-            {CLOSING.title}
-          </h2>
-          <Link href={CONSOLE_HREF} className={styles.pill}>
-            {CLOSING.primary} <ArrowRight aria-hidden="true" />
-          </Link>
-        </section>
       </main>
 
       <footer className={styles.footer}>
-        <div className={styles.footerGrid}>
-          <div className={styles.footerBrand}>
-            <span className={styles.brand}>
-              <MeshMark className={styles.brandMark} />
-              <span>QMesh</span>
-            </span>
-            <p>{FOOTER.blurb}</p>
+        <div className={styles.footerMain}>
+          <div className={styles.footerLeft}>
+            <h2 id="closing-title" className={styles.h2}>
+              {CLOSING.title}
+            </h2>
+            <Link href={CONSOLE_HREF} className={styles.pill}>
+              {CLOSING.primary} <ArrowRight aria-hidden="true" />
+            </Link>
+            <div className={styles.footerLinks}>
+              {FOOTER.columns.map((column) => (
+                <div key={column.title} className={styles.footerColumn}>
+                  <h3>{column.title}</h3>
+                  <ul>
+                    {column.links.map((link) => (
+                      <li key={link.label}>
+                        {link.href.startsWith("http") ? (
+                          <External href={link.href}>{link.label}</External>
+                        ) : (
+                          <Link href={link.href}>{link.label}</Link>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
             <p className={styles.footerScope}>{FOOTER.scope}</p>
           </div>
-          {FOOTER.columns.map((column) => (
-            <div key={column.title} className={styles.footerColumn}>
-              <h3>{column.title}</h3>
-              <ul>
-                {column.links.map((link) => (
-                  <li key={link.label}>
-                    {link.href.startsWith("http") ? (
-                      <External href={link.href}>{link.label}</External>
-                    ) : (
-                      <Link href={link.href}>{link.label}</Link>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-        <div className={styles.inkFrame}>
-          <span className={styles.inkRuler} aria-hidden="true" />
-          <InkWordmark word={FOOTER.wordmark} />
+          <div className={styles.inkFrame}>
+            <span className={styles.inkRuler} aria-hidden="true" />
+            <InkWordmark word={FOOTER.wordmark} />
+          </div>
         </div>
         <p className={styles.footerMeta}>{FOOTER.copy}</p>
       </footer>
