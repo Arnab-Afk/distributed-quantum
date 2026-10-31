@@ -68,7 +68,7 @@ export function ReceiptScroll({ receipt }: { receipt: Receipt }) {
             <span>{receipt.head[1].toUpperCase()}</span>
           </div>
           {receipt.groups.map((group, g) => (
-            <div key={group.name} className={styles.receiptGroup}>
+            <div key={group.name} className={styles.receiptGroup} data-shown={starts[g] < printed}>
               <div className={styles.receiptGroupHead} data-shown={starts[g] < printed}>
                 <span>{group.name.toUpperCase()}</span>
                 <span>{group.tag.toUpperCase()}</span>

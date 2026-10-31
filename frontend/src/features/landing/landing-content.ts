@@ -74,7 +74,8 @@ export interface Layer {
   name: string;
   title: string;
   body: string;
-  callouts: readonly [string, string];
+  /** One label per component on the plate, in the order the plate draws its anchors. */
+  callouts: readonly string[];
 }
 
 export const ARCHITECTURE: { title: [string, string]; body: string; layers: ReadonlyArray<Layer> } = {
@@ -86,35 +87,35 @@ export const ARCHITECTURE: { title: [string, string]; body: string; layers: Read
       name: "Your app",
       title: "Submit",
       body: "Send OpenQASM from the console or the API, and get a receipt back.",
-      callouts: ["Operator console", "REST API"],
+      callouts: ["Operator console", "Job status", "OpenQASM editor", "REST API"],
     },
     {
       key: "coordinator",
       name: "Coordinator",
       title: "Plan",
       body: "The coordinator turns each circuit into a distributed execution plan.",
-      callouts: ["Execution plans", "Peer reservation"],
+      callouts: ["Coordinator", "Execution plan", "Circuit fragments", "Peer reservation"],
     },
     {
       key: "payments",
       name: "Payments and registry",
       title: "Pay",
       body: "Every run pays its peers per request, in Algorand USDC on TestNet.",
-      callouts: ["x402 on Algorand", "One chain registry"],
+      callouts: ["USDC on Algorand", "x402 receipt", "Chain registry"],
     },
     {
       key: "mesh",
       name: "Peer mesh",
       title: "Run",
       body: "Worker peers on py-libp2p run their fragments with Qiskit.",
-      callouts: ["GossipSub discovery", "Qiskit workers"],
+      callouts: ["Laptop", "Raspberry Pi", "Old desktop", "Old phone", "Mini PC", "libp2p links"],
     },
     {
       key: "provenance",
       name: "Provenance",
       title: "Prove",
       body: "Every result becomes a provenance bundle, pinned on IPFS by content.",
-      callouts: ["Pinned by CID", "Merkle anchor in review"],
+      callouts: ["Merkle root", "Branch hashes", "Result bundles", "Pinned by CID"],
     },
   ],
 };
@@ -272,35 +273,32 @@ export const PRODUCTS = {
 export const RESULTS = {
   title: "Results you can check",
   action: "Watch the demo",
-  /** The scroll story: one circuit split across peers, run, then where it pays off. */
+  /** The scroll story, told like giga.ai's Build → Observe → Improve, with QMesh's own content. */
   story: {
     label:
-      "Scroll story in three acts. Split: one circuit fans out along strands to five peers. Run: the fragments scatter, then line up by peer over time. Scale: they collapse onto a chart where QAOA starts below the classical baseline and climbs to 3.2 times faster at 40 assets and 9.5 times faster at 60.",
-    origin: "Your circuit",
-    peers: [
-      "Laptop · San Francisco",
-      "Pi cluster · Cape Town",
-      "Old desktop · London",
-      "Raspberry Pi · Mumbai",
-      "Mini PC · Tokyo",
-    ],
+      "Scroll story. Mesh: strands from laptops, Raspberry Pis and old phones converge into one machine. Run: the machine bursts into a field of fragments that cluster by workload, then line up by workload over time. Scale: they settle on a chart where QAOA on the mesh climbs from parity at 20 assets to 3.2 times faster at 40 and 9.5 times faster at 60.",
+    sources: ["Laptops", "Raspberry Pis", "Old phones"],
+    point: "One machine",
+    pointLoop: "One machine, next run",
     phases: [
-      { key: "split", title: "Split.", body: "One circuit, cut into fragments and sent to peers wherever they are." },
-      { key: "run", title: "Run.", body: "Every peer runs its share in parallel, and the mesh records each fragment." },
-      { key: "scale", title: "Scale.", body: "Where it pays off: past about 40 assets, QAOA on the mesh overtakes classical search." },
+      { key: "mesh", title: "Mesh.", body: "Bring spare devices together into one machine." },
+      { key: "run", title: "Run.", body: "See every fragment as it runs across the mesh." },
+      { key: "scale", title: "Scale.", body: "Where QAOA on the mesh overtakes classical search." },
     ],
+    loop: { title: "Every result comes back with a receipt.", body: "The next run begins." },
+    rows: ["Circuits", "Portfolios", "Risk & options", "Anchoring", "Pharma"],
     runAxis: ["Earlier", "Recent"],
-    runNote: "Illustrative trace",
+    runNote: "Illustrative",
     chart: {
-      baseline: "Classical baseline",
-      series: "QAOA on the mesh",
+      baselineLabel: "Speedup over classical",
+      marker: "Classical wins up to 20 assets",
+      gain: "Gain",
+      current: "Classical",
       points: [
         { assets: 40, speedup: 3.2, label: "3.2× at 40 assets" },
         { assets: 60, speedup: 9.5, label: "9.5× at 60 assets" },
       ],
-      left: "Classical faster at 10–20 assets",
-      axis: "Portfolio size (assets)",
-      note: "Measured at 40 and 60 assets; the line between points is illustrative.",
+      note: "Measured at 40 and 60 assets; the curve between is illustrative.",
     },
     action: "Read the paper",
   },

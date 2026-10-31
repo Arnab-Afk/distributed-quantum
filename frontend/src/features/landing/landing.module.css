@@ -789,6 +789,54 @@
     fill 500ms var(--ease-out);
 }
 
+/* Raised objects on the plates: contact shadow, bevelled top, front detail. */
+.blockShadow {
+  fill: oklch(0 0 0 / 0.55);
+  filter: blur(3px);
+}
+
+.blockBevel {
+  fill: none;
+  stroke: oklch(0.3 0.004 80);
+  stroke-width: 0.8;
+}
+
+.blockDetail {
+  fill: none;
+  stroke: oklch(0.34 0.004 80);
+  stroke-width: 1;
+}
+
+.blockLed {
+  fill: none;
+  stroke: oklch(0.4 0.004 80);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.plate[data-lit="true"] .blockBevel,
+.plate[data-lit="true"] .blockDetail {
+  stroke: oklch(0.55 0.006 80);
+}
+
+.plate[data-lit="true"] .blockLed {
+  stroke: var(--step-accent, var(--accent));
+}
+
+.coinRidge {
+  fill: none;
+  stroke: oklch(0.3 0.004 80);
+  stroke-width: 0.8;
+}
+
+.plate[data-lit="true"] .coinRidge {
+  stroke: oklch(0.55 0.006 80);
+}
+
+.calloutAnchor {
+  fill: var(--ink);
+}
+
 /* Raised objects on the plates. */
 .blockTop,
 .blockSide,
@@ -1245,7 +1293,7 @@
 /* Results story: a pinned canvas told in three acts (giga.ai's Build/Observe/Improve rhythm). */
 .storyTrack {
   position: relative;
-  height: 360vh;
+  height: 520vh;
   margin-top: 1rem;
 }
 
@@ -1264,16 +1312,25 @@
   height: 100%;
 }
 
+/* Titles sit centred in the upper stage and are faded by the canvas loop. */
 .storyTitle {
   position: absolute;
-  top: 9%;
+  top: 24%;
   left: 50%;
   z-index: 1;
-  width: min(32rem, 90%);
+  width: min(34rem, 90%);
   translate: -50% 0;
   text-align: center;
   pointer-events: none;
-  animation: storyIn 600ms var(--ease-out) both;
+}
+
+.storyTitle[data-loop="true"] {
+  top: 7%;
+  width: min(44rem, 92%);
+}
+
+.storyTitle[data-loop="true"] h3 {
+  font-size: clamp(1.75rem, 2.6vw, 2.25rem);
 }
 
 .storyTitle h3 {
@@ -1291,13 +1348,6 @@
   color: var(--ink-muted);
   font-size: var(--text-body);
   font-weight: 300;
-}
-
-@keyframes storyIn {
-  from {
-    opacity: 0;
-    translate: -50% 12px;
-  }
 }
 
 .storyTabs {
@@ -1351,6 +1401,13 @@
   border-left: 1px solid var(--hairline);
   border-radius: 0 9999px 9999px 0;
   color: var(--ink-muted);
+}
+
+.storyTabDot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent-2);
 }
 
 .storyTabLink svg {
@@ -1452,7 +1509,8 @@
   top: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  align-items: center;
+  align-items: end;
+  padding-bottom: 12vh;
   gap: clamp(2rem, 5vw, 5rem);
   height: 100svh;
   min-height: 640px;
@@ -1461,7 +1519,7 @@
 .receiptIntro {
   display: grid;
   gap: 1.25rem;
-  align-content: center;
+  align-content: end;
 }
 
 .receiptCounter {
@@ -1519,7 +1577,10 @@
 .receipt {
   position: relative;
   padding: 1.25rem 1.5rem 1.5rem;
-  border: 1px dashed var(--hairline);
+  border-block: 1px dashed var(--hairline);
+  background:
+    repeating-linear-gradient(to bottom, var(--hairline) 0 0.7rem, transparent 0.7rem 1.1rem) left / 1px 100% no-repeat,
+    repeating-linear-gradient(to bottom, var(--hairline) 0 0.7rem, transparent 0.7rem 1.1rem) right / 1px 100% no-repeat;
   font-family: var(--font-data);
   font-size: var(--text-label);
   letter-spacing: 0.04em;
@@ -1551,8 +1612,30 @@
   color: var(--ink);
 }
 
+/* Groups and lines collapse until printed, so the receipt grows upward from its base. */
 .receiptGroup {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 450ms var(--ease-out);
+}
+
+.receiptGroup > * {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.receiptGroup[data-shown="true"] {
+  grid-template-rows: 1fr;
   padding-top: 0.75rem;
+}
+
+.receiptGroup {
+  grid-template-columns: minmax(0, 1fr);
+  grid-auto-rows: 0fr;
+}
+
+.receiptGroup[data-shown="true"] {
+  grid-auto-rows: auto;
 }
 
 .receiptGroupHead {
@@ -1580,7 +1663,7 @@
 }
 
 .receiptLine[data-state="pending"] {
-  opacity: 0.12;
+  display: none;
 }
 
 .receiptLine[data-state="new"] {
@@ -2567,8 +2650,7 @@
 
   .wordmarkTrack,
   .hero::before,
-  .hero::after,
-  .storyTitle {
+  .hero::after {
     animation: none;
   }
 
