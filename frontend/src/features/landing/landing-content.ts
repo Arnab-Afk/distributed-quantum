@@ -370,13 +370,13 @@ export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMem
     { name: "Soham Bhoir", role: "Co-founder", github: "Winter-Soren" },
     { name: "Johana Moran", role: "Co-founder" },
     { name: "Manu Sheel Gupta", role: "Co-founder" },
-    { name: "Harshal Dulera", role: "Contributor", github: "harshaldulera" },
     { name: "Saish Korgaonkar", role: "Contributor", github: "SaishKorgaonkar" },
-    { name: "Neha Kumari", role: "Contributor", github: "Nkovaturient" },
+    { name: "Arnab Bhowmik", role: "Contributor" },
     { name: "Ishika Bhoyar", role: "Contributor", github: "ishikabhoyar" },
+    { name: "Harshal Dulera", role: "Contributor", github: "harshaldulera" },
+    { name: "Neha Kumari", role: "Contributor", github: "Nkovaturient" },
     { name: "Vinay Sitaram Kanse", role: "Contributor" },
     { name: "K Shan", role: "Contributor" },
-    { name: "Arnab Bhowmik", role: "Contributor" },
   ],
 };
 
