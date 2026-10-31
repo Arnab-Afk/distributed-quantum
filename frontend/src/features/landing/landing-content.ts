@@ -199,35 +199,6 @@ export const WORKLOADS: { title: string; items: ReadonlyArray<Workload> } = {
   ],
 };
 
-export const PRODUCTS = {
-  title: "What's in the repository",
-  groups: [
-    {
-      title: "Platform",
-      items: [
-        { icon: "console", title: "Operator console", body: "Peers, jobs and quantum analysis, live" },
-        { icon: "coordinator", title: "Coordinator API", body: "FastAPI service that plans and routes jobs" },
-        { icon: "peer", title: "Worker peers", body: "py-libp2p processes that run fragments" },
-        { icon: "registry", title: "Chain registry", body: "Testnet metadata behind one reviewed file" },
-      ],
-    },
-    {
-      title: "Trust",
-      items: [
-        { icon: "payment", title: "x402 payments", body: "Pay per request in Algorand USDC" },
-        { icon: "bundle", title: "Provenance bundles", body: "Hashed inputs, plan and results per run" },
-      ],
-    },
-    {
-      title: "Research",
-      items: [
-        { icon: "benchmark", title: "Benchmarks", body: "QAOA against classical, published both ways" },
-        { icon: "paper", title: "Research paper", body: "The full analysis behind every number" },
-      ],
-    },
-  ],
-} as const;
-
 export const RESULTS = {
   title: "Results you can check",
   action: "Watch the demo",
@@ -317,35 +288,71 @@ export const RECEIPT = {
   ],
 } as const;
 
-export const DEVELOPERS = {
+const tree = (path: string) => `${REPOSITORY_URL}/tree/main/${path}`;
+const blob = (path: string) => `${REPOSITORY_URL}/blob/main/${path}`;
+
+export interface RepoPart {
+  key: string;
+  title: string;
+  body: string;
+  path: string;
+  href: string;
+  /** The command or entry point you would actually use. */
+  run: string;
+  group: "Platform" | "Trust" | "Research";
+}
+
+/** What's in the repository, mapped to real paths (verified against the repo). */
+export const REPO = {
+  title: "What's in the repository",
+  body: "One open-source monorepo: the console, the coordinator, the peers, and the payment and provenance layers they share.",
+  github: "View on GitHub",
+  parts: [
+    { key: "console", group: "Platform", title: "Operator console", body: "Peers, jobs and quantum analysis, live.", path: "frontend/src/features/dashboard", href: tree("frontend/src/features/dashboard"), run: "cd frontend && bun run dev" },
+    { key: "coordinator", group: "Platform", title: "Coordinator API", body: "FastAPI service that plans circuits and routes fragments.", path: "backend/src/quantum_backend_v2/api", href: tree("backend/src/quantum_backend_v2/api"), run: "cd backend && make run" },
+    { key: "peers", group: "Platform", title: "Worker peers", body: "py-libp2p processes that run fragments with Qiskit.", path: "scripts/node-starter-template.py", href: blob("scripts/node-starter-template.py"), run: "python scripts/node-starter-template.py --coordinator <MULTIADDR> --label my-node" },
+    { key: "registry", group: "Platform", title: "Chain registry", body: "Testnet metadata behind one reviewed file.", path: "backend/src/quantum_backend_v2/chains/registry.toml", href: blob("backend/src/quantum_backend_v2/chains/registry.toml"), run: "GET /api/v1/chains" },
+    { key: "x402", group: "Trust", title: "x402 payments", body: "Pay per request in Algorand USDC on TestNet.", path: "frontend/src/features/x402", href: tree("frontend/src/features/x402"), run: "POST /api/x402/quantum/runs" },
+    { key: "provenance", group: "Trust", title: "Provenance bundles", body: "Hashed inputs, plan and results for every run.", path: "backend/src/quantum_backend_v2/provenance", href: tree("backend/src/quantum_backend_v2/provenance"), run: "GET /api/v1/provenance/{bundle_id}/verify" },
+    { key: "benchmarks", group: "Research", title: "Benchmarks", body: "QAOA against classical, on public datasets.", path: "backend/scripts", href: tree("backend/scripts"), run: "python backend/scripts/benchmark_massive_dataset.py" },
+    { key: "paper", group: "Research", title: "Research paper", body: "The analysis behind every number on this page.", path: "QMeshPy/documentations · research/RESEARCH_PAPER_DRAFT.md", href: RESEARCH_URL, run: "Read the draft" },
+  ] satisfies ReadonlyArray<RepoPart>,
+} as const;
+
+/** Start building: three ways in, each one real command. */
+export const START = {
   title: "Start building today",
-  subtitle: "One request, one payment, one receipt",
-  checks: [
-    { title: "Plain REST", body: "OpenQASM in, a job ID out" },
-    { title: "Machine-payable", body: "x402 settles each run in Algorand USDC" },
-    { title: "Open source", body: "Coordinator, workers and console under Apache 2.0" },
-    { title: "Testnets only", body: "No mainnet, no real money, ever" },
+  body: "Call the mesh, run it yourself, or add a device to it. Every command below is from the repository.",
+  paths: [
+    {
+      key: "call",
+      title: "Call it",
+      body: "Submit a circuit to the paid route. It answers 402 until the run is paid in Algorand USDC.",
+      command: `curl -X POST "$QMESH/api/x402/quantum/runs" -H "Content-Type: application/json" -d '{"circuit": "OPENQASM 2.0; …"}'`,
+      steps: ["POST /api/x402/quantum/runs", "402 Payment Required", "Pay in USDC · Algorand TestNet", "201 Created { job_id, status }"],
+      href: DOCS.X402,
+      action: "x402 docs",
+    },
+    {
+      key: "run",
+      title: "Run it",
+      body: "Bring up the coordinator and the console locally, from a clone of the repository.",
+      command: "cd backend && make run\ncd frontend && bun run dev",
+      steps: ["Clone the repository", "make run (coordinator)", "bun run dev (console)", "Open the console"],
+      href: DOCS.BACKEND,
+      action: "Backend README",
+    },
+    {
+      key: "power",
+      title: "Power it",
+      body: "Turn a spare machine into a worker peer that joins the mesh and runs fragments.",
+      command: "python scripts/node-starter-template.py --coordinator <MULTIADDR> --label my-node",
+      steps: ["Point at a coordinator", "Peer joins over libp2p", "Advertises what it can run", "Receives fragments"],
+      href: blob("scripts/node-starter-template.py"),
+      action: "View the script",
+    },
   ],
-  primary: "Open the console",
-  secondary: "Read the docs",
-  request: `curl -X POST "$QMESH/api/x402/quantum/runs" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "circuit": "OPENQASM 2.0; include \\"qelib1.inc\\"; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q -> c;"
-  }'`,
-  challenge: `HTTP/1.1 402 Payment Required
-# pay the requirement in Algorand USDC, then retry`,
-  response: `HTTP/1.1 201 Created
-{
-  "job_id": "job_8d0f5af2fd3640be8d62a9f48f8d3d6d",
-  "status": "queued"
-}`,
-  cards: [
-    { title: "Repository", body: "Coordinator, workers, console and contracts.", href: REPOSITORY_URL },
-    { title: "Research paper", body: "Where quantum wins, and where it does not.", href: RESEARCH_URL },
-    { title: "x402 docs", body: "Request flow and TestNet verification.", href: DOCS.X402 },
-    { title: "Provenance", body: "Bundles, commitments and what they prove.", href: DOCS.PROVENANCE },
-  ],
+  footer: ["Plain REST", "Machine-payable", "Apache 2.0", "Testnets only"],
 } as const;
 
 export interface TeamMember {
@@ -358,9 +365,9 @@ export interface TeamMember {
 // Seeded from the repository's commit history. Edit roles and add people here.
 export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMember> } = {
   title: "The people building the mesh",
-  body: "QMesh is built in the open. Every contributor below has commits in the repository.",
+  body: "QMesh is built in the open by its founders and contributors.",
   members: [
-    { name: "Soham Bhoir", role: "Maintainer", github: "Winter-Soren" },
+    { name: "Soham Bhoir", role: "Co-founder", github: "Winter-Soren" },
     { name: "Harshal Dulera", role: "Contributor", github: "harshaldulera" },
     { name: "Saish Korgaonkar", role: "Contributor", github: "SaishKorgaonkar" },
     { name: "Neha Kumari", role: "Contributor", github: "Nkovaturient" },
@@ -368,6 +375,7 @@ export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMem
     { name: "Vinay Sitaram Kanse", role: "Contributor" },
     { name: "K Shan", role: "Contributor" },
     { name: "Manu Sheel Gupta", role: "Contributor" },
+    { name: "Johana Moran", role: "Contributor" },
   ],
 };
 

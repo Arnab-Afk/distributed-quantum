@@ -1405,6 +1405,438 @@
   }
 }
 
+/* ── Repository and Start building: variants for review ── */
+
+.bvSwitch {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  padding: 0.25rem;
+  border: 1px dashed var(--hairline);
+  border-radius: 9999px;
+}
+
+.bvSwitch button {
+  height: 1.8rem;
+  padding: 0 0.85rem;
+  border: 0;
+  border-radius: 9999px;
+  background: none;
+  color: var(--ink-muted);
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.bvSwitch button[aria-pressed="true"] {
+  background: var(--pill);
+  color: var(--pill-ink);
+}
+
+.bvCommand {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.85rem 0.85rem 0.85rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--ground-sunk);
+}
+
+.bvCommand pre {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+}
+
+.bvCommand pre::before {
+  content: "$ ";
+  color: var(--ink-faint);
+}
+
+.bvCommand button {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--ink-muted);
+  cursor: pointer;
+}
+
+.bvCommand button svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.bvCommand button:hover {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+}
+
+.bvDetail {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 1rem;
+  animation: bvIn 400ms var(--ease-out);
+}
+
+.bvDetail > .bvCommand {
+  justify-self: stretch;
+}
+
+@keyframes bvIn {
+  from {
+    opacity: 0;
+    translate: 0 8px;
+  }
+}
+
+.bvDetail h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+}
+
+.bvDetail p {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.bvGroup,
+.bvPath,
+.bvStep {
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  color: var(--ink-faint);
+}
+
+.bvGroup {
+  text-transform: uppercase;
+}
+
+.bvPath {
+  color: var(--ink-muted);
+  word-break: break-all;
+}
+
+/* Repo 1 · Explorer */
+.bvExplorer {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+}
+
+.bvTree {
+  padding: 0.75rem 0;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius);
+  background: var(--ground-sunk);
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+}
+
+.bvTreeHead,
+.bvTreeDir {
+  padding: 0.45rem 1rem;
+  color: var(--ink-muted);
+}
+
+.bvTreeHead {
+  color: var(--ink);
+  border-bottom: 1px solid var(--hairline-soft);
+  margin-bottom: 0.35rem;
+}
+
+.bvTreeRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  padding: 0.45rem 1rem;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 200ms var(--ease-out), color 200ms var(--ease-out);
+}
+
+.bvTreeRow:hover,
+.bvTreeRow[aria-selected="true"] {
+  background: var(--ground-raised);
+  color: var(--ink);
+}
+
+.bvTreeName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bvTreeTag {
+  flex-shrink: 0;
+  color: var(--ink-faint);
+}
+
+.bvTreeRow[aria-selected="true"] .bvTreeTag {
+  color: var(--accent-1);
+}
+
+/* Repo 2 · Map */
+.bvMapWrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
+  gap: clamp(2rem, 4vw, 3.5rem);
+}
+
+.bvMap {
+  display: grid;
+  justify-items: start;
+  gap: 1rem;
+  padding: 1.25rem;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius);
+  background: var(--dots), var(--ground-sunk);
+}
+
+.bvMap svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.bvEdge {
+  stroke: var(--hairline);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.bvPulse {
+  fill: var(--accent-1);
+}
+
+.bvNode {
+  cursor: pointer;
+  outline: none;
+}
+
+.bvNode rect {
+  fill: var(--ground);
+  stroke: var(--hairline);
+  stroke-width: 1;
+  transition: stroke 200ms var(--ease-out);
+}
+
+.bvNode text {
+  font-family: var(--font-text);
+  font-size: 13px;
+  fill: var(--ink-muted);
+}
+
+.bvNode .bvNodeGroup {
+  font-family: var(--font-data);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  fill: var(--ink-faint);
+}
+
+.bvNode:hover rect,
+.bvNode:focus-visible rect,
+.bvNode[data-on="true"] rect {
+  stroke: var(--ink);
+}
+
+.bvNode[data-on="true"] text {
+  fill: var(--ink);
+}
+
+/* Start 1 · Three paths */
+.bvPaths {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.bvPathCard {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+  padding: 1.5rem;
+  border: 1px solid var(--hairline-soft);
+  border-radius: var(--radius);
+  background: var(--ground-sunk);
+}
+
+.bvPathCard h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 300;
+  letter-spacing: -0.03em;
+}
+
+.bvPathCard p {
+  margin: 0;
+  color: var(--ink-muted);
+  font-size: var(--text-ui);
+}
+
+.bvLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+}
+
+.bvLink svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+
+.bvLink:hover {
+  color: var(--ink);
+}
+
+.bvFooterLine {
+  grid-column: 1 / -1;
+  margin: 1rem 0 0;
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* Start 2 · Step-through */
+.bvSteps {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.bvStepTabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--hairline-soft);
+}
+
+.bvStepTabs button {
+  padding: 0.75rem 1rem;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  cursor: pointer;
+  box-shadow: inset 0 -1px 0 transparent;
+}
+
+.bvStepTabs button[aria-selected="true"] {
+  color: var(--ink);
+  box-shadow: inset 0 -1px 0 var(--ink);
+}
+
+.bvStepBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 5vw, 4.5rem);
+}
+
+.bvStepBody > div {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 1rem;
+}
+
+.bvStepBody > div > .bvCommand {
+  justify-self: stretch;
+}
+
+.bvStepBody p {
+  margin: 0;
+  color: var(--ink-muted);
+}
+
+.bvTimeline {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid var(--hairline);
+}
+
+.bvTimeline li button {
+  display: flex;
+  gap: 0.85rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-left: -1px;
+  border: 0;
+  border-left: 1px solid transparent;
+  background: none;
+  color: var(--ink-faint);
+  font-family: var(--font-data);
+  font-size: var(--text-label);
+  letter-spacing: 0.04em;
+  text-align: left;
+  cursor: pointer;
+  transition: color 250ms var(--ease-out), border-color 250ms var(--ease-out);
+}
+
+.bvTimeline li[data-state="done"] button {
+  color: var(--ink-muted);
+}
+
+.bvTimeline li[data-state="now"] button {
+  border-left-color: var(--accent-1);
+  color: var(--ink);
+}
+
+.bvTimeline li button span {
+  color: var(--ink-faint);
+}
+
+.bvTimelineNav button {
+  color: var(--ink-muted) !important;
+}
+
+@media (max-width: 1080px) {
+  .bvExplorer,
+  .bvMapWrap,
+  .bvPaths,
+  .bvStepBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bvDetail {
+    animation: none;
+  }
+}
+
 /* ── Products ── */
 
 .products {

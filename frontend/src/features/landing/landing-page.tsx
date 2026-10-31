@@ -1,19 +1,5 @@
 import Link from "next/link";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  BookMarked,
-  ChartNoAxesColumn,
-  Check,
-  Coins,
-  FileText,
-  MonitorDot,
-  Network,
-  PackageCheck,
-  Plus,
-  Workflow,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowRight, ArrowUpRight, Plus } from "lucide-react";
 import { Inter, Newsreader } from "next/font/google";
 
 import { ArchStack } from "./components/arch-stack";
@@ -22,19 +8,20 @@ import { Identicon, MeshMark } from "./components/mesh-mark";
 import { GlyphBand, HeroMesh, InkWordmark, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
 import { ReceiptScroll } from "./components/receipt-scroll";
+import { RepoLab, StartLab } from "./components/build-variants";
 import { WorkloadIndex } from "./components/workloads";
 import {
   ARCHITECTURE,
   CLOSING,
   CONSOLE_HREF,
   DEMO_URL,
-  DEVELOPERS,
+  START,
   FAQ,
   FOOTER,
   GLYPHS,
   HERO,
   NAV,
-  PRODUCTS,
+  REPO,
   RECEIPT,
   REPOSITORY_URL,
   RESEARCH_URL,
@@ -51,17 +38,6 @@ const display = Newsreader({
   variable: "--landing-display",
 });
 const text = Inter({ subsets: ["latin"], weight: ["300", "400", "500", "600"], variable: "--landing-text" });
-
-const ICONS: Record<(typeof PRODUCTS.groups)[number]["items"][number]["icon"], LucideIcon> = {
-  console: MonitorDot,
-  coordinator: Workflow,
-  peer: Network,
-  registry: BookMarked,
-  payment: Coins,
-  bundle: PackageCheck,
-  benchmark: ChartNoAxesColumn,
-  paper: FileText,
-};
 
 function External({ href, className, children }: { href: string; className?: string; children: React.ReactNode }) {
   return (
@@ -143,33 +119,14 @@ export function LandingPage() {
           <WorkloadIndex items={WORKLOADS.items} />
         </section>
 
-        <section className={styles.section} aria-labelledby="products-title">
-          <h2 id="products-title" className={styles.h2Sans}>
-            {PRODUCTS.title}
-          </h2>
-          <div className={styles.products}>
-            {PRODUCTS.groups.map((group) => (
-              <div key={group.title} className={styles.productGroup}>
-                <h3 className={styles.productGroupTitle}>{group.title}</h3>
-                <ul>
-                  {group.items.map((item) => {
-                    const Icon = ICONS[item.icon];
-                    return (
-                      <li key={item.title} className={styles.product}>
-                        <span className={styles.productIcon}>
-                          <Icon aria-hidden="true" />
-                        </span>
-                        <span>
-                          <strong>{item.title}</strong>
-                          <small>{item.body}</small>
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            ))}
+        <section id="repository" className={styles.section} aria-labelledby="products-title">
+          <div className={styles.sectionHead}>
+            <h2 id="products-title" className={styles.h2}>
+              {REPO.title}
+            </h2>
+            <p className={styles.lead}>{REPO.body}</p>
           </div>
+          <RepoLab repo={REPO} />
         </section>
 
         <section id="results" className={styles.section} aria-labelledby="results-title">
@@ -203,59 +160,13 @@ export function LandingPage() {
         </section>
 
         <section id="developers" className={styles.section} aria-labelledby="developers-title">
-          <div className={styles.developers}>
-            <div className={styles.devIntro}>
-              <h2 id="developers-title" className={styles.h2Sans}>
-                {DEVELOPERS.title}
-              </h2>
-              <p className={styles.devSubtitle}>{DEVELOPERS.subtitle}</p>
-              <ul className={styles.devChecks}>
-                {DEVELOPERS.checks.map((check) => (
-                  <li key={check.title}>
-                    <Check aria-hidden="true" />
-                    <span>
-                      <strong>{check.title}</strong>
-                      {check.body}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              <div className={styles.actions}>
-                <Link href={CONSOLE_HREF} className={styles.pill}>
-                  {DEVELOPERS.primary} <ArrowRight aria-hidden="true" />
-                </Link>
-                <External href={REPOSITORY_URL} className={styles.pillGhost}>
-                  {DEVELOPERS.secondary}
-                </External>
-              </div>
-            </div>
-            <div className={styles.codePanel}>
-              <div className={styles.codeCard}>
-                <span className={styles.codeLabel}>{"// Request"}</span>
-                <pre>
-                  <code>{DEVELOPERS.request}</code>
-                </pre>
-                <span className={styles.codeLabel}>{"// Challenge"}</span>
-                <pre>
-                  <code>{DEVELOPERS.challenge}</code>
-                </pre>
-                <span className={styles.codeLabel}>{"// Response, once paid"}</span>
-                <pre>
-                  <code>{DEVELOPERS.response}</code>
-                </pre>
-              </div>
-            </div>
+          <div className={styles.sectionHead}>
+            <h2 id="developers-title" className={styles.h2}>
+              {START.title}
+            </h2>
+            <p className={styles.lead}>{START.body}</p>
           </div>
-          <div className={styles.linkCards}>
-            {DEVELOPERS.cards.map((card) => (
-              <External key={card.title} href={card.href} className={styles.linkCard}>
-                <span className={styles.linkCardTitle}>
-                  {card.title} <ArrowUpRight aria-hidden="true" />
-                </span>
-                <span>{card.body}</span>
-              </External>
-            ))}
-          </div>
+          <StartLab start={START} />
         </section>
 
         <section id="team" className={styles.section} aria-labelledby="team-title">
