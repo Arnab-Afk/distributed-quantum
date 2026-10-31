@@ -55,10 +55,10 @@ export function LandingPage() {
       <div className={styles.rails} aria-hidden="true" />
 
       <header className={styles.nav}>
-        <Link href="/" className={styles.brand} aria-label="QMesh home">
+        <a href="#top" className={styles.brand} aria-label="QMesh, back to top">
           <MeshMark className={styles.brandMark} />
           <span>QMesh</span>
-        </Link>
+        </a>
         <nav className={styles.navLinks} aria-label="Sections">
           {NAV.links.map((link) => (
             <a key={link.href} href={link.href}>
