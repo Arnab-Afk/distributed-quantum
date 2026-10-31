@@ -22,7 +22,7 @@ import { Identicon, MeshMark } from "./components/mesh-mark";
 import { GlyphBand, HeroMesh, InkWordmark, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
 import { ReceiptScroll } from "./components/receipt-scroll";
-import { WorkloadSwitcher } from "./components/workload-switcher";
+import { WorkloadsLab } from "./components/workload-variants";
 import {
   ARCHITECTURE,
   CLOSING,
@@ -140,7 +140,7 @@ export function LandingPage() {
               {WORKLOADS.title}
             </h2>
           </Reveal>
-          <WorkloadSwitcher items={WORKLOADS.items} />
+          <WorkloadsLab items={WORKLOADS.items} />
         </section>
 
         <section className={styles.section} aria-labelledby="products-title">
