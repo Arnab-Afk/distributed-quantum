@@ -239,6 +239,7 @@ function AgentCard({
           session={agent.starknet_session}
           variant="card"
           onTestSpend={onTestSpend}
+          onOpenSession={onOpenSession}
         />
       )}
     </motion.div>
@@ -625,6 +626,7 @@ export default function AgentsOverviewPage() {
       {testSpendAgentId && (
         <TestSpendDialog
           agentId={testSpendAgentId}
+          session={agents.find((agent) => agent.agent_id === testSpendAgentId)?.starknet_session}
           open={!!testSpendAgentId}
           onOpenChange={(open) => !open && setTestSpendAgentId(null)}
         />

@@ -23,6 +23,7 @@ from quantum_backend_v2.chains.starknet import StarknetRpcAdapter
 from quantum_backend_v2.starknet.calldata import (
     policy_contract_address,
     register_session_calldata,
+    revoke_session_calldata,
     spend_calldata,
 )
 from quantum_backend_v2.starknet.paymaster import PaymasterSponsorError, build_sponsor_request
@@ -150,6 +151,7 @@ async def open_starknet_session(
             session_public_key=public_hex,
             decimals=body.decimals,
             now=now,
+            agent_id=agent_id,
         )
         encrypted = encrypt_session_key(private_hex)
     except RuntimeError as exc:
@@ -210,7 +212,7 @@ async def spend_starknet_session(
         )
     now = int(time.time())
     try:
-        policy = policy_from_document(stored)
+        policy = policy_from_document(stored, agent_id=agent_id)
         decimals = int(stored.get("decimals", 18))
         amount = token_units(Decimal(body.amount), decimals)
         authorize(
@@ -234,7 +236,12 @@ async def spend_starknet_session(
         "spend": {
             "contract": contract,
             "entrypoint": "spend",
-            "calldata": spend_calldata(amount),
+            "calldata": spend_calldata(
+                amount,
+                agent_key=policy.agent_key,
+                payee=policy.recipient,
+                nonce=policy.nonce,
+            ),
         },
     }
 
@@ -317,6 +324,8 @@ async def revoke_starknet_session(agent_id: str, current_user: CurrentUser) -> d
         ) from None
     pending = dict(stored)
     pending["revocation_pending"] = True
+    policy = policy_from_document(stored, agent_id=agent_id)
+    revoke_calldata = revoke_session_calldata(policy.agent_key)
     await AIAgentDocument.find_one({"agent_id": agent_id}).update(
         {"$set": {"starknet_session": pending, "updated_at": datetime.now(timezone.utc)}}
     )
@@ -325,7 +334,7 @@ async def revoke_starknet_session(agent_id: str, current_user: CurrentUser) -> d
             entrypoint="revoke_session",
             account_address=str(stored["owner"]),
             contract_address=contract,
-            calldata=[],
+            calldata=revoke_calldata,
         )
     except PaymasterSponsorError:
         sponsored = False
@@ -336,7 +345,7 @@ async def revoke_starknet_session(agent_id: str, current_user: CurrentUser) -> d
         "revoke_session": {
             "contract": contract,
             "entrypoint": "revoke_session",
-            "calldata": [],
+            "calldata": revoke_calldata,
         },
         "paymaster_sponsored": sponsored,
     }

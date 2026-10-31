@@ -27,10 +27,25 @@ Capability = Literal[
     "transfer_stablecoin",
     "verify_transaction",
     "get_price",
+    "anchor_root",
     "aave_supply",
     "aave_withdraw",
     "faucet_instructions",
 ]
+
+
+# Anchoring must never target these, whatever an entry's testnet flag says.
+_KNOWN_MAINNETS = frozenset(
+    {
+        "eip155:1",
+        "eip155:10",
+        "eip155:56",
+        "eip155:137",
+        "eip155:4663",
+        "eip155:8453",
+        "eip155:42161",
+    }
+)
 
 
 class _RegistryModel(BaseModel):
@@ -113,10 +128,17 @@ class ChainSpec(_RegistryModel):
         # Read-only RPC checks need no wallet provider, so any EVM chain may offer them.
         if "get_price" in self.capabilities and not self.price_feeds:
             raise ValueError("price reads require configured feeds")
+        # Anchors are sent by a dedicated low-balance key, not the wallet provider.
+        if "anchor_root" in self.capabilities:
+            if not self.testnet or self.chain_id in _KNOWN_MAINNETS:
+                raise ValueError("provenance anchoring is limited to testnets")
+            if "verify_transaction" not in self.capabilities:
+                raise ValueError("provenance anchoring requires transaction verification")
         wallet_operations = set(self.capabilities) - {
             "explorer_url",
             "verify_transaction",
             "get_price",
+            "anchor_root",
         }
         if wallet_operations:
             # Only the existing Base Sepolia wallet path is enabled in this migration.

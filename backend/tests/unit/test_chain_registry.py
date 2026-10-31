@@ -52,7 +52,12 @@ def test_packaged_registry_and_provider_mappings():
                 "faucet_instructions",
             }
         elif alias == "ethereum-sepolia":
-            assert chain.capabilities == ("explorer_url", "verify_transaction", "get_price")
+            assert chain.capabilities == (
+                "explorer_url",
+                "verify_transaction",
+                "get_price",
+                "anchor_root",
+            )
         else:
             assert chain.capabilities == ("explorer_url", "verify_transaction")
 
@@ -156,6 +161,10 @@ def test_mainnet_must_stay_disabled(data):
     with pytest.raises(ValidationError, match="mainnet"):
         ChainRegistry.model_validate(data)
     data["chains"][1]["enabled"] = False
+    # Provenance anchoring is testnet-only, even on a disabled mainnet entry.
+    with pytest.raises(ValidationError, match="limited to testnets"):
+        ChainRegistry.model_validate(data)
+    data["chains"][1]["capabilities"] = ("explorer_url", "verify_transaction", "get_price")
     registry = ChainRegistry.model_validate(data)
     with pytest.raises(DisabledNetworkError):
         registry.resolve("eip155:1")

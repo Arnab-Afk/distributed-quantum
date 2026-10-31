@@ -16,6 +16,7 @@ from quantum_backend_v2.chains.starknet import (
 from quantum_backend_v2.starknet.calldata import (
     register_session_calldata,
     register_session_field_names,
+    revoke_session_calldata,
     spend_calldata,
     u256_felts,
 )
@@ -26,18 +27,22 @@ from quantum_backend_v2.starknet.paymaster import (
 )
 from quantum_backend_v2.starknet.policy import (
     PolicyRejectedError,
+    agent_key_from_id,
     authorize,
+    authorize_row,
     policy_from_agent_config,
     revoke,
+    sign_session_spend,
 )
 from quantum_backend_v2.starknet.session import (
+    apply_call_status,
     encrypt_session_key,
     generate_session_keypair,
-    apply_call_status,
     note_submitted_tx,
     public_session,
     refresh_call_statuses,
     session_document,
+    submit_session_spend,
 )
 
 OWNER = "0x1"
@@ -153,12 +158,12 @@ def test_generate_session_keypair_returns_hex_pair():
 
 
 def test_u256_calldata_matches_the_contract_abi():
-    policy = _policy()
+    policy = _policy(agent_id="agent-1")
     source = (
         Path(__file__).resolve().parents[2] / "contracts/starknet/src/spending_policy.cairo"
     ).read_text()
     signature = source.split("fn register_session", 1)[1].split(")", 1)[0]
-    for name in register_session_field_names():
+    for name in register_session_field_names(session_key_spend=True):
         assert name in signature
     assert register_session_calldata(policy) == [
         policy.token,
@@ -170,7 +175,28 @@ def test_u256_calldata_matches_the_contract_abi():
         str(policy.expires_at),
         policy.session_public_key,
     ]
+    assert register_session_calldata(policy, session_key_spend=True) == [
+        policy.agent_key,
+        policy.token,
+        policy.recipient,
+        "10000000",
+        "0",
+        "25000000",
+        "0",
+        str(policy.expires_at),
+        policy.session_public_key,
+    ]
     assert spend_calldata(10_000_000) == ["10000000", "0"]
+    assert spend_calldata(
+        10_000_000,
+        agent_key=policy.agent_key,
+        payee=OTHER,
+        nonce=3,
+        signature=(11, 22),
+        session_key_spend=True,
+    ) == [policy.agent_key, "10000000", "0", OTHER, "3", "0xb", "0x16"]
+    assert revoke_session_calldata() == []
+    assert revoke_session_calldata(policy.agent_key, session_key_spend=True) == [policy.agent_key]
     assert u256_felts((1 << 128) + 7) == ["7", "1"]
 
 
@@ -299,5 +325,241 @@ def test_adapter_confirms_success_and_rejects_a_reverted_receipt():
         ),
     )
     assert failed.verify_transaction(tx).status == "failed"
+    hex_receipt = StarknetRpcAdapter(
+        chain,
+        _Rpc(
+            {
+                "starknet_chainId": hex(SN_SEPOLIA_CHAIN_ID),
+                "starknet_getTransactionReceipt": {
+                    "execution_status": "SUCCEEDED",
+                    "finality_status": "ACCEPTED_ON_L2",
+                    "block_number": "0xa",
+                },
+                "starknet_blockNumber": "0xa",
+            }
+        ),
+    )
+    assert hex_receipt.verify_transaction(tx).status == "confirmed"
     url = StarknetExplorerAdapter(chain).explorer_url("transaction", tx)
     assert url == f"https://sepolia.voyager.online/tx/{tx}"
+
+
+def test_per_agent_rows_isolate_budgets_and_share_counter_with_owner_get_strk():
+    priv_a, pub_a = generate_session_keypair()
+    priv_b, pub_b = generate_session_keypair()
+    row_a = _policy(agent_id="agent-alpha", session_public_key=pub_a)
+    row_b = _policy(agent_id="agent-beta", session_public_key=pub_b)
+    assert row_a.agent_key != row_b.agent_key
+    rows = {row_a.agent_key: row_a, row_b.agent_key: row_b}
+    contract = "0x4f1882a972a276e27b423cfadd29d24a75e798b60cc7d8d4b536ebe0741aaa4"
+    payee = "0x333"
+
+    # Owner Get STRK on row A uses 10M of row A's 25M daily budget and increments nonce to 1
+    rows = authorize_row(
+        rows,
+        agent_key=row_a.agent_key,
+        amount=10_000_000,
+        token=TOKEN,
+        payee=OTHER,
+        now=NOW,
+        caller=OWNER,
+        nonce=0,
+    )
+    assert rows[row_a.agent_key].spent_today == 10_000_000
+    assert rows[row_a.agent_key].nonce == 1
+    assert rows[row_b.agent_key].spent_today == 0
+    assert rows[row_b.agent_key].nonce == 0
+
+    # Session-key spend on row A to proposal payee uses another 10M (total 20M <= 25M) and nonce 1 -> 2
+    sig_a = sign_session_spend(
+        priv_a,
+        agent_key=row_a.agent_key,
+        payee=payee,
+        amount=10_000_000,
+        nonce=1,
+        contract=contract,
+        chain_id=SN_SEPOLIA_CHAIN_ID,
+    )
+    rows = authorize_row(
+        rows,
+        agent_key=row_a.agent_key,
+        amount=10_000_000,
+        token=TOKEN,
+        payee=payee,
+        now=NOW,
+        nonce=1,
+        signature=sig_a,
+        contract=contract,
+        chain_id=SN_SEPOLIA_CHAIN_ID,
+    )
+    assert rows[row_a.agent_key].spent_today == 20_000_000
+    assert rows[row_a.agent_key].nonce == 2
+    assert rows[row_b.agent_key].spent_today == 0
+
+    # Replay with nonce 1 on row A is rejected
+    with pytest.raises(PolicyRejectedError, match="nonce"):
+        authorize_row(
+            rows,
+            agent_key=row_a.agent_key,
+            amount=5_000_000,
+            token=TOKEN,
+            payee=payee,
+            now=NOW,
+            nonce=1,
+            signature=sig_a,
+            contract=contract,
+            chain_id=SN_SEPOLIA_CHAIN_ID,
+        )
+
+    # Wrong key (priv_b signing for row_a) is rejected
+    bad_sig = sign_session_spend(
+        priv_b,
+        agent_key=row_a.agent_key,
+        payee=payee,
+        amount=5_000_000,
+        nonce=2,
+        contract=contract,
+        chain_id=SN_SEPOLIA_CHAIN_ID,
+    )
+    with pytest.raises(PolicyRejectedError, match="signature"):
+        authorize_row(
+            rows,
+            agent_key=row_a.agent_key,
+            amount=5_000_000,
+            token=TOKEN,
+            payee=payee,
+            now=NOW,
+            nonce=2,
+            signature=bad_sig,
+            contract=contract,
+            chain_id=SN_SEPOLIA_CHAIN_ID,
+        )
+
+    # Exceeding remaining daily budget (6M + 20M > 25M) on row A is rejected even with valid signature
+    over_daily_sig = sign_session_spend(
+        priv_a,
+        agent_key=row_a.agent_key,
+        payee=payee,
+        amount=6_000_000,
+        nonce=2,
+        contract=contract,
+        chain_id=SN_SEPOLIA_CHAIN_ID,
+    )
+    with pytest.raises(PolicyRejectedError, match="daily"):
+        authorize_row(
+            rows,
+            agent_key=row_a.agent_key,
+            amount=6_000_000,
+            token=TOKEN,
+            payee=payee,
+            now=NOW,
+            nonce=2,
+            signature=over_daily_sig,
+            contract=contract,
+            chain_id=SN_SEPOLIA_CHAIN_ID,
+        )
+
+    # Row B still has its full 25M daily budget untouched
+    sig_b = sign_session_spend(
+        priv_b,
+        agent_key=row_b.agent_key,
+        payee=payee,
+        amount=10_000_000,
+        nonce=0,
+        contract=contract,
+        chain_id=SN_SEPOLIA_CHAIN_ID,
+    )
+    rows = authorize_row(
+        rows,
+        agent_key=row_b.agent_key,
+        amount=10_000_000,
+        token=TOKEN,
+        payee=payee,
+        now=NOW,
+        nonce=0,
+        signature=sig_b,
+        contract=contract,
+        chain_id=SN_SEPOLIA_CHAIN_ID,
+    )
+    assert rows[row_b.agent_key].spent_today == 10_000_000
+
+
+@pytest.mark.anyio
+async def test_execute_funding_uses_session_spend_when_active_and_never_falls_back_to_usdc(monkeypatch):
+    from bson import Decimal128
+    from unittest.mock import AsyncMock, MagicMock, Mock
+    import services.ai_agent_service as agents_module
+
+    monkeypatch.setenv("WALLET_ENCRYPTION_KEY", "test-secret")
+    monkeypatch.setenv(
+        "STARKNET_POLICY_CONTRACT",
+        "0x04f1882a972a276e27b423cfadd29d24a75e798b60cc7d8d4b536ebe0741aaa4",
+    )
+    priv, pub = generate_session_keypair()
+    policy = policy_from_agent_config(
+        max_per_proposal=Decimal("10"),
+        daily_budget=Decimal("25"),
+        owner=OWNER,
+        token=TOKEN,
+        recipient=OWNER,
+        expires_at=int(Decimal("2000000000")),
+        session_public_key=pub,
+        decimals=18,
+        now=NOW,
+        agent_id="agent-strk",
+    )
+    stored_session = session_document(policy, encrypt_session_key(priv), decimals=18)
+
+    db = MagicMock()
+    agent_doc = {
+        "agent_id": "agent-strk",
+        "wallet_address": "0x" + "11" * 20,
+        "total_spent": Decimal128("0"),
+        "config": {"max_per_proposal": Decimal128("10"), "daily_budget": Decimal128("25")},
+        "starknet_session": stored_session,
+        "spending_history": [],
+    }
+    proposal_doc = {
+        "proposal_id": "prop-1",
+        "researcher_wallet": "0x" + "22" * 20,
+        "researcher_starknet_wallet": "0x0555",
+        "budget_raised": Decimal128("0"),
+        "budget_raised_strk": Decimal128("0"),
+    }
+    db.ai_agents.find_one = AsyncMock(return_value=agent_doc)
+    db.ai_agents.update_one = AsyncMock()
+    db.research_proposals.find_one = AsyncMock(return_value=proposal_doc)
+    db.research_proposals.update_one = AsyncMock()
+
+    motor = MagicMock()
+    motor.return_value.__getitem__.return_value = db
+    monkeypatch.setattr(agents_module, "AsyncIOMotorClient", motor)
+
+    wallet = Mock()
+    wallet.transfer_usdc = AsyncMock()
+    submitted_calls = []
+
+    async def fake_submit(contract, calldata, *, chain_id):
+        submitted_calls.append((contract, calldata, chain_id))
+        return "0xdeadbeef"
+
+    service = agents_module.AIAgentService(
+        agentkit_service=wallet, starknet_submit_fn=fake_submit
+    )
+    await service._execute_funding("agent-strk", "prop-1", Decimal("4"))
+    wallet.transfer_usdc.assert_not_awaited()
+    assert len(submitted_calls) == 1
+    assert submitted_calls[0][1][0] == agent_key_from_id("agent-strk")
+    assert submitted_calls[0][1][3] == "0x555"
+
+    # Over-cap session spend fails before submit and does NOT fall back to Base USDC
+    with pytest.raises(PolicyRejectedError, match="per_call"):
+        await service._execute_funding("agent-strk", "prop-1", Decimal("15"))
+    wallet.transfer_usdc.assert_not_awaited()
+
+    # Missing researcher_starknet_wallet while session is active raises ValueError and does NOT fall back to USDC
+    proposal_doc["researcher_starknet_wallet"] = None
+    with pytest.raises(ValueError, match="researcher_starknet_wallet"):
+        await service._execute_funding("agent-strk", "prop-1", Decimal("2"))
+    wallet.transfer_usdc.assert_not_awaited()
+

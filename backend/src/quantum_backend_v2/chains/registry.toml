@@ -45,7 +45,7 @@ enabled = true
 aliases = ["ethereum-sepolia"]
 rpc_env_var = "QB2_ETHEREUM_SEPOLIA_RPC_URL"
 public_rpc_url = "https://ethereum-sepolia-rpc.publicnode.com"
-capabilities = ["explorer_url", "verify_transaction", "get_price"]
+capabilities = ["explorer_url", "verify_transaction", "get_price", "anchor_root"]
 
 [chains.provider_aliases]
 agentkit = "ethereum-sepolia"
@@ -100,7 +100,7 @@ testnet = true
 enabled = true
 aliases = ["starknet-sepolia"]
 rpc_env_var = "QB2_STARKNET_SEPOLIA_RPC_URL"
-public_rpc_url = "https://starknet-sepolia.public.blastapi.io/rpc/v0_8"
+public_rpc_url = "https://starknet-sepolia-rpc.publicnode.com"
 capabilities = ["explorer_url", "verify_transaction"]
 
 [chains.explorers]

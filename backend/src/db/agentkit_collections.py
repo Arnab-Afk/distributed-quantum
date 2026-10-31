@@ -131,9 +131,11 @@ class ResearchProposalDocument(Document):
     description: str
     researcher_id: str
     researcher_wallet: str
+    researcher_starknet_wallet: str | None = None
     methodology: str = ""
     budget_required: Decimal128  # Total USDC needed
     budget_raised: Decimal128 = Field(default_factory=lambda: Decimal128("0"))
+    budget_raised_strk: Decimal128 = Field(default_factory=lambda: Decimal128("0"))
     funding_threshold: Decimal128  # Minimum to unlock funds
     deadline: datetime
     status: Literal[

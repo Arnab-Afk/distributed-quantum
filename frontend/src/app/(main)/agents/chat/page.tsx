@@ -32,6 +32,7 @@ import { useStorageExports, type StorageExport } from "@/features/agentkit/hooks
 import { StorageExports } from "@/features/agentkit/components/storage-exports";
 import { AgentLlmProviderSelect } from "@/features/agentkit/components/agent-llm-provider-select";
 import { useAgentLlmProvider } from "@/features/agentkit";
+import { OpenSessionDialog } from "@/features/starknet/open-session-dialog";
 import { TestSpendDialog } from "@/features/starknet/test-spend-dialog";
 import { StarknetSessionPanel } from "@/features/starknet/session-panel";
 
@@ -77,6 +78,7 @@ function AgentsChatInner() {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [introShown, setIntroShown]           = useState(false);
   const [testSpendOpen, setTestSpendOpen]     = useState(false);
+  const [openSession, setOpenSession]         = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const { data: ownedAgents = [], isLoading: agentsLoading } = useAgents();
@@ -202,7 +204,16 @@ function AgentsChatInner() {
 
   const send = async (text: string) => {
     if (!text.trim() || loading) return;
-    if (!urlNew && !urlAgentName && !urlSessionId && !activeSessionId && (!sessionsReady || sessions.length > 0)) return;
+    // Wait for session restore (effect below) before first send when this agent already has sessions.
+    if (
+      !urlNew &&
+      !urlAgentName &&
+      !urlSessionId &&
+      !activeSessionId &&
+      (!sessionsReady || agentSessions.length > 0)
+    ) {
+      return;
+    }
     storage.decision.reset();
 
     const pending = storage.data?.find(p => p.status === "pending");
@@ -327,14 +338,24 @@ function AgentsChatInner() {
               session={activeAgent.starknet_session}
               variant="header"
               onTestSpend={() => setTestSpendOpen(true)}
+              onOpenSession={() => setOpenSession(true)}
             />
           )}
         </div>
       </PageHeader>
 
+      {(urlAgentId ?? activeAgent?.agent_id) && openSession && (
+        <OpenSessionDialog
+          agentId={(urlAgentId ?? activeAgent?.agent_id) as string}
+          open={openSession}
+          onOpenChange={setOpenSession}
+        />
+      )}
+
       {(urlAgentId ?? activeAgent?.agent_id) && testSpendOpen && (
         <TestSpendDialog
           agentId={(urlAgentId ?? activeAgent?.agent_id) as string}
+          session={activeAgent?.starknet_session}
           open={testSpendOpen}
           onOpenChange={setTestSpendOpen}
         />

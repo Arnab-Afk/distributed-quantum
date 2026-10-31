@@ -80,16 +80,17 @@ class StarknetRpcAdapter:
             return TransactionVerification(status="not_found")
         execution = str(receipt.get("execution_status", ""))
         finality = str(receipt.get("finality_status", ""))
-        block = receipt.get("block_number")
-        block_number = int(block) if isinstance(block, int) else None
+        block_number = _felt_int(receipt.get("block_number"))
         if execution == "REVERTED":
             return TransactionVerification(status="failed", block_number=block_number)
         if execution != "SUCCEEDED" or finality not in {"ACCEPTED_ON_L2", "ACCEPTED_ON_L1"}:
             return TransactionVerification(status="pending", block_number=block_number)
-        head = self.rpc.request("starknet_blockNumber", [])
-        confirmations = 0
-        if isinstance(head, int):
-            confirmations = max(0, head - int(block_number or 0) + 1)
+        head = _felt_int(self.rpc.request("starknet_blockNumber", []))
+        if head is None or block_number is None:
+            return TransactionVerification(
+                status="confirmed", block_number=block_number, confirmations=1
+            )
+        confirmations = max(0, head - block_number + 1)
         status: TransactionStatus = (
             "confirmed" if confirmations >= min_confirmations else "pending"
         )
@@ -107,6 +108,23 @@ class StarknetRpcAdapter:
         ):
             raise ChainMismatchError("RPC endpoint serves a different chain")
         self._chain_checked = True
+
+
+def _felt_int(value: object) -> int | None:
+    """JSON-RPC block numbers arrive as ints or hex strings."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(text, 16) if text.lower().startswith("0x") else int(text)
+        except ValueError:
+            return None
+    return None
 
 
 def _chain_id(value: object) -> int:

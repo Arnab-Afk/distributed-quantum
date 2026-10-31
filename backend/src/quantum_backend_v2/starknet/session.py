@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import logging
 import os
 import re
 from collections.abc import Mapping
@@ -13,11 +14,33 @@ from typing import Any
 from cryptography.fernet import Fernet
 
 try:
+    from starknet_py.hash.selector import get_selector_from_name  # type: ignore[import-not-found]
+    from starknet_py.net.account.account import Account  # type: ignore[import-not-found]
+    from starknet_py.net.client_models import Call  # type: ignore[import-not-found]
+    from starknet_py.net.full_node_client import FullNodeClient  # type: ignore[import-not-found]
+    from starknet_py.net.models.chains import StarknetChainId  # type: ignore[import-not-found]
     from starknet_py.net.signer.stark_curve_signer import KeyPair  # type: ignore[import-not-found]
 except ImportError:
+    get_selector_from_name = None
+    Account = None
+    Call = None
+    FullNodeClient = None
+    StarknetChainId = None
     KeyPair = None
 
-from quantum_backend_v2.starknet.policy import SpendingPolicy
+from quantum_backend_v2.chains.loader import load_chain_registry
+from quantum_backend_v2.chains.rpc import resolve_rpc_url
+from quantum_backend_v2.chains.starknet import SN_SEPOLIA_CHAIN_ID
+from quantum_backend_v2.starknet.calldata import policy_contract_address, spend_calldata
+from quantum_backend_v2.starknet.policy import (
+    SpendingPolicy,
+    agent_key_from_id,
+    authorize,
+    felt_address,
+    sign_session_spend,
+)
+
+logger = logging.getLogger(__name__)
 
 _HIDDEN = "session_key_encrypted"
 _TX_HASH = re.compile(r"0x[0-9a-fA-F]{1,64}")
@@ -39,12 +62,22 @@ def encrypt_session_key(private_hex: str, *, secret: str | None = None) -> str:
     return fernet.encrypt(private_hex.encode()).decode()
 
 
+def decrypt_session_key(encrypted_key: str, *, secret: str | None = None) -> str:
+    key = secret if secret is not None else os.getenv("WALLET_ENCRYPTION_KEY", "")
+    if not key.strip():
+        raise RuntimeError("WALLET_ENCRYPTION_KEY is not set")
+    fernet = Fernet(base64.urlsafe_b64encode(hashlib.sha256(key.encode()).digest()))
+    return fernet.decrypt(encrypted_key.encode()).decode()
+
+
 def session_document(
     policy: SpendingPolicy, encrypted_key: str, *, decimals: int
 ) -> dict[str, Any]:
     return {
         "decimals": decimals,
         "chain_id": "starknet:SN_SEPOLIA",
+        "agent_key": policy.agent_key,
+        "nonce": policy.nonce,
         "owner": policy.owner,
         "token": policy.token,
         "recipient": policy.recipient,
@@ -59,7 +92,15 @@ def session_document(
     }
 
 
-def policy_from_document(stored: Mapping[str, Any]) -> SpendingPolicy:
+def policy_from_document(
+    stored: Mapping[str, Any], *, agent_id: str | None = None
+) -> SpendingPolicy:
+    raw_agent_key = stored.get("agent_key")
+    resolved_agent_key = (
+        felt_address(str(raw_agent_key))
+        if isinstance(raw_agent_key, str) and raw_agent_key.strip()
+        else (agent_key_from_id(agent_id) if agent_id else "0x1")
+    )
     return SpendingPolicy(
         owner=str(stored["owner"]),
         token=str(stored["token"]),
@@ -71,6 +112,8 @@ def policy_from_document(stored: Mapping[str, Any]) -> SpendingPolicy:
         day_index=int(stored["day_index"]),
         spent_today=int(stored["spent_today"]),
         session_public_key=str(stored["session_public_key"]),
+        agent_key=resolved_agent_key,
+        nonce=int(stored.get("nonce", 0)),
     )
 
 
@@ -175,7 +218,12 @@ def refresh_call_statuses(
         try:
             status = str(verify(tx_hash))
             updated = apply_call_status(updated, tx_hash=tx_hash, status=status, now=now)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "Starknet receipt check failed for %s: %s",
+                tx_hash,
+                exc,
+            )
             continue
     return updated
 
@@ -194,4 +242,127 @@ def public_session(stored: Mapping[str, Any] | None, *, now: int) -> dict[str, A
     visible = {key: value for key, value in stored.items() if key != _HIDDEN}
     visible["status"] = status
     return visible
+
+
+_SN_MAIN_CHAIN_ID = int.from_bytes(b"SN_MAIN", "big")
+
+
+def _chain_id_int(chain_id: str) -> int:
+    if chain_id == "starknet:SN_MAIN":
+        return _SN_MAIN_CHAIN_ID
+    return SN_SEPOLIA_CHAIN_ID
+
+
+async def _default_relayer_submit(
+    contract: str, calldata: list[str], *, chain_id: str
+) -> str:
+    relayer_address = os.getenv("STARKNET_RELAYER_ADDRESS", "").strip()
+    relayer_key = os.getenv("STARKNET_RELAYER_PRIVATE_KEY", "").strip()
+    if not relayer_address or not relayer_key:
+        raise RuntimeError(
+            "STARKNET_RELAYER_ADDRESS and STARKNET_RELAYER_PRIVATE_KEY are required for session-key spends"
+        )
+    if (
+        Account is None
+        or FullNodeClient is None
+        or Call is None
+        or get_selector_from_name is None
+        or StarknetChainId is None
+        or KeyPair is None
+    ):
+        raise RuntimeError("starknet.py is required for session-key spends")
+    chain = load_chain_registry().resolve(chain_id)
+    rpc_url = resolve_rpc_url(chain)
+    sn_chain = (
+        StarknetChainId.MAINNET
+        if chain.chain_id == "starknet:SN_MAIN"
+        else StarknetChainId.SEPOLIA
+    )
+    client = FullNodeClient(node_url=rpc_url)
+    key_pair = KeyPair.from_private_key(
+        int(relayer_key, 16) if relayer_key.startswith(("0x", "0X")) else int(relayer_key, 16)
+    )
+    account = Account(
+        address=int(felt_address(relayer_address), 16),
+        client=client,
+        key_pair=key_pair,
+        chain=sn_chain,
+    )
+    int_calldata = [
+        int(item, 16) if item.startswith(("0x", "0X")) else int(item)
+        for item in calldata
+    ]
+    call = Call(
+        to_addr=int(felt_address(contract), 16),
+        selector=get_selector_from_name("spend"),
+        calldata=int_calldata,
+    )
+    sent = await account.execute_v3(calls=call, auto_estimate=True)
+    return hex(sent.transaction_hash)
+
+
+async def submit_session_spend(
+    stored: Mapping[str, Any],
+    *,
+    agent_id: str,
+    amount_strk: Decimal,
+    payee: str,
+    now: int,
+    submit_fn=None,
+) -> tuple[dict[str, Any], str]:
+    """Sign a session-key spend, submit it via the relayer, and return `(updated_session, tx_hash)`."""
+    policy = policy_from_document(stored, agent_id=agent_id)
+    decimals = int(stored.get("decimals", 18))
+    amount_units = int(amount_strk * (Decimal(10) ** decimals))
+    contract = policy_contract_address()
+    chain_id_str = str(stored.get("chain_id") or "starknet:SN_SEPOLIA")
+    chain_id_num = _chain_id_int(chain_id_str)
+    encrypted = str(stored.get(_HIDDEN) or "")
+    if not encrypted:
+        raise RuntimeError("Session private key is missing")
+    private_hex = decrypt_session_key(encrypted)
+    r_sig, s_sig = sign_session_spend(
+        private_hex,
+        agent_key=policy.agent_key,
+        payee=payee,
+        amount=amount_units,
+        nonce=policy.nonce,
+        contract=contract,
+        chain_id=chain_id_num,
+    )
+    next_policy = authorize(
+        policy,
+        amount=amount_units,
+        token=policy.token,
+        recipient=payee,
+        now=now,
+        nonce=policy.nonce,
+        signature=(r_sig, s_sig),
+        contract=contract,
+        chain_id=chain_id_num,
+    )
+    calldata = spend_calldata(
+        amount_units,
+        agent_key=policy.agent_key,
+        payee=payee,
+        nonce=policy.nonce,
+        signature=(r_sig, s_sig),
+        session_key_spend=True,
+    )
+    sender = submit_fn or _default_relayer_submit
+    tx_hash = await sender(contract, calldata, chain_id=chain_id_str)
+    updated = dict(stored)
+    updated["agent_key"] = next_policy.agent_key
+    updated["day_index"] = next_policy.day_index
+    updated["spent_today"] = str(next_policy.spent_today)
+    updated["nonce"] = next_policy.nonce
+    updated = note_submitted_tx(
+        updated,
+        kind="spend",
+        tx_hash=tx_hash,
+        amount=str(amount_strk),
+        now=now,
+    )
+    return updated, tx_hash
+
 
