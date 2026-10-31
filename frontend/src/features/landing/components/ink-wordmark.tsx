@@ -261,16 +261,31 @@ export function InkWordmark({ word }: { word: string }) {
     };
 
     let raf = 0;
-    let visible = true;
+    let visible = false;
+    // The first time the footer comes into view, one stroke of ink sweeps through the word,
+    // so it reads as inkable on touch screens too; then it lets go like any other stroke.
+    let sweepFrom = -1;
+    const SWEEP = 1.8;
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       if (!visible) return;
       const t = (now - start) / 1000;
       const dt = last ? Math.min(0.033, t - last) : 0.016;
       last = t;
+      if (sweepFrom < 0) sweepFrom = t;
+      const k = (t - sweepFrom) / SWEEP;
+      if (k <= 1 && !pointer?.moved) {
+        const e = 1 - Math.pow(1 - k, 3);
+        const x = W * (0.04 + 0.92 * e);
+        const y = H * (0.5 + 0.18 * Math.sin(e * Math.PI * 2.2));
+        const prev = sweepPoint ?? { x, y };
+        splat((x / W) * NX, (y / H) * NY, ((x - prev.x) / W) * 6, ((y - prev.y) / H) * 6, 1.1, 4.6);
+        sweepPoint = { x, y };
+      }
       step(dt * 0.6);
       draw();
     };
+    let sweepPoint: { x: number; y: number } | null = null;
 
     const onMove = (e: PointerEvent) => {
       const box = el.getBoundingClientRect();

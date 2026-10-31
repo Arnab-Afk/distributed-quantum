@@ -2701,11 +2701,17 @@
 
 /* Footer: the call to action and the inkable wordmark side by side, at the same scale;
    below them the product note and the link columns. */
+/* Heading and wordmark share the first row, so the logo centres on the lines of type;
+   the button sits beneath the heading. */
 .footerTop {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  grid-template-areas:
+    "heading mark"
+    "action .";
   align-items: center;
-  gap: clamp(2rem, 4vw, 4rem);
+  column-gap: clamp(2rem, 4vw, 4rem);
+  row-gap: 0.75rem;
   width: var(--inner);
   margin: 0 auto;
   padding: var(--space) var(--inset) clamp(3rem, 5vw, 4.5rem);
@@ -2713,9 +2719,21 @@
 }
 
 .footerCta {
-  display: grid;
-  justify-items: start;
-  gap: 2rem;
+  display: contents;
+}
+
+.footerCta .footerHeading {
+  grid-area: heading;
+}
+
+.footerCta .pill {
+  grid-area: action;
+  justify-self: start;
+  align-self: start;
+}
+
+.footerTop .inkFrame {
+  grid-area: mark;
 }
 
 .footerHeading {
@@ -3188,6 +3206,13 @@
   }
 
   /* Narrow screens: text over a shorter stage, the stack below. */
+  .footerTop {
+    grid-template-areas:
+      "heading"
+      "action"
+      "mark";
+  }
+
   .archPin {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);

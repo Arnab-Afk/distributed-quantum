@@ -198,17 +198,15 @@ export function LandingPage() {
                 <span className={styles.memberSocial}>
                   {(
                     [
-                      ["X", member.x, XIcon],
-                      ["LinkedIn", member.linkedin, LinkedInIcon],
-                      ["Website", member.website, Globe],
+                      ["X", member.x, XIcon, `${member.name} on X`],
+                      ["LinkedIn", member.linkedin, LinkedInIcon, `${member.name} on LinkedIn`],
+                      ["Website", member.website, Globe, `${member.name}'s website`],
                     ] as const
-                  ).map(([label, href, Icon]) =>
+                  ).map(([label, href, Icon, name]) =>
                     href ? (
                       <External key={label} href={href} className={styles.memberSocialLink}>
                         <Icon aria-hidden="true" />
-                        <span className={styles.srOnly}>
-                          {member.name} on {label}
-                        </span>
+                        <span className={styles.srOnly}>{name}</span>
                       </External>
                     ) : (
                       <span key={label} className={styles.memberSocialEmpty} title={`${label} link coming soon`}>

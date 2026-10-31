@@ -214,7 +214,7 @@ export const RESULTS = {
       { key: "run", title: "Run.", body: "See every fragment as it runs across the mesh." },
       { key: "scale", title: "Scale.", body: "Where QAOA on the mesh overtakes classical search." },
     ],
-    loop: { title: "Every result comes back with a receipt.", body: "The next run begins." },
+    loop: { title: "Then the mesh runs again.", body: "Same devices, next circuit." },
     rows: ["Circuits", "Portfolios", "Risk & options", "Anchoring", "Pharma"],
     runAxis: ["Earlier", "Recent"],
     runNote: "Illustrative",
@@ -468,5 +468,5 @@ export const FOOTER = {
     },
   ],
   wordmark: "QMesh",
-  copy: "©2026 QMesh. Open source under Apache 2.0. Simulated qubits, real network.",
+  copy: "© 2026 QMesh. Open source under Apache 2.0.",
 } as const;
