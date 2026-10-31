@@ -1,6 +1,5 @@
 import { EXTERNAL_LINKS, ROUTES } from "@/constants";
 
-
 export const REPOSITORY_URL = EXTERNAL_LINKS.REPOSITORY;
 export const RESEARCH_URL = EXTERNAL_LINKS.RESEARCH_PAPER;
 export const DEMO_URL = EXTERNAL_LINKS.DEMO_VIDEO;
@@ -26,13 +25,15 @@ export const HERO = {
   primary: "Watch the demo",
   secondary: "Open the console",
   ribbon: "Runs on anything that runs Python",
-  sceneCaption: "Six spare devices across the world, one machine · illustrative locations, simulated qubits",
+  sceneCaption:
+    "Six spare devices across the world, one machine · illustrative locations, simulated qubits",
   scene:
     "Isometric world map with six floating peers pinned over San Francisco, São Paulo, Cape Town, London, Mumbai and Tokyo: a laptop, an old phone, a Raspberry Pi cluster, an old CRT desktop, a Raspberry Pi and a mini PC, linked by arcs over the map. Circuit fragments arc down from one large qubit sphere to each peer, a small qubit above each one evolves and is measured, and the bits arc back up into the sphere: the mesh acting as one machine, with a receipt for the result.",
 } as const;
 
 export const GLYPHS = {
-  label: "A drifting field of 0 and 1 characters in diagonal bands; moving the pointer brightens a short trail.",
+  label:
+    "A drifting field of 0 and 1 characters in diagonal bands; moving the pointer brightens a short trail.",
 } as const;
 
 export const BUILT_ON = {
@@ -78,7 +79,11 @@ export interface Layer {
   callouts: readonly string[];
 }
 
-export const ARCHITECTURE: { title: [string, string]; body: string; layers: ReadonlyArray<Layer> } = {
+export const ARCHITECTURE: {
+  title: [string, string];
+  body: string;
+  layers: ReadonlyArray<Layer>;
+} = {
   title: ["Quantum infrastructure built in", "layers"],
   body: "One coordinator, a mesh of ordinary devices, a payment per request and a receipt for every result.",
   layers: [
@@ -87,14 +92,24 @@ export const ARCHITECTURE: { title: [string, string]; body: string; layers: Read
       name: "Your app",
       title: "Submit",
       body: "Send OpenQASM from the console or the API, and get a receipt back.",
-      callouts: ["Operator console", "Job status", "OpenQASM editor", "REST API"],
+      callouts: [
+        "Operator console",
+        "Job status",
+        "OpenQASM editor",
+        "REST API",
+      ],
     },
     {
       key: "coordinator",
       name: "Coordinator",
       title: "Plan",
       body: "The coordinator turns each circuit into a distributed execution plan.",
-      callouts: ["Coordinator", "Execution plan", "Circuit fragments", "Peer reservation"],
+      callouts: [
+        "Coordinator",
+        "Execution plan",
+        "Circuit fragments",
+        "Peer reservation",
+      ],
     },
     {
       key: "payments",
@@ -108,14 +123,26 @@ export const ARCHITECTURE: { title: [string, string]; body: string; layers: Read
       name: "Peer mesh",
       title: "Run",
       body: "Worker peers on py-libp2p run their fragments with Qiskit.",
-      callouts: ["Laptop", "Raspberry Pi", "Old desktop", "Old phone", "Mini PC", "libp2p links"],
+      callouts: [
+        "Laptop",
+        "Raspberry Pi",
+        "Old desktop",
+        "Old phone",
+        "Mini PC",
+        "libp2p links",
+      ],
     },
     {
       key: "provenance",
       name: "Provenance",
       title: "Prove",
       body: "Every result becomes a provenance bundle, pinned on IPFS by content.",
-      callouts: ["Merkle root", "Branch hashes", "Result bundles", "Pinned by CID"],
+      callouts: [
+        "Merkle root",
+        "Branch hashes",
+        "Result bundles",
+        "Pinned by CID",
+      ],
     },
   ],
 };
@@ -176,7 +203,11 @@ export const WORKLOADS: { title: string; items: ReadonlyArray<Workload> } = {
     {
       title: "Provenance anchoring",
       body: "Batches of provenance bundles become one Merkle root in a single Ethereum Sepolia transaction.",
-      points: ["Bundles pinned on IPFS", "One root per batch", "Counted once final"],
+      points: [
+        "Bundles pinned on IPFS",
+        "One root per batch",
+        "Counted once final",
+      ],
       status: "In review",
       href: DOCS.PROVENANCE,
       action: "Provenance docs",
@@ -187,7 +218,11 @@ export const WORKLOADS: { title: string; items: ReadonlyArray<Workload> } = {
     {
       title: "Drug-discovery pipeline",
       body: "Molecular filters with simulated quantum stages, for early research only.",
-      points: ["Molecular filters", "Simulated quantum stages", "ADMET heuristics"],
+      points: [
+        "Molecular filters",
+        "Simulated quantum stages",
+        "ADMET heuristics",
+      ],
       status: "Experimental",
       href: DOCS.OVERVIEW,
       action: "Overview",
@@ -210,11 +245,26 @@ export const RESULTS = {
     point: "One machine",
     pointLoop: "One machine, next run",
     phases: [
-      { key: "mesh", title: "Mesh.", body: "Bring spare devices together into one machine." },
-      { key: "run", title: "Run.", body: "See every fragment as it runs across the mesh." },
-      { key: "scale", title: "Scale.", body: "Where QAOA on the mesh overtakes classical search." },
+      {
+        key: "mesh",
+        title: "Mesh.",
+        body: "Bring spare devices together into one machine.",
+      },
+      {
+        key: "run",
+        title: "Run.",
+        body: "See every fragment as it runs across the mesh.",
+      },
+      {
+        key: "scale",
+        title: "Scale.",
+        body: "Where QAOA on the mesh overtakes classical search.",
+      },
     ],
-    loop: { title: "Then the mesh runs again.", body: "Same devices, next circuit." },
+    loop: {
+      title: "Then the mesh runs again.",
+      body: "Same devices, next circuit.",
+    },
     rows: ["Circuits", "Portfolios", "Risk & options", "Anchoring", "Pharma"],
     runAxis: ["Earlier", "Recent"],
     runNote: "Illustrative",
@@ -232,12 +282,33 @@ export const RESULTS = {
     action: "Read the paper",
   },
   stats: [
-    { value: "97", suffix: "%", title: "Run time in classical search", body: "Most of a QAOA run is COBYLA parameter search, not the circuit." },
-    { value: "1.03", suffix: "×", title: "Ceiling from more nodes", body: "Amdahl's law caps what extra quantum peers can add to one run." },
-    { value: "3.2", suffix: "×", title: "Faster at 40 assets", body: "Where QAOA first overtakes the classical baseline." },
-    { value: "9.5", suffix: "×", title: "Faster at 60 assets", body: "The gap widens as the problem grows." },
+    {
+      value: "97",
+      suffix: "%",
+      title: "Run time in classical search",
+      body: "Most of a QAOA run is COBYLA parameter search, not the circuit.",
+    },
+    {
+      value: "1.03",
+      suffix: "×",
+      title: "Ceiling from more nodes",
+      body: "Amdahl's law caps what extra quantum peers can add to one run.",
+    },
+    {
+      value: "3.2",
+      suffix: "×",
+      title: "Faster at 40 assets",
+      body: "Where QAOA first overtakes the classical baseline.",
+    },
+    {
+      value: "9.5",
+      suffix: "×",
+      title: "Faster at 60 assets",
+      body: "The gap widens as the problem grows.",
+    },
   ],
-  footnote: "Simulator benchmarks from the QMesh research draft. QMesh runs on Qiskit statevector simulation, not quantum hardware.",
+  footnote:
+    "Simulator benchmarks from the QMesh research draft. QMesh runs on Qiskit statevector simulation, not quantum hardware.",
 } as const;
 
 /** A run's receipt, printed line by line on scroll. Every line is a real step in the codebase. */
@@ -308,14 +379,78 @@ export const REPO = {
   body: "One open-source monorepo: the console, the coordinator, the peers, and the payment and provenance layers they share.",
   github: "View on GitHub",
   parts: [
-    { key: "console", group: "Platform", title: "Operator console", body: "Peers, jobs and quantum analysis, live.", path: "frontend/src/features/dashboard", href: tree("frontend/src/features/dashboard"), run: "cd frontend && bun run dev" },
-    { key: "coordinator", group: "Platform", title: "Coordinator API", body: "FastAPI service that plans circuits and routes fragments.", path: "backend/src/quantum_backend_v2/api", href: tree("backend/src/quantum_backend_v2/api"), run: "cd backend && make run" },
-    { key: "peers", group: "Platform", title: "Worker peers", body: "py-libp2p processes that run fragments with Qiskit.", path: "scripts/node-starter-template.py", href: blob("scripts/node-starter-template.py"), run: "python scripts/node-starter-template.py --coordinator <MULTIADDR> --label my-node" },
-    { key: "registry", group: "Platform", title: "Chain registry", body: "Testnet metadata behind one reviewed file.", path: "backend/src/quantum_backend_v2/chains/registry.toml", href: blob("backend/src/quantum_backend_v2/chains/registry.toml"), run: "GET /api/v1/chains" },
-    { key: "x402", group: "Trust", title: "x402 payments", body: "Pay per request in Algorand USDC on TestNet.", path: "frontend/src/features/x402", href: tree("frontend/src/features/x402"), run: "POST /api/x402/quantum/runs" },
-    { key: "provenance", group: "Trust", title: "Provenance bundles", body: "Hashed inputs, plan and results for every run.", path: "backend/src/quantum_backend_v2/provenance", href: tree("backend/src/quantum_backend_v2/provenance"), run: "GET /api/v1/provenance/{bundle_id}/verify" },
-    { key: "benchmarks", group: "Research", title: "Benchmarks", body: "QAOA against classical, on public datasets.", path: "backend/scripts", href: tree("backend/scripts"), run: "python backend/scripts/benchmark_massive_dataset.py" },
-    { key: "paper", group: "Research", title: "Research paper", body: "The analysis behind every number on this page.", path: "QMeshPy/documentations · research/RESEARCH_PAPER_DRAFT.md", href: RESEARCH_URL, run: "Read the draft" },
+    {
+      key: "console",
+      group: "Platform",
+      title: "Operator console",
+      body: "Peers, jobs and quantum analysis, live.",
+      path: "frontend/src/features/dashboard",
+      href: tree("frontend/src/features/dashboard"),
+      run: "cd frontend && bun run dev",
+    },
+    {
+      key: "coordinator",
+      group: "Platform",
+      title: "Coordinator API",
+      body: "FastAPI service that plans circuits and routes fragments.",
+      path: "backend/src/quantum_backend_v2/api",
+      href: tree("backend/src/quantum_backend_v2/api"),
+      run: "cd backend && make run",
+    },
+    {
+      key: "peers",
+      group: "Platform",
+      title: "Worker peers",
+      body: "py-libp2p processes that run fragments with Qiskit.",
+      path: "scripts/node-starter-template.py",
+      href: blob("scripts/node-starter-template.py"),
+      run: "python scripts/node-starter-template.py --coordinator <MULTIADDR> --label my-node",
+    },
+    {
+      key: "registry",
+      group: "Platform",
+      title: "Chain registry",
+      body: "Testnet metadata behind one reviewed file.",
+      path: "backend/src/quantum_backend_v2/chains/registry.toml",
+      href: blob("backend/src/quantum_backend_v2/chains/registry.toml"),
+      run: "GET /api/v1/chains",
+    },
+    {
+      key: "x402",
+      group: "Trust",
+      title: "x402 payments",
+      body: "Pay per request in Algorand USDC on TestNet.",
+      path: "frontend/src/features/x402",
+      href: tree("frontend/src/features/x402"),
+      run: "POST /api/x402/quantum/runs",
+    },
+    {
+      key: "provenance",
+      group: "Trust",
+      title: "Provenance bundles",
+      body: "Hashed inputs, plan and results for every run.",
+      path: "backend/src/quantum_backend_v2/provenance",
+      href: tree("backend/src/quantum_backend_v2/provenance"),
+      run: "GET /api/v1/provenance/{bundle_id}/verify",
+    },
+    {
+      key: "benchmarks",
+      group: "Research",
+      title: "Benchmarks",
+      body: "QAOA against classical, on public datasets.",
+      path: "backend/scripts",
+      href: tree("backend/scripts"),
+      run: "python backend/scripts/benchmark_massive_dataset.py",
+    },
+    {
+      key: "paper",
+      group: "Research",
+      title: "Research paper",
+      body: "The analysis behind every number on this page.",
+      path: "QMeshPy/documentations · research/RESEARCH_PAPER_DRAFT.md",
+      href: RESEARCH_URL,
+      run: "Read the draft",
+    },
   ] satisfies ReadonlyArray<RepoPart>,
 } as const;
 
@@ -329,7 +464,12 @@ export const START = {
       title: "Call it",
       body: "Submit a circuit to the paid route. It answers 402 until the run is paid in Algorand USDC.",
       command: `curl -X POST "$QMESH/api/x402/quantum/runs" -H "Content-Type: application/json" -d '{"circuit": "OPENQASM 2.0; …"}'`,
-      steps: ["POST /api/x402/quantum/runs", "402 Payment Required", "Pay in USDC · Algorand TestNet", "201 Created { job_id, status }"],
+      steps: [
+        "POST /api/x402/quantum/runs",
+        "402 Payment Required",
+        "Pay in USDC · Algorand TestNet",
+        "201 Created { job_id, status }",
+      ],
       href: DOCS.X402,
       action: "x402 docs",
     },
@@ -338,7 +478,12 @@ export const START = {
       title: "Run it",
       body: "Bring up the coordinator and the console locally, from a clone of the repository.",
       command: "cd backend && make run\ncd frontend && bun run dev",
-      steps: ["Clone the repository", "make run (coordinator)", "bun run dev (console)", "Open the console"],
+      steps: [
+        "Clone the repository",
+        "make run (coordinator)",
+        "bun run dev (console)",
+        "Open the console",
+      ],
       href: DOCS.BACKEND,
       action: "Backend README",
     },
@@ -346,8 +491,14 @@ export const START = {
       key: "power",
       title: "Power it",
       body: "Turn a spare machine into a worker peer that joins the mesh and runs fragments.",
-      command: "python scripts/node-starter-template.py --coordinator <MULTIADDR> --label my-node",
-      steps: ["Point at a coordinator", "Peer joins over libp2p", "Advertises what it can run", "Receives fragments"],
+      command:
+        "python scripts/node-starter-template.py --coordinator <MULTIADDR> --label my-node",
+      steps: [
+        "Point at a coordinator",
+        "Peer joins over libp2p",
+        "Advertises what it can run",
+        "Receives fragments",
+      ],
       href: blob("scripts/node-starter-template.py"),
       action: "View the script",
     },
@@ -369,13 +520,26 @@ export interface TeamMember {
 }
 
 // Seeded from the repository's commit history. Edit roles and add people here.
-export const TEAM: { title: string; body: string; members: ReadonlyArray<TeamMember> } = {
+export const TEAM: {
+  title: string;
+  body: string;
+  members: ReadonlyArray<TeamMember>;
+} = {
   title: "The people building the mesh",
   body: "QMesh is built in the open by its founders and contributors.",
   members: [
     { name: "Soham Bhoir", role: "Co-founder", github: "Winter-Soren" },
-    { name: "Johana Moran", role: "Co-founder" },
-    { name: "Manu Sheel Gupta", role: "Co-founder", github: "seetadev" },
+    {
+      name: "Johana Moran",
+      role: "Co-founder",
+      linkedin: "https://www.linkedin.com/in/johanna-moran-46580610/",
+    },
+    {
+      name: "Manu Sheel Gupta",
+      role: "Co-founder",
+      github: "seetadev",
+      x: "https://x.com/manusheel",
+    },
     { name: "Harshal Dulera", role: "Contributor", github: "harshaldulera" },
     {
       name: "Saish Korgaonkar",
@@ -411,23 +575,28 @@ export const FAQ = {
   items: [
     {
       question: "Does QMesh run on quantum hardware?",
-      answer: "No. Circuits run on Qiskit statevector simulation across worker peers. The network, payments and provenance are real; the qubits are simulated.",
+      answer:
+        "No. Circuits run on Qiskit statevector simulation across worker peers. The network, payments and provenance are real; the qubits are simulated.",
     },
     {
       question: "What is a peer?",
-      answer: "A process that advertises quantum services over libp2p. The coordinator discovers peers, reserves capacity on them and sends them circuit fragments.",
+      answer:
+        "A process that advertises quantum services over libp2p. The coordinator discovers peers, reserves capacity on them and sends them circuit fragments.",
     },
     {
       question: "How do I know a result wasn't changed?",
-      answer: "Each run produces a provenance bundle that hashes its inputs, plan and results. You can re-check it locally and fetch it from IPFS by CID.",
+      answer:
+        "Each run produces a provenance bundle that hashes its inputs, plan and results. You can re-check it locally and fetch it from IPFS by CID.",
     },
     {
       question: "Does it touch real money or mainnet?",
-      answer: "No. Every chain QMesh writes to is a testnet. Robinhood Chain price feeds are only read, never traded.",
+      answer:
+        "No. Every chain QMesh writes to is a testnet. Robinhood Chain price feeds are only read, never traded.",
     },
     {
       question: "Is it open source?",
-      answer: "Yes. The coordinator, workers, console and contracts are on GitHub under Apache 2.0.",
+      answer:
+        "Yes. The coordinator, workers, console and contracts are on GitHub under Apache 2.0.",
     },
   ],
 } as const;
@@ -438,8 +607,10 @@ export const CLOSING = {
 } as const;
 
 export const FOOTER = {
-  blurb: "Quantum computation as discoverable, payable and verifiable network services.",
-  scope: "Open-source research platform. Simulated qubits, real network, testnets only.",
+  blurb:
+    "Quantum computation as discoverable, payable and verifiable network services.",
+  scope:
+    "Open-source research platform. Simulated qubits, real network, testnets only.",
   columns: [
     {
       title: "Product",
