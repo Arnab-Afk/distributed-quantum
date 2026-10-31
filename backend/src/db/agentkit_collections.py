@@ -195,6 +195,7 @@ class AIAgentDocument(Document):
     config: dict[str, Any] = Field(default_factory=dict)  # {auto_fund: bool, max_per_tx: Decimal128, ...}
     spending_history: list[dict[str, Any]] = Field(default_factory=list)  # SpendingHistoryRecord array
     total_spent: Decimal128 = Field(default_factory=lambda: Decimal128("0"))
+    starknet_session: dict[str, Any] | None = None
     created_at: datetime = Field(default_factory=_utc_now)
     updated_at: datetime = Field(default_factory=_utc_now)
 
