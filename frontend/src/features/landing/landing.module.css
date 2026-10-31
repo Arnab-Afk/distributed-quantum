@@ -976,60 +976,14 @@
 
 /* ── Workloads ── */
 
-.workloads {
-  display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: clamp(2rem, 5vw, 4.5rem);
-  margin-top: 3rem;
-}
 
-.workloadList {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
-.workloadList > li {
-  border-bottom: 1px solid var(--hairline-soft);
-}
 
-.workloadToggle {
-  display: block;
-  width: 100%;
-  padding: 1rem 0;
-  border: 0;
-  background: none;
-  color: var(--ink-muted);
-  font-family: var(--font-display);
-  font-size: var(--text-title);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  text-align: left;
-  cursor: pointer;
-  transition: color 250ms var(--ease-out);
-}
 
 .workloadToggle:hover,
-.workloadList > li[data-open="true"] .workloadToggle {
-  color: var(--ink);
-}
 
-.workloadBody {
-  display: grid;
-  gap: 1rem;
-  padding-bottom: 1.5rem;
-}
 
-.workloadBody[hidden] {
-  display: none;
-}
 
-.workloadBody p {
-  margin: 0;
-  max-width: 30rem;
-  color: var(--ink-muted);
-  font-size: var(--text-ui);
-}
 
 .checks {
   display: grid;
@@ -1052,11 +1006,6 @@
   color: var(--accent-3);
 }
 
-.workloadFoot {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
 
 .statusTag {
   display: inline-flex;
@@ -1085,177 +1034,28 @@
   background: var(--ink-faint);
 }
 
-.workloadPanel {
-  position: relative;
-  min-height: 34rem;
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--radius);
-  background: var(--dots), var(--ground-sunk);
-}
 
-.workloadImage {
-  position: absolute;
-  inset: 0;
-}
 
-.cover {
-  object-fit: cover;
-}
 
-.workloadScrim {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, oklch(0.125 0.002 100 / 0.35), oklch(0.125 0.002 100 / 0.7));
-}
 
-.resultCard {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(22rem, 84%);
-  padding: 1.25rem;
-  translate: -50% -50%;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: oklch(0.13 0.002 100 / 0.9);
-  backdrop-filter: blur(10px);
-  box-shadow: 0 20px 50px oklch(0 0 0 / 0.45);
-  font-family: var(--font-data);
-}
 
-.resultHead {
-  display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
 
-.resultHead small {
-  display: block;
-  margin-top: 0.2rem;
-  color: var(--ink-muted);
-  font-size: var(--text-label);
-  letter-spacing: 0;
-  text-transform: none;
-}
 
-.resultBadge {
-  color: var(--accent-3);
-}
 
-.resultLabel {
-  display: block;
-  margin-top: 1.5rem;
-  color: var(--ink-muted);
-  font-size: var(--text-label);
-}
 
-.resultValue {
-  display: block;
-  margin: 0.15rem 0 1rem;
-  font-size: 2.25rem;
-  font-weight: 400;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-}
 
-.resultRows {
-  margin: 0;
-  font-size: var(--text-label);
-}
 
-.resultRows div {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.55rem 0;
-  border-top: 1px solid var(--hairline-soft);
-}
 
-.resultRows dt {
-  color: var(--ink-muted);
-}
 
-.resultRows dd {
-  margin: 0;
-}
 
-.resultCode {
-  margin: 0;
-  font-size: var(--text-label);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
 
-.viewToggle {
-  position: absolute;
-  bottom: 1rem;
-  left: 50%;
-  display: flex;
-  gap: 0.15rem;
-  padding: 0.2rem;
-  translate: -50% 0;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  background: oklch(0.13 0.002 100 / 0.85);
-}
 
-.viewToggle button {
-  height: 1.6rem;
-  padding: 0 0.75rem;
-  border: 0;
-  border-radius: 9999px;
-  background: none;
-  color: var(--ink-muted);
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
 
-.viewToggle button[aria-pressed="true"] {
-  background: var(--pill);
-  color: var(--pill-ink);
-}
 
-/* ── Workloads variants (review) ── */
+/* ── Workloads: sticky index beside stacked panels ── */
 
-.wlSwitch {
-  position: fixed;
-  bottom: 1rem;
-  left: 50%;
-  z-index: 40;
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.25rem;
-  translate: -50% 0;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  background: oklch(0.13 0.002 100 / 0.9);
-  backdrop-filter: blur(10px);
-}
 
-.wlSwitch button {
-  height: 1.9rem;
-  padding: 0 0.9rem;
-  border: 0;
-  border-radius: 9999px;
-  background: none;
-  color: var(--ink-muted);
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
 
-.wlSwitch button[aria-pressed="true"] {
-  background: var(--pill);
-  color: var(--pill-ink);
-}
 
 /* Shared diagram styles. */
 .wlVisual {
@@ -1394,156 +1194,26 @@
   }
 }
 
-.wlCode {
-  margin: 0;
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--ink);
-}
 
-.wlFact {
-  display: inline-block;
-  margin-top: 0.75rem;
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.04em;
-  color: var(--ink);
-}
 
 /* A · Mesh console */
-.wlConsole {
-  display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: clamp(2rem, 5vw, 4.5rem);
-  margin-top: 3rem;
-}
 
-.wlAccordion {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
 
-.wlAccordion > li {
-  position: relative;
-  border-bottom: 1px solid var(--hairline-soft);
-}
 
-.wlAccordion button {
-  display: block;
-  width: 100%;
-  padding: 1.1rem 0;
-  border: 0;
-  background: none;
-  color: var(--ink-muted);
-  font-family: var(--font-display);
-  font-size: var(--text-title);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  text-align: left;
-  cursor: pointer;
-}
 
-.wlAccordion li[data-open="true"] button {
-  color: var(--ink);
-}
 
-.wlAccBody {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 400ms var(--ease-out);
-}
 
-.wlAccBody > div {
-  overflow: hidden;
-}
 
-.wlAccBody[data-open="true"] {
-  grid-template-rows: 1fr;
-}
 
-.wlAccBody p {
-  margin: 0;
-  max-width: 30rem;
-  color: var(--ink-muted);
-  font-size: var(--text-ui);
-}
 
-.wlAccBody[data-open="true"] > div {
-  padding-bottom: 1.4rem;
-}
 
-.wlProgress {
-  position: absolute;
-  bottom: -1px;
-  left: 0;
-  width: 100%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--ink));
-  transform: scaleX(0);
-  transform-origin: left;
-}
 
-.wlProgress[data-run="true"] {
-  animation: wlProgress linear forwards;
-}
 
-@keyframes wlProgress {
-  to {
-    transform: scaleX(1);
-  }
-}
 
-.wlPanel {
-  position: relative;
-  min-height: 30rem;
-  overflow: hidden;
-  border: 1px solid var(--hairline-soft);
-  border-radius: var(--radius);
-  background: var(--dots), var(--ground-sunk);
-}
 
-.wlPanelInner {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 2.5rem 2.5rem 4rem;
-}
 
-.wlToggle {
-  position: absolute;
-  bottom: 1rem;
-  left: 50%;
-  display: flex;
-  gap: 0.15rem;
-  padding: 0.2rem;
-  translate: -50% 0;
-  border: 1px solid var(--hairline);
-  border-radius: 9999px;
-  background: oklch(0.13 0.002 100 / 0.85);
-}
 
-.wlToggle button {
-  height: 1.6rem;
-  padding: 0 0.75rem;
-  border: 0;
-  border-radius: 9999px;
-  background: none;
-  color: var(--ink-muted);
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  cursor: pointer;
-}
 
-.wlToggle button[aria-pressed="true"] {
-  background: var(--pill);
-  color: var(--pill-ink);
-}
 
 /* B · Scroll index */
 .wlScroll {
@@ -1561,6 +1231,18 @@
   padding: 0;
   list-style: none;
   border-left: 1px solid var(--hairline-soft);
+}
+
+/* A progress rail fills down the index as you move through the workloads. */
+.wlIndex::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -1px;
+  width: 1px;
+  height: calc(var(--wl-progress, 0) * 100%);
+  background: var(--ink-muted);
+  transition: height 500ms var(--ease-out);
 }
 
 .wlIndex a {
@@ -1631,6 +1313,23 @@
   font-size: var(--text-ui);
 }
 
+.wlCardFact {
+  margin: 0;
+  padding: 0.6rem 0;
+  border-block: 1px solid var(--hairline-soft);
+  font-family: var(--font-display);
+  font-size: 1.25rem !important;
+  font-weight: 300;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: var(--ink) !important;
+}
+
+/* Diagrams rest while their panel is out of focus and play once it is active. */
+.wlCard:not([data-active="true"]) .wlVisual * {
+  animation-play-state: paused;
+}
+
 .wlCommand {
   font-family: var(--font-data);
   font-size: var(--text-label);
@@ -1638,119 +1337,22 @@
 }
 
 /* C · Code tabs */
-.wlTabs {
-  display: grid;
-  grid-template-columns: minmax(0, 1.3fr) minmax(0, 0.7fr);
-  gap: clamp(2rem, 4vw, 3.5rem);
-  margin-top: 3rem;
-}
 
-.wlEditor {
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: var(--radius);
-  background: var(--ground-sunk);
-}
 
-.wlFileTabs {
-  display: flex;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--hairline);
-}
 
-.wlFileTabs button {
-  flex-shrink: 0;
-  padding: 0.75rem 1rem;
-  border: 0;
-  border-right: 1px solid var(--hairline-soft);
-  background: none;
-  color: var(--ink-faint);
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  cursor: pointer;
-}
 
-.wlFileTabs button[aria-selected="true"] {
-  background: var(--ground-raised);
-  color: var(--ink);
-  box-shadow: inset 0 -1px 0 var(--ink);
-}
 
-.wlEditor > .wlCode {
-  min-height: 14rem;
-  padding: 1.25rem 1.4rem;
-}
 
-.wlTerminal {
-  border-top: 1px solid var(--hairline);
-  background: oklch(0.11 0.002 100);
-}
 
-.wlTermHead {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.6rem 1.4rem;
-  border-bottom: 1px solid var(--hairline-soft);
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  letter-spacing: 0.06em;
-  color: var(--ink-faint);
-}
 
-.wlTermHead button {
-  border: 0;
-  background: none;
-  color: var(--ink-muted);
-  font: inherit;
-  letter-spacing: inherit;
-  cursor: pointer;
-}
 
-.wlTerminal pre {
-  min-height: 7rem;
-  margin: 0;
-  padding: 1rem 1.4rem 1.25rem;
-  font-family: var(--font-data);
-  font-size: var(--text-label);
-  line-height: 1.7;
-  white-space: pre-wrap;
-  color: var(--accent-3);
-}
 
-.wlAside {
-  display: grid;
-  align-content: start;
-  justify-items: start;
-  gap: 1rem;
-}
 
-.wlAside h3 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 2rem;
-  font-weight: 300;
-  letter-spacing: -0.03em;
-}
 
-.wlAside p {
-  margin: 0;
-  color: var(--ink-muted);
-}
 
-.wlFactBig {
-  padding: 1rem 0;
-  border-block: 1px solid var(--hairline-soft);
-  font-family: var(--font-display);
-  font-size: 1.5rem;
-  font-weight: 300;
-  line-height: 1.25;
-  letter-spacing: -0.02em;
-}
 
 @media (max-width: 1080px) {
-  .wlConsole,
   .wlScroll,
-  .wlTabs,
   .wlCard {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1766,8 +1368,7 @@
   .wlDraw,
   .wlBar,
   .wlBarTail,
-  .wlAtom,
-  .wlProgress {
+  .wlAtom {
     animation: none !important;
   }
 
@@ -3122,10 +2723,6 @@
   .stories,
   .linkCards {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .workloadPanel {
-    min-height: 28rem;
   }
 
   .codePanel {

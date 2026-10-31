@@ -127,14 +127,9 @@ export interface Workload {
   status: "Available" | "In review" | "Experimental";
   href: string;
   action: string;
-  card: { label: string; meta: string; headline: string; headlineLabel: string; rows: ReadonlyArray<[string, string]> };
   api: string;
-  /** Visual drawn for this workload in the explorer variants. */
+  /** The animated diagram drawn for this workload. */
   visual: "circuit" | "frontier" | "histogram" | "chain" | "molecule";
-  /** A short, real request for the code variant, and the response shape it returns. */
-  file: string;
-  code: string;
-  output: string;
   /** One measured or documented fact; never invented. */
   fact: string;
 }
@@ -149,31 +144,9 @@ export const WORKLOADS: { title: string; items: ReadonlyArray<Workload> } = {
       status: "Available",
       href: CONSOLE_HREF,
       action: "Run a circuit",
-      card: {
-        label: "Circuit job",
-        meta: "Bell pair · 2 qubits",
-        headline: "queued",
-        headlineLabel: "Status",
-        rows: [
-          ["Transport", "py-libp2p"],
-          ["Engine", "Qiskit"],
-          ["Payment", "x402"],
-        ],
-      },
       api: `POST /api/x402/quantum/runs
 { "circuit": "OPENQASM 2.0; include \\"qelib1.inc\\"; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q -> c;" }`,
       visual: "circuit",
-      file: "circuit.py",
-      code: `import requests
-
-BELL = 'OPENQASM 2.0; include "qelib1.inc"; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q -> c;'
-
-r = requests.post(f"{QMESH}/api/x402/quantum/runs", json={"circuit": BELL})
-print(r.status_code)  # 402: pay in USDC on Algorand TestNet, then retry`,
-      output: `402 Payment Required
-# after payment
-201 Created
-{ "job_id": "job_8d0f5af2…", "status": "queued" }`,
       fact: "Paid circuit runs completed on Algorand TestNet",
     },
     {
@@ -183,32 +156,9 @@ print(r.status_code)  # 402: pay in USDC on Algorand TestNet, then retry`,
       status: "Available",
       href: RESEARCH_URL,
       action: "Read the benchmark",
-      card: {
-        label: "Portfolio run",
-        meta: "Tokenized stocks",
-        headline: "5 qubits",
-        headlineLabel: "Circuit",
-        rows: [
-          ["Depth", "24"],
-          ["Gates", "43"],
-          ["Baseline", "Classical"],
-        ],
-      },
       api: `POST /benchmark/portfolio
 { "max_assets": 10, "risk_aversion": 0.5 }`,
       visual: "frontier",
-      file: "portfolio.py",
-      code: `import requests
-
-r = requests.post(
-    f"{QMESH}/benchmark/portfolio",
-    json={"max_assets": 10, "risk_aversion": 0.5},
-)
-result = r.json()
-print(result["winner"], result["classical_time_ms"], result["quantum_time_ms"])`,
-      output: `200 OK
-{ "job_id": "…", "winner": "…", "classical_time_ms": …,
-  "quantum_time_ms": …, "solution_match": …, "fidelity": … }`,
       fact: "3.2× faster at 40 assets, 9.5× at 60 (research draft)",
     },
     {
@@ -218,27 +168,9 @@ print(result["winner"], result["classical_time_ms"], result["quantum_time_ms"])`
       status: "Available",
       href: DOCS.BACKEND,
       action: "Backend docs",
-      card: {
-        label: "Options run",
-        meta: "QAE pipeline",
-        headline: "402",
-        headlineLabel: "Pay to run",
-        rows: [
-          ["Route", "/options/runs"],
-          ["Settles", "Algorand USDC"],
-          ["Network", "TestNet"],
-        ],
-      },
       api: `POST /api/x402/options/runs
 → 402 Payment Required (Algorand USDC, TestNet)`,
       visual: "histogram",
-      file: "options.py",
-      code: `import requests
-
-r = requests.post(f"{QMESH}/api/x402/options/runs", json=params)
-print(r.status_code)  # 402 until the run is paid`,
-      output: `402 Payment Required
-# QAE options pricing, settled in Algorand USDC`,
       fact: "Paid options runs completed on Algorand TestNet",
     },
     {
@@ -248,25 +180,8 @@ print(r.status_code)  # 402 until the run is paid`,
       status: "In review",
       href: DOCS.PROVENANCE,
       action: "Provenance docs",
-      card: {
-        label: "Anchor batch",
-        meta: "Ethereum Sepolia",
-        headline: "≈22.7k",
-        headlineLabel: "Gas per batch",
-        rows: [
-          ["Per batch", "1 tx"],
-          ["Counts", "Final only"],
-          ["Status", "In review"],
-        ],
-      },
       api: `provenance bundle → IPFS (CID) → Merkle root → Sepolia tx`,
       visual: "chain",
-      file: "verify.sh",
-      code: `# Every run leaves a provenance bundle; check it later by ID.
-curl "$QMESH/api/v1/provenance/$BUNDLE_ID/verify"`,
-      output: `{ "bundle_id": "…", "status": "verified",
-  "checks": [ … ], "checked_at": "…" }
-# Merkle anchoring on Sepolia: in review (#21)`,
       fact: "≈22.7k gas for one anchor batch on Sepolia",
     },
     {
@@ -276,31 +191,9 @@ curl "$QMESH/api/v1/provenance/$BUNDLE_ID/verify"`,
       status: "Experimental",
       href: DOCS.OVERVIEW,
       action: "Overview",
-      card: {
-        label: "Pharma job",
-        meta: "Research only",
-        headline: "202",
-        headlineLabel: "Accepted",
-        rows: [
-          ["Stages", "Simulated"],
-          ["Filters", "Molecular"],
-          ["Status", "Experimental"],
-        ],
-      },
       api: `POST /api/v1/pharma/submit
 → 202 Accepted { "job_id", "status", "submitted_at" }`,
       visual: "molecule",
-      file: "pharma.py",
-      code: `import requests
-
-r = requests.post(f"{QMESH}/api/v1/pharma/submit", json={
-    "mode": "discovery",
-    "target_pdb_id": "6LU7",
-    "candidate_count": 100,
-})
-print(r.json())`,
-      output: `202 Accepted
-{ "job_id": "…", "status": "…", "submitted_at": "…" }`,
       fact: "Experimental: simulated quantum stages, research only",
     },
   ],

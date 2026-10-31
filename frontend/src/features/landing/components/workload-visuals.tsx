@@ -19,6 +19,8 @@ const LABELS: Record<Workload["visual"], string> = {
 };
 
 const wires = [70, 120, 170];
+/** Round computed coordinates so the server and browser render identical markup. */
+const r1 = (n: number) => Math.round(n * 10) / 10;
 
 const DRAW: Record<Workload["visual"], React.ReactNode> = {
   circuit: (
@@ -74,7 +76,7 @@ const DRAW: Record<Workload["visual"], React.ReactNode> = {
       </text>
       {Array.from({ length: 46 }, (_, i) => {
         const x = 70 + ((i * 53) % 290);
-        const y = 190 - ((i * 37) % 120) - (x - 70) * 0.08;
+        const y = r1(190 - ((i * 37) % 120) - (x - 70) * 0.08);
         return <circle key={i} className={styles.wlPoint} cx={x} cy={y} r={2} style={{ animationDelay: `${(i % 9) * 0.12}s` }} />;
       })}
       <path className={styles.wlDraw} d="M 70 190 C 110 110, 190 64, 360 44" />
@@ -85,13 +87,13 @@ const DRAW: Record<Workload["visual"], React.ReactNode> = {
     <g>
       <line className={styles.wlAxis} x1={30} y1={210} x2={380} y2={210} />
       {Array.from({ length: 24 }, (_, i) => {
-        const h = 150 * Math.exp(-((i - 11) ** 2) / 26) + 6;
+        const h = r1(150 * Math.exp(-((i - 11) ** 2) / 26) + 6);
         return (
           <rect
             key={i}
             className={i < 4 ? styles.wlBarTail : styles.wlBar}
             x={40 + i * 14}
-            y={210 - h}
+            y={r1(210 - h)}
             width={10}
             height={h}
             style={{ animationDelay: `${i * 0.04}s` }}
