@@ -69,6 +69,18 @@ function project(u: Float32Array, v: Float32Array, p: Float32Array, div: Float32
   setBounds(2, v);
 }
 
+// One-pixel ring used to draw an outline around filled glyphs.
+const OUTLINE: ReadonlyArray<[number, number]> = [
+  [-1, 0],
+  [1, 0],
+  [0, -1],
+  [0, 1],
+  [-0.7, -0.7],
+  [0.7, -0.7],
+  [-0.7, 0.7],
+  [0.7, 0.7],
+];
+
 // The logo's 5×5 pixel mark.
 const MARK: ReadonlyArray<[number, number]> = [
   [0, 0],
@@ -83,8 +95,7 @@ const MARK: ReadonlyArray<[number, number]> = [
 ];
 
 /**
- * The footer wordmark, set like the logo (pixel mark + "QMesh") and extruded in
- * 3D. Its face is a hairline outline that floods with ink wherever the pointer
+ * The footer wordmark, set like the logo (pixel mark + "QMesh"). Its face is a hairline outline that floods with ink wherever the pointer
  * stirs the fluid; the ink swirls, spreads and fades on its own.
  */
 export function InkWordmark({ word }: { word: string }) {
@@ -97,7 +108,6 @@ export function InkWordmark({ word }: { word: string }) {
     const css = getComputedStyle(el);
     const ink = css.getPropertyValue("--ink").trim();
     const line = css.getPropertyValue("--ink-muted").trim();
-    const edge = css.getPropertyValue("--hairline").trim();
     const ground = css.getPropertyValue("--ground").trim();
     const family = css.getPropertyValue("--font-text").trim() || "sans-serif";
     const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -125,7 +135,6 @@ export function InkWordmark({ word }: { word: string }) {
     let size = 0;
     let textX = 0;
     let baseline = 0;
-    let depth = 0;
     let markX = 0;
     let markCell = 0;
     let markTop = 0;
@@ -138,21 +147,20 @@ export function InkWordmark({ word }: { word: string }) {
         c.width = Math.round(W * ratio);
         c.height = Math.round(H * ratio);
       }
-      // Fit mark + word inside the frame, like the logo lockup, leaving room for the extrusion.
+      // Fit mark + word inside the frame, like the logo lockup.
       size = H * 0.9;
       ctx.font = `600 ${size}px ${family}`;
-      const lockW = ctx.measureText(word).width + size * 0.95 + size * 0.07;
+      const lockW = ctx.measureText(word).width + size * 0.95;
       size *= Math.min(1, (W * 0.9) / lockW);
       ctx.font = `600 ${size}px ${family}`;
       const m = ctx.measureText("Q");
       const cap = ctx.measureText("H").actualBoundingBoxAscent;
       const total = ctx.measureText(word).width + size * 0.95;
-      depth = Math.max(5, size * 0.07);
       markCell = cap / 5;
-      markX = (W - total - depth * 0.7) / 2;
+      markX = (W - total) / 2;
       textX = markX + size * 0.95;
-      // Centre the cap height plus extrusion vertically; descenders ("Q" tail) stay inside.
-      baseline = (H - depth - m.actualBoundingBoxDescent) / 2 + cap / 2;
+      // Centre the cap height vertically; descenders ("Q" tail) stay inside.
+      baseline = (H - m.actualBoundingBoxDescent) / 2 + cap / 2;
       markTop = baseline - cap;
     };
 
@@ -238,25 +246,16 @@ export function InkWordmark({ word }: { word: string }) {
       ctx.font = `600 ${size}px ${family}`;
       ctx.textBaseline = "alphabetic";
 
-      // Extrusion: stacked copies stepping down and right, darkest at the back.
-      const steps = Math.ceil(depth);
-      for (let s = steps; s >= 1; s -= 1) {
-        const k = s / steps;
-        ctx.fillStyle = `oklch(${(0.1 + 0.12 * (1 - k)).toFixed(3)} 0.003 80)`;
-        ctx.fillText(word, textX + s * 0.7, baseline + s);
-        drawMark(ctx, s * 0.7, s, "fill");
+      // Clean outline from the filled shape (strokeText would trace the font's overlapping
+      // contours): the letters in the line colour, nudged a pixel each way, then the face on top.
+      ctx.fillStyle = line;
+      for (const [ox, oy] of OUTLINE) {
+        ctx.fillText(word, textX + ox, baseline + oy);
+        drawMark(ctx, ox, oy, "fill");
       }
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = edge;
-      ctx.strokeText(word, textX + steps * 0.7, baseline + steps);
-      drawMark(ctx, steps * 0.7, steps, "stroke");
-      // Face: ground colour with a hairline outline, then the ink on top.
       ctx.fillStyle = ground;
       ctx.fillText(word, textX, baseline);
       drawMark(ctx, 0, 0, "fill");
-      ctx.strokeStyle = line;
-      ctx.strokeText(word, textX, baseline);
-      drawMark(ctx, 0, 0, "stroke");
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.drawImage(face, 0, 0);
     };
