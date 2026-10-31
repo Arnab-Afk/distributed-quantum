@@ -2478,9 +2478,9 @@
 }
 
 .member {
-  display: grid;
-  align-content: start;
-  justify-items: start;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 0.3rem;
   padding: 1.25rem;
   border-right: 1px solid var(--hairline-soft);
@@ -2494,6 +2494,76 @@
   padding: 0.25rem;
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
+}
+
+.memberPhoto {
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  margin-bottom: 0.75rem;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+  background: var(--ground-sunk);
+}
+
+.memberPhoto img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: grayscale(1);
+}
+
+.memberPhoto .identicon {
+  width: 1.75rem;
+  height: 1.75rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* Pinned to the card's foot so the icon rows line up across a row of cards. */
+.memberSocial {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: auto;
+  padding-top: 0.9rem;
+}
+
+.memberSocialLink,
+.memberSocialEmpty {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border: 1px solid var(--hairline);
+  border-radius: 50%;
+}
+
+.memberSocialLink svg,
+.memberSocialEmpty svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+.memberSocialLink {
+  color: var(--ink-muted);
+  transition:
+    color 200ms var(--ease-out),
+    border-color 200ms var(--ease-out);
+}
+
+.memberSocialLink:hover {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+}
+
+/* A link not filled in yet: visible as a slot, clearly inactive. */
+.memberSocialEmpty {
+  border-style: dashed;
+  color: var(--ink-faint);
+  opacity: 0.45;
 }
 
 .memberName {

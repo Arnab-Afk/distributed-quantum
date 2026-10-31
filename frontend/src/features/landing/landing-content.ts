@@ -360,6 +360,12 @@ export interface TeamMember {
   role: string;
   /** GitHub login; omitted when it is not known for certain. */
   github?: string;
+  /** Profile photo URL (a file in /public, e.g. "/team/soham.jpg"); the pixel identicon shows until it is set. */
+  photo?: string;
+  /** Profile links; each icon stays a dimmed placeholder until its URL is filled in. */
+  x?: string;
+  linkedin?: string;
+  website?: string;
 }
 
 // Seeded from the repository's commit history. Edit roles and add people here.

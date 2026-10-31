@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, Plus } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Globe, Plus } from "lucide-react";
 import { Inter, Newsreader } from "next/font/google";
 
 import { ArchStack } from "./components/arch-stack";
 import { InfrastructureStrip } from "./components/infrastructure-strip";
 import { Identicon, MeshMark } from "./components/mesh-mark";
+import { LinkedInIcon, XIcon } from "./components/social-icons";
 import { GlyphBand, HeroMesh, InkWordmark, ResultsStory, Reveal, RollingNumber } from "./components/motion-bits";
 import { SmoothScroll } from "./components/smooth-scroll";
 import { ReceiptScroll } from "./components/receipt-scroll";
@@ -179,7 +180,14 @@ export function LandingPage() {
           <ul className={styles.team}>
             {TEAM.members.map((member) => (
               <li key={member.name} className={styles.member}>
-                <Identicon seed={member.name} />
+                <span className={styles.memberPhoto}>
+                  {member.photo ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- small local profile photos
+                    <img src={member.photo} alt="" width={56} height={56} />
+                  ) : (
+                    <Identicon seed={member.name} />
+                  )}
+                </span>
                 <span className={styles.memberName}>{member.name}</span>
                 <span className={styles.memberRole}>{member.role}</span>
                 {member.github ? (
@@ -187,6 +195,28 @@ export function LandingPage() {
                     @{member.github} <ArrowUpRight aria-hidden="true" />
                   </External>
                 ) : null}
+                <span className={styles.memberSocial}>
+                  {(
+                    [
+                      ["X", member.x, XIcon],
+                      ["LinkedIn", member.linkedin, LinkedInIcon],
+                      ["Website", member.website, Globe],
+                    ] as const
+                  ).map(([label, href, Icon]) =>
+                    href ? (
+                      <External key={label} href={href} className={styles.memberSocialLink}>
+                        <Icon aria-hidden="true" />
+                        <span className={styles.srOnly}>
+                          {member.name} on {label}
+                        </span>
+                      </External>
+                    ) : (
+                      <span key={label} className={styles.memberSocialEmpty} title={`${label} link coming soon`}>
+                        <Icon aria-hidden="true" />
+                      </span>
+                    ),
+                  )}
+                </span>
               </li>
             ))}
           </ul>
